@@ -1,0 +1,6 @@
+[workspace]
+members = ["anim3d", "frenderer"]
+exclude = ["target", "content"]
+
+[profile.dev.package.backtrace]
+opt-level = 3

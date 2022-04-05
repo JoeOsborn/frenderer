@@ -1,0 +1,20 @@
+[package]
+name = "anim3d"
+version = "0.1.0"
+authors = ["Joseph C. Osborn <joseph.osborn@pomona.edu>"]
+edition = "2018"
+
+[dependencies]
+vulkano = "0.29"
+vulkano-shaders = "0.29"
+winit = "0.26.1"
+vulkano-win = "0.29"
+image_reading = {version="0.24", package = "image"}
+rand = "0.8.5"
+ultraviolet= {version="0.9", features=["bytemuck", "mint"]}
+bytemuck = { version = "1.7", features = ["derive", "extern_crate_std", "min_const_generics"] }
+russimp={version="1.0.2", features=["prebuilt"], git="https://github.com/JoeOsborn/russimp.git", branch="master"}
+color-eyre = {version="0.5"}
+string-interner = "0.14.0"
+thunderdome="0.5.0"
+frenderer = {path="../frenderer"}
