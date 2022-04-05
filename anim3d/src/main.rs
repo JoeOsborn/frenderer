@@ -168,13 +168,16 @@ fn main() -> Result<()> {
 
     engine.set_camera(Camera::look_at(
         Vec3::new(0., 0., 100.),
-        Vec3::new(0., 0., -10.),
+        Vec3::new(0., 0., 0.),
         Vec3::new(0., 1., 0.),
     ));
 
     let marble_tex = engine.load_texture(std::path::Path::new("content/sphere-diffuse.jpg"))?;
     let marble_meshes = engine.load_textured(std::path::Path::new("content/sphere.obj"))?;
     let marble = engine.create_textured_model(marble_meshes, vec![marble_tex]);
+    let floor_tex = engine.load_texture(std::path::Path::new("content/cube-diffuse.jpg"))?;
+    let floor_meshes = engine.load_textured(std::path::Path::new("content/floor.obj"))?;
+    let floor = engine.create_textured_model(floor_meshes, vec![floor_tex]);
     let king = engine.load_texture(std::path::Path::new("content/king.png"))?;
     let tex = engine.load_texture(std::path::Path::new("content/robot.png"))?;
     let meshes = engine.load_skinned(
@@ -207,10 +210,15 @@ fn main() -> Result<()> {
             trf: Similarity3::new(Vec3::new(0.0, 0.0, -10.0), Rotor3::identity(), 1.0),
             model: flat_model,
         }],
-        textured:vec![Textured {
-            trf: Similarity3::new(Vec3::new(0.0, 0.0, -10.0), Rotor3::identity(), 1.0),
-            model: marble,
-        }]
+        textured:vec![
+            Textured {
+                trf: Similarity3::new(Vec3::new(0.0, 0.0, -10.0), Rotor3::identity(), 5.0),
+                model: marble,
+            },
+            Textured {
+                trf: Similarity3::new(Vec3::new(0.0, -25.0, 0.0), Rotor3::identity(), 10.0),
+                model: floor,
+            }]
     };
     engine.play(world)
 }

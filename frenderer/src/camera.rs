@@ -18,6 +18,7 @@ impl Camera {
             z_far: 1000.0,
         }
     }
+    pub fn set_ratio(&mut self, r:f32) { self.ratio = r; }
     pub fn as_matrix(&self) -> Mat4 {
         // projection * view
         let proj =

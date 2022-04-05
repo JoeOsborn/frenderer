@@ -148,6 +148,7 @@ impl Engine {
         .unwrap();
         let r = (self.acc / self.dt) as f32;
         // let r = 1.0;
+        self.camera.set_ratio(vulkan.viewport.dimensions[0]/vulkan.viewport.dimensions[1]);
         self.interpolated_state
             .interpolate_from(&self.render_states[0], &self.render_states[1], r);
         self.skinned_renderer
