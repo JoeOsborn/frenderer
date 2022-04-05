@@ -224,7 +224,7 @@ impl Assets {
                 let color = mat
                     .properties
                     .iter()
-                    .find(|p| p.key == "?clr.base")
+                    .find(|p| p.key == "$clr.base")
                     .and_then(|p| {
                         if let russimp::material::PropertyTypeInfo::FloatArray(fs) = &p.data {
                             Some(Vec4::new(fs[0], fs[1], fs[2], fs[3]))
