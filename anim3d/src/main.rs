@@ -30,10 +30,15 @@ struct World {
     things: Vec<GameObject>,
     sprites: Vec<Sprite>,
     flats: Vec<Flat>,
+    textured:Vec<Textured>
 }
 struct Flat {
     trf: Similarity3,
     model: Rc<frenderer::renderer::flat::Model>,
+}
+struct Textured {
+    trf: Similarity3,
+    model: Rc<frenderer::renderer::textured::Model>,
 }
 impl frenderer::World for World {
     fn update(&mut self, input: &frenderer::Input, _assets: &mut frenderer::assets::Assets) {
@@ -112,6 +117,30 @@ impl frenderer::World for World {
             m.trf.rotation = Rotor3::from_euler_angles(roll, pitch, yaw) * m.trf.rotation;
             m.trf.scale += dscale;
         }
+        for m in self.textured.iter_mut() {
+            let yaw = if input.is_key_down(Key::U) {
+                (PI / 4.0) * (1.0 / 60.0)
+            } else {
+                0.0
+            };
+            let pitch = if input.is_key_down(Key::I) {
+                (PI / 4.0) * (1.0 / 60.0)
+            } else {
+                0.0
+            };
+            let roll = if input.is_key_down(Key::O) {
+                (PI / 4.0) * (1.0 / 60.0)
+            } else {
+                0.0
+            };
+            let dscale = if input.is_key_down(Key::P) {
+                1.0 / 60.0
+            } else {
+                0.0
+            };
+            m.trf.rotation = Rotor3::from_euler_angles(roll, pitch, yaw) * m.trf.rotation;
+            m.trf.scale += dscale;
+        }
     }
     fn render(
         &mut self,
@@ -127,6 +156,9 @@ impl frenderer::World for World {
         for (m_i, m) in self.flats.iter_mut().enumerate() {
             rs.render_flat(m.model.clone(), m.trf, m_i);
         }
+        for (t_i, t) in self.textured.iter_mut().enumerate() {
+            rs.render_textured(t.model.clone(), t.trf, t_i);
+        }
     }
 }
 fn main() -> Result<()> {
@@ -139,6 +171,10 @@ fn main() -> Result<()> {
         Vec3::new(0., 0., -10.),
         Vec3::new(0., 1., 0.),
     ));
+
+    let marble_tex = engine.load_texture(std::path::Path::new("content/sphere-diffuse.jpg"))?;
+    let marble_meshes = engine.load_textured(std::path::Path::new("content/sphere.obj"))?;
+    let marble = engine.create_textured_model(marble_meshes, vec![marble_tex]);
     let king = engine.load_texture(std::path::Path::new("content/king.png"))?;
     let tex = engine.load_texture(std::path::Path::new("content/robot.png"))?;
     let meshes = engine.load_skinned(
@@ -171,6 +207,10 @@ fn main() -> Result<()> {
             trf: Similarity3::new(Vec3::new(0.0, 0.0, -10.0), Rotor3::identity(), 1.0),
             model: flat_model,
         }],
+        textured:vec![Textured {
+            trf: Similarity3::new(Vec3::new(0.0, 0.0, -10.0), Rotor3::identity(), 1.0),
+            model: marble,
+        }]
     };
     engine.play(world)
 }

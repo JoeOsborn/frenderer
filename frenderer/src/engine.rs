@@ -38,6 +38,7 @@ pub struct Engine {
     interpolated_state: crate::renderer::RenderState,
     skinned_renderer: crate::renderer::skinned::Renderer,
     sprites_renderer: crate::renderer::sprites::Renderer,
+    textured_renderer: crate::renderer::textured::Renderer,
     flat_renderer: crate::renderer::flat::Renderer,
     dt: f64,
     acc: f64,
@@ -56,6 +57,7 @@ impl Engine {
             assets: Assets::new(),
             skinned_renderer: crate::renderer::skinned::Renderer::new(&mut vulkan),
             sprites_renderer: crate::renderer::sprites::Renderer::new(&mut vulkan),
+            textured_renderer: crate::renderer::textured::Renderer::new(&mut vulkan),
             flat_renderer: crate::renderer::flat::Renderer::new(&mut vulkan),
             vulkan,
             render_states: [
@@ -154,6 +156,8 @@ impl Engine {
             .prepare(&self.interpolated_state, &self.assets, &self.camera);
         self.flat_renderer
             .prepare(&self.interpolated_state, &self.assets, &self.camera);
+        self.textured_renderer
+            .prepare(&self.interpolated_state, &self.assets, &self.camera);
 
         builder
             .begin_render_pass(
@@ -167,6 +171,7 @@ impl Engine {
         self.skinned_renderer.draw(&mut builder);
         self.sprites_renderer.draw(&mut builder);
         self.flat_renderer.draw(&mut builder);
+        self.textured_renderer.draw(&mut builder);
 
         builder.end_render_pass().unwrap();
 
@@ -183,6 +188,12 @@ impl Engine {
     ) -> Result<Vec<assets::MeshRef<renderer::skinned::Mesh>>> {
         self.assets.load_skinned(path, node_root, &mut self.vulkan)
     }
+    pub fn load_textured(
+        &mut self,
+        path: &std::path::Path,
+    ) -> Result<Vec<assets::MeshRef<renderer::textured::Mesh>>> {
+        self.assets.load_textured(path, &mut self.vulkan)
+    }
     pub fn load_anim(
         &mut self,
         path: &std::path::Path,
@@ -197,7 +208,16 @@ impl Engine {
         meshes: Vec<assets::MeshRef<renderer::skinned::Mesh>>,
         textures: Vec<assets::TextureRef>,
     ) -> Rc<renderer::skinned::Model> {
+        assert_eq!(meshes.len(), textures.len());
         Rc::new(renderer::skinned::Model::new(meshes, textures))
+    }
+    pub fn create_textured_model(
+        &self,
+        meshes: Vec<assets::MeshRef<renderer::textured::Mesh>>,
+        textures: Vec<assets::TextureRef>,
+    ) -> Rc<renderer::textured::Model> {
+        assert_eq!(meshes.len(), textures.len());
+        Rc::new(renderer::textured::Model::new(meshes, textures))
     }
     pub fn load_flat(&mut self, path: &std::path::Path) -> Result<Rc<renderer::flat::Model>> {
         self.assets.load_flat(path, &mut self.vulkan)

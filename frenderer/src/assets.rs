@@ -1,7 +1,7 @@
 use crate::animation;
 use crate::color_eyre::eyre::{ensure, eyre};
 use crate::image::Image;
-use crate::renderer::{flat, skinned};
+use crate::renderer::{flat, skinned, textured};
 use crate::types::*;
 use crate::vulkan::Vulkan;
 use crate::Result;
@@ -19,6 +19,7 @@ pub struct Texture {
 }
 pub struct Assets {
     skinned_meshes: Arena<skinned::Mesh>,
+    textured_meshes: Arena<textured::Mesh>,
     animations: Arena<animation::Animation>,
     textures: Arena<Texture>,
     materials: Arena<flat::Material>,
@@ -29,6 +30,7 @@ impl Assets {
     pub fn new() -> Self {
         Self {
             skinned_meshes: Arena::new(),
+            textured_meshes:Arena::new(),
             animations: Arena::new(),
             textures: Arena::new(),
             flat_meshes: Arena::new(),
@@ -167,6 +169,83 @@ impl Assets {
                 let mid = self.skinned_meshes.insert(skinned::Mesh {
                     mesh,
                     rig,
+                    verts: vb,
+                    idx: ib,
+                });
+                Ok(MeshRef(mid, PhantomData))
+            })
+            .collect();
+        Ok(meshes?)
+    }
+    pub fn load_textured(
+        &mut self,
+        path: &std::path::Path,
+        vulkan: &mut Vulkan,
+    ) -> Result<Vec<MeshRef<textured::Mesh>>> {
+        use russimp::scene::{PostProcess, Scene};
+        let scene = Scene::from_file(
+            path.to_str()
+                .ok_or_else(|| eyre!("Mesh path can't be converted to string: {:?}", path))?,
+            vec![
+                PostProcess::GenerateUVCoords,
+                PostProcess::Triangulate,
+                PostProcess::JoinIdenticalVertices,
+                PostProcess::FlipUVs,
+            ],
+        )?;
+        let meshes: Result<Vec<_>, _> = scene
+            .meshes
+            .into_iter()
+            .map(|mesh| {
+                let verts = &mesh.vertices;
+                let uvs = mesh
+                    .texture_coords
+                    .first()
+                    .ok_or_else(|| eyre!("Mesh fbx has no texture coords: {:?}", path))?;
+                let uvs = uvs.clone().unwrap_or_else(|| {
+                    vec![
+                        russimp::Vector3D {
+                            x: 0.0,
+                            y: 0.0,
+                            z: 0.0
+                        };
+                        verts.len()
+                    ]
+                });
+                ensure!(
+                    mesh.faces[0].0.len() == 3,
+                    "Mesh face has too many indices: {:?}",
+                    mesh.faces[0]
+                );
+                // This is safe to allow because we need an ExactSizeIterator of faces
+                #[allow(clippy::needless_collect)]
+                let faces: Vec<u32> = mesh
+                    .faces
+                    .iter()
+                    .flat_map(|v| v.0.iter().copied())
+                    .collect();
+                let (vb, vb_fut) = vulkano::buffer::ImmutableBuffer::from_iter(
+                    verts
+                        .iter()
+                        .zip(uvs.into_iter())
+                        .map(|(pos, uv)| crate::renderer::textured::Vertex {
+                            position: [pos.x, pos.y, pos.z],
+                            uv: [uv.x, uv.y],
+                        }),
+                    vulkano::buffer::BufferUsage::vertex_buffer(),
+                    vulkan.queue.clone(),
+                )?;
+                let (ib, ib_fut) = vulkano::buffer::ImmutableBuffer::from_iter(
+                    faces.into_iter(),
+                    vulkano::buffer::BufferUsage::index_buffer(),
+                    vulkan.queue.clone(),
+                )?;
+
+                let load_fut = vb_fut.join(ib_fut);
+                vulkan.wait_for(Box::new(load_fut));
+
+                let mid = self.textured_meshes.insert(crate::renderer::textured::Mesh {
+                    mesh,
                     verts: vb,
                     idx: ib,
                 });
@@ -323,6 +402,9 @@ impl Assets {
     }
     pub fn skinned_mesh(&self, m: MeshRef<skinned::Mesh>) -> &skinned::Mesh {
         &self.skinned_meshes[m.0]
+    }
+    pub fn textured_mesh(&self, m: MeshRef<textured::Mesh>) -> &textured::Mesh {
+        &self.textured_meshes[m.0]
     }
     pub fn flat_mesh(&self, m: MeshRef<flat::Mesh>) -> &flat::Mesh {
         &self.flat_meshes[m.0]
