@@ -1,11 +1,11 @@
 #![allow(dead_code)]
 
-use std::rc::Rc;
 use frenderer::animation::{AnimationSettings, AnimationState};
 use frenderer::assets::AnimRef;
 use frenderer::camera::Camera;
 use frenderer::types::*;
 use frenderer::{Engine, Key, Result, WindowSettings};
+use std::rc::Rc;
 
 const DT: f64 = 1.0 / 60.0;
 
@@ -30,7 +30,7 @@ struct World {
     things: Vec<GameObject>,
     sprites: Vec<Sprite>,
     flats: Vec<Flat>,
-    textured:Vec<Textured>
+    textured: Vec<Textured>,
 }
 struct Flat {
     trf: Similarity3,
@@ -210,7 +210,7 @@ fn main() -> Result<()> {
             trf: Similarity3::new(Vec3::new(0.0, 0.0, -10.0), Rotor3::identity(), 1.0),
             model: flat_model,
         }],
-        textured:vec![
+        textured: vec![
             Textured {
                 trf: Similarity3::new(Vec3::new(0.0, 0.0, -10.0), Rotor3::identity(), 5.0),
                 model: marble,
@@ -218,7 +218,8 @@ fn main() -> Result<()> {
             Textured {
                 trf: Similarity3::new(Vec3::new(0.0, -25.0, 0.0), Rotor3::identity(), 10.0),
                 model: floor,
-            }]
+            },
+        ],
     };
     engine.play(world)
 }

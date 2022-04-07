@@ -1,4 +1,3 @@
-use std::rc::Rc;
 use super::RenderState;
 use crate::assets;
 use crate::assets::Texture;
@@ -7,6 +6,7 @@ use crate::types::*;
 use crate::vulkan::Vulkan;
 use bytemuck::{Pod, Zeroable};
 use std::collections::HashMap;
+use std::rc::Rc;
 use std::sync::Arc;
 use vulkano::buffer::cpu_pool::CpuBufferPoolChunk;
 use vulkano::buffer::CpuBufferPool;
@@ -37,8 +37,7 @@ pub struct Mesh {
     pub verts: Arc<ImmutableBuffer<[Vertex]>>,
     pub idx: Arc<ImmutableBuffer<[u32]>>,
 }
-impl Mesh {
-}
+impl Mesh {}
 #[derive(Clone)]
 pub struct Model {
     meshes: Vec<assets::MeshRef<Mesh>>,
@@ -60,14 +59,8 @@ pub struct SingleRenderState {
     transform: Similarity3,
 }
 impl SingleRenderState {
-    pub(crate) fn new(
-        model: Rc<Model>,
-        transform: Similarity3,
-    ) -> Self {
-        Self {
-            model,
-            transform,
-        }
+    pub(crate) fn new(model: Rc<Model>, transform: Similarity3) -> Self {
+        Self { model, transform }
     }
     pub fn interpolate(&self, other: &Self, r: f32) -> Self {
         Self {
@@ -179,7 +172,7 @@ void main() {
             )
             .depth_stencil_state(DepthStencilState {
                 depth: Some(DepthState {
-                    compare_op: vulkano::pipeline::StateMode::Fixed(CompareOp::Less),
+                    compare_op: vulkano::pipeline::StateMode::Fixed(CompareOp::Greater),
                     enable_dynamic: false,
                     write_enable: vulkano::pipeline::StateMode::Fixed(true),
                 }),
@@ -218,12 +211,8 @@ void main() {
         };
         match self.batches.entry(key) {
             Entry::Vacant(v) => {
-                let mut b = Self::create_batch(
-                    self.pipeline.clone(),
-                    self.sampler.clone(),
-                    mesh,
-                    texture,
-                );
+                let mut b =
+                    Self::create_batch(self.pipeline.clone(), self.sampler.clone(), mesh, texture);
                 b.push_instance(inst);
                 v.insert(b);
             }
@@ -260,12 +249,7 @@ void main() {
             for (meshr, texr) in v.model.meshes.iter().zip(v.model.textures.iter()) {
                 let mesh = assets.textured_mesh(*meshr);
                 let tex = assets.texture(*texr);
-                self.push_model(
-                    ModelKey(*meshr, *texr),
-                    mesh,
-                    tex,
-                    v.transform,
-                );
+                self.push_model(ModelKey(*meshr, *texr), mesh, tex, v.transform);
             }
         }
         self.prepare_draw(camera);
@@ -280,9 +264,7 @@ void main() {
             .unwrap();
         self.uniform_binding = Some(uds);
         for (_k, b) in self.batches.iter_mut() {
-            b.prepare_draw(
-                &self.instance_pool,
-            );
+            b.prepare_draw(&self.instance_pool);
         }
     }
     pub fn draw<P, L>(&mut self, builder: &mut AutoCommandBufferBuilder<P, L>) {
@@ -352,10 +334,7 @@ impl BatchData {
     fn is_empty(&self) -> bool {
         self.instance_data.is_empty()
     }
-    fn push_instance(
-        &mut self,
-        inst: InstanceData,
-    ) {
+    fn push_instance(&mut self, inst: InstanceData) {
         self.instance_data.push(inst);
     }
 }

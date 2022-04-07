@@ -1,4 +1,3 @@
-use std::rc::Rc;
 use super::RenderState;
 use crate::animation;
 use crate::assets;
@@ -8,6 +7,7 @@ use crate::types::*;
 use crate::vulkan::Vulkan;
 use bytemuck::{Pod, Zeroable};
 use std::collections::HashMap;
+use std::rc::Rc;
 use std::sync::Arc;
 use vulkano::buffer::cpu_pool::{CpuBufferPoolChunk, CpuBufferPoolSubbuffer};
 use vulkano::buffer::CpuBufferPool;
@@ -231,7 +231,7 @@ void main() {
             )
             .depth_stencil_state(DepthStencilState {
                 depth: Some(DepthState {
-                    compare_op: vulkano::pipeline::StateMode::Fixed(CompareOp::Less),
+                    compare_op: vulkano::pipeline::StateMode::Fixed(CompareOp::Greater),
                     enable_dynamic: false,
                     write_enable: vulkano::pipeline::StateMode::Fixed(true),
                 }),

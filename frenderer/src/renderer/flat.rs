@@ -1,10 +1,10 @@
-use std::rc::Rc;
 use crate::assets::{self, MaterialRef, MeshRef};
 use crate::camera::Camera;
 use crate::types::*;
 use crate::vulkan::Vulkan;
 use bytemuck::{Pod, Zeroable};
 use std::collections::HashMap;
+use std::rc::Rc;
 use std::sync::Arc;
 use vulkano::buffer::cpu_pool::CpuBufferPoolChunk;
 use vulkano::buffer::CpuBufferPool;
@@ -29,10 +29,18 @@ pub struct Material {
     name: String,
 }
 impl Material {
-    pub fn name(&self) -> &str { &self.name }
-    pub fn color(&self) -> Vec4 { self.color }
-    pub(crate) fn new(color:Vec4, name:String, buffer:Arc<ImmutableBuffer<[f32;4]>>) -> Self {
-        Self {color,name,buffer}
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn color(&self) -> Vec4 {
+        self.color
+    }
+    pub(crate) fn new(color: Vec4, name: String, buffer: Arc<ImmutableBuffer<[f32; 4]>>) -> Self {
+        Self {
+            color,
+            name,
+            buffer,
+        }
     }
 }
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -166,7 +174,7 @@ void main() {
             )
             .depth_stencil_state(DepthStencilState {
                 depth: Some(DepthState {
-                    compare_op: vulkano::pipeline::StateMode::Fixed(CompareOp::Less),
+                    compare_op: vulkano::pipeline::StateMode::Fixed(CompareOp::Greater),
                     enable_dynamic: false,
                     write_enable: vulkano::pipeline::StateMode::Fixed(true),
                 }),

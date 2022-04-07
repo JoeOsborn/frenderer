@@ -1,4 +1,3 @@
-use std::rc::Rc;
 use crate::animation;
 use crate::assets::{self, Assets};
 use crate::camera::Camera;
@@ -7,6 +6,7 @@ use crate::renderer;
 use crate::types::*;
 use crate::vulkan::Vulkan;
 use color_eyre::eyre::Result;
+use std::rc::Rc;
 use winit::event::{Event, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
@@ -148,7 +148,8 @@ impl Engine {
         .unwrap();
         let r = (self.acc / self.dt) as f32;
         // let r = 1.0;
-        self.camera.set_ratio(vulkan.viewport.dimensions[0]/vulkan.viewport.dimensions[1]);
+        self.camera
+            .set_ratio(vulkan.viewport.dimensions[0] / vulkan.viewport.dimensions[1]);
         self.interpolated_state
             .interpolate_from(&self.render_states[0], &self.render_states[1], r);
         self.skinned_renderer
@@ -164,7 +165,7 @@ impl Engine {
             .begin_render_pass(
                 vulkan.framebuffers[image_num].clone(),
                 SubpassContents::Inline,
-                vec![[0.0, 0.0, 0.0, 0.0].into(), (1.0).into()],
+                vec![[0.0, 0.0, 0.0, 0.0].into(), (0.0).into()],
             )
             .unwrap()
             .set_viewport(0, [vulkan.viewport.clone()]);

@@ -159,7 +159,7 @@ void main() {
             )
             .depth_stencil_state(DepthStencilState {
                 depth: Some(DepthState {
-                    compare_op: vulkano::pipeline::StateMode::Fixed(CompareOp::Less),
+                    compare_op: vulkano::pipeline::StateMode::Fixed(CompareOp::Greater),
                     enable_dynamic: false,
                     write_enable: vulkano::pipeline::StateMode::Fixed(true),
                 }),

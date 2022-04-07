@@ -7,8 +7,8 @@ use crate::vulkan::Vulkan;
 use crate::Result;
 use std::collections::HashMap;
 use std::marker::PhantomData;
-use std::sync::Arc;
 use std::rc::Rc;
+use std::sync::Arc;
 use thunderdome::{Arena, Index};
 use vulkano::image::immutable::ImmutableImage;
 use vulkano::sync::GpuFuture;
@@ -30,7 +30,7 @@ impl Assets {
     pub fn new() -> Self {
         Self {
             skinned_meshes: Arena::new(),
-            textured_meshes:Arena::new(),
+            textured_meshes: Arena::new(),
             animations: Arena::new(),
             textures: Arena::new(),
             flat_meshes: Arena::new(),
@@ -225,13 +225,12 @@ impl Assets {
                     .flat_map(|v| v.0.iter().copied())
                     .collect();
                 let (vb, vb_fut) = vulkano::buffer::ImmutableBuffer::from_iter(
-                    verts
-                        .iter()
-                        .zip(uvs.into_iter())
-                        .map(|(pos, uv)| crate::renderer::textured::Vertex {
+                    verts.iter().zip(uvs.into_iter()).map(|(pos, uv)| {
+                        crate::renderer::textured::Vertex {
                             position: [pos.x, pos.y, pos.z],
                             uv: [uv.x, uv.y],
-                        }),
+                        }
+                    }),
                     vulkano::buffer::BufferUsage::vertex_buffer(),
                     vulkan.queue.clone(),
                 )?;
@@ -244,11 +243,13 @@ impl Assets {
                 let load_fut = vb_fut.join(ib_fut);
                 vulkan.wait_for(Box::new(load_fut));
 
-                let mid = self.textured_meshes.insert(crate::renderer::textured::Mesh {
-                    mesh,
-                    verts: vb,
-                    idx: ib,
-                });
+                let mid = self
+                    .textured_meshes
+                    .insert(crate::renderer::textured::Mesh {
+                        mesh,
+                        verts: vb,
+                        idx: ib,
+                    });
                 Ok(MeshRef(mid, PhantomData))
             })
             .collect();
@@ -341,7 +342,9 @@ impl Assets {
                         )
                         .unwrap();
                         vulkan.wait_for(Box::new(fut));
-                        let mat_ref = self.materials.insert(flat::Material::new(color,name,buffer));
+                        let mat_ref = self
+                            .materials
+                            .insert(flat::Material::new(color, name, buffer));
                         let mat_ref = MaterialRef(mat_ref, PhantomData);
                         e.insert(mat_ref);
                         mat_ref
@@ -388,10 +391,7 @@ impl Assets {
                     verts: vb,
                     idx: ib,
                 });
-                Ok((
-                    MeshRef(mid, PhantomData),
-                    mat
-                ))
+                Ok((MeshRef(mid, PhantomData), mat))
             })
             .collect();
         let meshes = meshes?;

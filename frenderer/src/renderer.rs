@@ -2,11 +2,11 @@ pub mod flat;
 pub mod skinned;
 pub mod sprites;
 pub mod textured;
-use std::rc::Rc;
 use crate::animation;
 use crate::assets;
 use crate::types::*;
 use std::collections::HashMap;
+use std::rc::Rc;
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct RenderKey(usize);
 
@@ -22,7 +22,7 @@ impl RenderState {
             skinned: HashMap::new(),
             sprites: HashMap::new(),
             flats: HashMap::new(),
-            textured:HashMap::new(),
+            textured: HashMap::new(),
         }
     }
     pub fn clear(&mut self) {
