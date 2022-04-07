@@ -5,6 +5,7 @@ pub mod textured;
 use crate::animation;
 use crate::assets;
 use crate::types::*;
+use crate::camera::Camera;
 use std::collections::HashMap;
 use std::rc::Rc;
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -15,15 +16,23 @@ pub struct RenderState {
     sprites: HashMap<RenderKey, sprites::SingleRenderState>,
     flats: HashMap<RenderKey, flat::SingleRenderState>,
     textured: HashMap<RenderKey, textured::SingleRenderState>,
+    pub(crate) camera: Camera
 }
 impl RenderState {
-    pub fn new() -> Self {
+    pub fn new(cam:Camera) -> Self {
         Self {
             skinned: HashMap::new(),
             sprites: HashMap::new(),
             flats: HashMap::new(),
             textured: HashMap::new(),
+            camera:cam
         }
+    }
+    pub fn camera_mut(&mut self) -> &mut Camera {
+        &mut self.camera
+    }
+    pub fn set_camera(&mut self, c:Camera) {
+        self.camera = c;
     }
     pub fn clear(&mut self) {
         self.skinned.clear();
@@ -48,6 +57,7 @@ impl RenderState {
             let v0 = rs1.textured.get(k).unwrap_or(v1);
             self.textured.insert(*k, v0.interpolate(v1, r));
         }
+        self.camera = rs1.camera.interpolate(&rs2.camera,r);
     }
 
     pub fn render_skinned(

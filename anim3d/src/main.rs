@@ -27,6 +27,7 @@ struct Sprite {
     size: Vec2,
 }
 struct World {
+    camera:Camera,
     things: Vec<GameObject>,
     sprites: Vec<Sprite>,
     flats: Vec<Flat>,
@@ -42,111 +43,41 @@ struct Textured {
 }
 impl frenderer::World for World {
     fn update(&mut self, input: &frenderer::Input, _assets: &mut frenderer::assets::Assets) {
+        let yaw = input.key_axis(Key::Q, Key::W) * PI/4.0 * DT as f32;
+        let pitch = input.key_axis(Key::A, Key::S) * PI/4.0 * DT as f32;
+        let roll = input.key_axis(Key::Z, Key::X) * PI/4.0 * DT as f32;
+        let dscale = input.key_axis(Key::E, Key::R) * 1.0 * DT as f32;
+        let rot = Rotor3::from_euler_angles(roll, pitch, yaw);
         for obj in self.things.iter_mut() {
-            let yaw = if input.is_key_down(Key::Z) {
-                (PI / 4.0) * (1.0 / 60.0)
-            } else {
-                0.0
-            };
-            let pitch = if input.is_key_down(Key::X) {
-                (PI / 4.0) * (1.0 / 60.0)
-            } else {
-                0.0
-            };
-            let roll = if input.is_key_down(Key::C) {
-                (PI / 4.0) * (1.0 / 60.0)
-            } else {
-                0.0
-            };
-            let dscale = if input.is_key_down(Key::Up) {
-                1.0 / 60.0
-            } else {
-                0.0
-            };
-            obj.trf.rotation = Rotor3::from_euler_angles(roll, pitch, yaw) * obj.trf.rotation;
-            obj.trf.scale += dscale;
+
+            obj.trf.append_rotation(rot);
+            obj.trf.scale = (obj.trf.scale+dscale).max(0.01);
             // dbg!(obj.trf.rotation);
             obj.tick_animation();
         }
+
         for s in self.sprites.iter_mut() {
-            let yaw = if input.is_key_down(Key::A) {
-                (PI / 4.0) * (1.0 / 60.0)
-            } else {
-                0.0
-            };
-            let pitch = if input.is_key_down(Key::S) {
-                (PI / 4.0) * (1.0 / 60.0)
-            } else {
-                0.0
-            };
-            let roll = if input.is_key_down(Key::D) {
-                (PI / 4.0) * (1.0 / 60.0)
-            } else {
-                0.0
-            };
-            let dscale = if input.is_key_down(Key::F) {
-                1.0 / 60.0
-            } else {
-                0.0
-            };
-            s.trf.rotation = Rotor3::from_euler_angles(roll, pitch, yaw) * s.trf.rotation;
+            s.trf.append_rotation(rot);
             s.size.x += dscale;
             s.size.y += dscale;
         }
         for m in self.flats.iter_mut() {
-            let yaw = if input.is_key_down(Key::Q) {
-                (PI / 4.0) * (1.0 / 60.0)
-            } else {
-                0.0
-            };
-            let pitch = if input.is_key_down(Key::W) {
-                (PI / 4.0) * (1.0 / 60.0)
-            } else {
-                0.0
-            };
-            let roll = if input.is_key_down(Key::E) {
-                (PI / 4.0) * (1.0 / 60.0)
-            } else {
-                0.0
-            };
-            let dscale = if input.is_key_down(Key::R) {
-                1.0 / 60.0
-            } else {
-                0.0
-            };
-            m.trf.rotation = Rotor3::from_euler_angles(roll, pitch, yaw) * m.trf.rotation;
+            m.trf.append_rotation(rot);
             m.trf.scale += dscale;
         }
         for m in self.textured.iter_mut() {
-            let yaw = if input.is_key_down(Key::U) {
-                (PI / 4.0) * (1.0 / 60.0)
-            } else {
-                0.0
-            };
-            let pitch = if input.is_key_down(Key::I) {
-                (PI / 4.0) * (1.0 / 60.0)
-            } else {
-                0.0
-            };
-            let roll = if input.is_key_down(Key::O) {
-                (PI / 4.0) * (1.0 / 60.0)
-            } else {
-                0.0
-            };
-            let dscale = if input.is_key_down(Key::P) {
-                1.0 / 60.0
-            } else {
-                0.0
-            };
-            m.trf.rotation = Rotor3::from_euler_angles(roll, pitch, yaw) * m.trf.rotation;
+            m.trf.append_rotation(rot);
             m.trf.scale += dscale;
         }
+        let camera_drot = input.key_axis(Key::Left, Key::Right) * PI/4.0 * DT as f32;
+        self.camera.transform.prepend_rotation(Rotor3::from_rotation_xz(camera_drot));
     }
     fn render(
         &mut self,
         _a: &mut frenderer::assets::Assets,
         rs: &mut frenderer::renderer::RenderState,
     ) {
+        rs.set_camera(self.camera);
         for (obj_i, obj) in self.things.iter_mut().enumerate() {
             rs.render_skinned(obj.model.clone(), obj.animation, obj.state, obj.trf, obj_i);
         }
@@ -166,11 +97,11 @@ fn main() -> Result<()> {
 
     let mut engine: Engine = Engine::new(WindowSettings::default(), DT);
 
-    engine.set_camera(Camera::look_at(
+    let camera = Camera::look_at(
         Vec3::new(0., 0., 100.),
         Vec3::new(0., 0., 0.),
         Vec3::new(0., 1., 0.),
-    ));
+    );
 
     let marble_tex = engine.load_texture(std::path::Path::new("content/sphere-diffuse.jpg"))?;
     let marble_meshes = engine.load_textured(std::path::Path::new("content/sphere.obj"))?;
@@ -194,6 +125,7 @@ fn main() -> Result<()> {
     let model = engine.create_skinned_model(meshes, vec![tex]);
     let flat_model = engine.load_flat(std::path::Path::new("content/windmill.glb"))?;
     let world = World {
+        camera,
         things: vec![GameObject {
             trf: Similarity3::new(Vec3::new(-20.0, -15.0, -10.0), Rotor3::identity(), 0.1),
             model,

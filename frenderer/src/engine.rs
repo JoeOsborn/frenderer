@@ -1,9 +1,7 @@
 use crate::animation;
 use crate::assets::{self, Assets};
-use crate::camera::Camera;
 use crate::input::Input;
 use crate::renderer;
-use crate::types::*;
 use crate::vulkan::Vulkan;
 use color_eyre::eyre::Result;
 use std::rc::Rc;
@@ -30,7 +28,6 @@ impl Default for WindowSettings {
 pub struct Engine {
     assets: Assets,
     event_loop: Option<EventLoop<()>>,
-    camera: Camera,
     vulkan: Vulkan,
     input: Input,
     // 1 is new, 0 is old
@@ -47,11 +44,14 @@ pub struct Engine {
 
 impl Engine {
     pub fn new(ws: WindowSettings, dt: f64) -> Self {
+        use crate::camera::Camera;
+        use crate::types::Vec3;
         let event_loop = EventLoop::new();
         let wb = WindowBuilder::new()
             .with_inner_size(winit::dpi::LogicalSize::new(ws.w as f32, ws.h as f32))
             .with_title(ws.title);
         let input = Input::new();
+        let default_cam = Camera::look_at(Vec3::new(0., 0., 0.), Vec3::new(0., 0., 1.), Vec3::unit_y());
         let mut vulkan = Vulkan::new(wb, &event_loop);
         Self {
             assets: Assets::new(),
@@ -61,20 +61,16 @@ impl Engine {
             flat_renderer: crate::renderer::flat::Renderer::new(&mut vulkan),
             vulkan,
             render_states: [
-                crate::renderer::RenderState::new(),
-                crate::renderer::RenderState::new(),
+                crate::renderer::RenderState::new(default_cam.clone()),
+                crate::renderer::RenderState::new(default_cam.clone()),
             ],
-            interpolated_state: crate::renderer::RenderState::new(),
+            interpolated_state: crate::renderer::RenderState::new(default_cam),
             dt,
             event_loop: Some(event_loop),
-            camera: Camera::look_at(Vec3::new(0., 0., 0.), Vec3::new(0., 0., 1.), Vec3::unit_y()),
             input,
             acc: 0.0,
             last_frame: std::time::Instant::now(),
         }
-    }
-    pub fn set_camera(&mut self, cam: Camera) {
-        self.camera = cam;
     }
     pub fn play(mut self, mut w: impl crate::World + 'static) -> Result<()> {
         let ev = self.event_loop.take().unwrap();
@@ -148,18 +144,24 @@ impl Engine {
         .unwrap();
         let r = (self.acc / self.dt) as f32;
         // let r = 1.0;
-        self.camera
-            .set_ratio(vulkan.viewport.dimensions[0] / vulkan.viewport.dimensions[1]);
+        let ar = vulkan.viewport.dimensions[0] / vulkan.viewport.dimensions[1];
+        self.interpolated_state
+            .camera_mut()
+            .set_ratio(ar);
+        for rs in self.render_states.iter_mut() {
+            rs.camera_mut().set_ratio(ar);
+        }
         self.interpolated_state
             .interpolate_from(&self.render_states[0], &self.render_states[1], r);
+
         self.skinned_renderer
-            .prepare(&self.interpolated_state, &self.assets, &self.camera);
+            .prepare(&self.interpolated_state, &self.assets, &self.interpolated_state.camera);
         self.sprites_renderer
-            .prepare(&self.interpolated_state, &self.assets, &self.camera);
+            .prepare(&self.interpolated_state, &self.assets, &self.interpolated_state.camera);
         self.flat_renderer
-            .prepare(&self.interpolated_state, &self.assets, &self.camera);
+            .prepare(&self.interpolated_state, &self.assets, &self.interpolated_state.camera);
         self.textured_renderer
-            .prepare(&self.interpolated_state, &self.assets, &self.camera);
+            .prepare(&self.interpolated_state, &self.assets, &self.interpolated_state.camera);
 
         builder
             .begin_render_pass(
