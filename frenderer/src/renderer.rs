@@ -4,8 +4,8 @@ pub mod sprites;
 pub mod textured;
 use crate::animation;
 use crate::assets;
-use crate::types::*;
 use crate::camera::Camera;
+use crate::types::*;
 use std::collections::HashMap;
 use std::rc::Rc;
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -16,22 +16,22 @@ pub struct RenderState {
     sprites: HashMap<RenderKey, sprites::SingleRenderState>,
     flats: HashMap<RenderKey, flat::SingleRenderState>,
     textured: HashMap<RenderKey, textured::SingleRenderState>,
-    pub(crate) camera: Camera
+    pub(crate) camera: Camera,
 }
 impl RenderState {
-    pub fn new(cam:Camera) -> Self {
+    pub fn new(cam: Camera) -> Self {
         Self {
             skinned: HashMap::new(),
             sprites: HashMap::new(),
             flats: HashMap::new(),
             textured: HashMap::new(),
-            camera:cam
+            camera: cam,
         }
     }
     pub fn camera_mut(&mut self) -> &mut Camera {
         &mut self.camera
     }
-    pub fn set_camera(&mut self, c:Camera) {
+    pub fn set_camera(&mut self, c: Camera) {
         self.camera = c;
     }
     pub fn clear(&mut self) {
@@ -57,7 +57,7 @@ impl RenderState {
             let v0 = rs1.textured.get(k).unwrap_or(v1);
             self.textured.insert(*k, v0.interpolate(v1, r));
         }
-        self.camera = rs1.camera.interpolate(&rs2.camera,r);
+        self.camera = rs1.camera.interpolate(&rs2.camera, r);
     }
 
     pub fn render_skinned(
@@ -68,10 +68,13 @@ impl RenderState {
         transform: Similarity3,
         key: usize,
     ) {
-        self.skinned.insert(
-            RenderKey(key),
-            skinned::SingleRenderState::new(model, animation, state, transform),
-        );
+        assert!(self
+            .skinned
+            .insert(
+                RenderKey(key),
+                skinned::SingleRenderState::new(model, animation, state, transform),
+            )
+            .is_none());
     }
     pub fn render_textured(
         &mut self,
@@ -79,10 +82,13 @@ impl RenderState {
         transform: Similarity3,
         key: usize,
     ) {
-        self.textured.insert(
-            RenderKey(key),
-            textured::SingleRenderState::new(model, transform),
-        );
+        assert!(self
+            .textured
+            .insert(
+                RenderKey(key),
+                textured::SingleRenderState::new(model, transform),
+            )
+            .is_none());
     }
     pub fn render_sprite(
         &mut self,
@@ -92,15 +98,21 @@ impl RenderState {
         size: Vec2,
         key: usize,
     ) {
-        self.sprites.insert(
-            RenderKey(key),
-            sprites::SingleRenderState::new(tex, region, transform, size),
-        );
+        assert!(self
+            .sprites
+            .insert(
+                RenderKey(key),
+                sprites::SingleRenderState::new(tex, region, transform, size),
+            )
+            .is_none());
     }
     pub fn render_flat(&mut self, model: Rc<flat::Model>, transform: Similarity3, key: usize) {
-        self.flats.insert(
-            RenderKey(key),
-            flat::SingleRenderState::new(model, transform),
-        );
+        assert!(self
+            .flats
+            .insert(
+                RenderKey(key),
+                flat::SingleRenderState::new(model, transform),
+            )
+            .is_none());
     }
 }
