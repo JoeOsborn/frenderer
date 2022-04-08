@@ -103,6 +103,19 @@ impl Engine {
                 } => {
                     self.input.handle_key_event(in_event);
                 }
+                Event::WindowEvent {
+                    event: WindowEvent::MouseInput { state, button, .. },
+                    ..
+                } => {
+                    self.input.handle_mouse_button(state, button);
+                }
+                Event::WindowEvent {
+                    event: WindowEvent::CursorMoved { position, .. },
+                    ..
+                } => {
+                    self.input.handle_mouse_move(position);
+                }
+
                 Event::MainEventsCleared => {
                     // track DT, accumulator, ...
                     {

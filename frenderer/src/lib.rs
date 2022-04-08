@@ -7,7 +7,7 @@ mod engine;
 pub use engine::{Engine, WindowSettings};
 mod image;
 mod input;
-pub use input::{Input, Key};
+pub use input::{Input, Key, MousePos};
 pub mod renderer;
 pub mod types;
 mod vulkan;
