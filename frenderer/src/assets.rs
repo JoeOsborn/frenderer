@@ -27,6 +27,7 @@ pub struct Assets {
     flat_meshes: Arena<flat::Mesh>,
 }
 impl Assets {
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self {
             skinned_meshes: Arena::new(),
@@ -175,7 +176,7 @@ impl Assets {
                 Ok(MeshRef(mid, PhantomData))
             })
             .collect();
-        Ok(meshes?)
+        meshes
     }
     pub fn load_textured(
         &mut self,
@@ -253,7 +254,7 @@ impl Assets {
                 Ok(MeshRef(mid, PhantomData))
             })
             .collect();
-        Ok(meshes?)
+        meshes
     }
     pub fn load_anim(
         &mut self,
@@ -324,7 +325,7 @@ impl Assets {
                             None
                         }
                     })
-                    .unwrap_or("BLANK".to_string());
+                    .unwrap_or_else(|| "BLANK".to_string());
                 match self.materials_by_name.entry(name.clone()) {
                     std::collections::hash_map::Entry::Occupied(e) => {
                         println!(
@@ -423,7 +424,7 @@ impl Assets {
 pub struct MeshRef<M>(Index, PhantomData<M>);
 impl<M> Clone for MeshRef<M> {
     fn clone(&self) -> Self {
-        Self(self.0.clone(), PhantomData)
+        Self(self.0, PhantomData)
     }
 }
 impl<M> Copy for MeshRef<M> {}
@@ -445,7 +446,7 @@ impl<M> std::hash::Hash for MeshRef<M> {
 pub struct MaterialRef<M>(Index, PhantomData<M>);
 impl<M> Clone for MaterialRef<M> {
     fn clone(&self) -> Self {
-        Self(self.0.clone(), PhantomData)
+        Self(self.0, PhantomData)
     }
 }
 impl<M> Copy for MaterialRef<M> {}

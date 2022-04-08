@@ -23,9 +23,9 @@ impl Input {
     pub fn is_key_released(&self, kc: Key) -> bool {
         !self.now_keys[kc as usize] && self.prev_keys[kc as usize]
     }
-    pub fn key_axis(&self, down:Key, up:Key) -> f32 {
-        (if self.is_key_down(down) { -1.0 } else { 0.0 }) +
-            (if self.is_key_down(up) { 1.0 } else { 0.0 })
+    pub fn key_axis(&self, down: Key, up: Key) -> f32 {
+        (if self.is_key_down(down) { -1.0 } else { 0.0 })
+            + (if self.is_key_down(up) { 1.0 } else { 0.0 })
     }
     pub(crate) fn next_frame(&mut self) {
         self.prev_keys.copy_from_slice(&self.now_keys);

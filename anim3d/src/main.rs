@@ -27,7 +27,7 @@ struct Sprite {
     size: Vec2,
 }
 struct World {
-    camera:Camera,
+    camera: Camera,
     things: Vec<GameObject>,
     sprites: Vec<Sprite>,
     flats: Vec<Flat>,
@@ -43,15 +43,14 @@ struct Textured {
 }
 impl frenderer::World for World {
     fn update(&mut self, input: &frenderer::Input, _assets: &mut frenderer::assets::Assets) {
-        let yaw = input.key_axis(Key::Q, Key::W) * PI/4.0 * DT as f32;
-        let pitch = input.key_axis(Key::A, Key::S) * PI/4.0 * DT as f32;
-        let roll = input.key_axis(Key::Z, Key::X) * PI/4.0 * DT as f32;
+        let yaw = input.key_axis(Key::Q, Key::W) * PI / 4.0 * DT as f32;
+        let pitch = input.key_axis(Key::A, Key::S) * PI / 4.0 * DT as f32;
+        let roll = input.key_axis(Key::Z, Key::X) * PI / 4.0 * DT as f32;
         let dscale = input.key_axis(Key::E, Key::R) * 1.0 * DT as f32;
         let rot = Rotor3::from_euler_angles(roll, pitch, yaw);
         for obj in self.things.iter_mut() {
-
             obj.trf.append_rotation(rot);
-            obj.trf.scale = (obj.trf.scale+dscale).max(0.01);
+            obj.trf.scale = (obj.trf.scale + dscale).max(0.01);
             // dbg!(obj.trf.rotation);
             obj.tick_animation();
         }
@@ -69,8 +68,10 @@ impl frenderer::World for World {
             m.trf.append_rotation(rot);
             m.trf.scale += dscale;
         }
-        let camera_drot = input.key_axis(Key::Left, Key::Right) * PI/4.0 * DT as f32;
-        self.camera.transform.prepend_rotation(Rotor3::from_rotation_xz(camera_drot));
+        let camera_drot = input.key_axis(Key::Left, Key::Right) * PI / 4.0 * DT as f32;
+        self.camera
+            .transform
+            .prepend_rotation(Rotor3::from_rotation_xz(camera_drot));
     }
     fn render(
         &mut self,

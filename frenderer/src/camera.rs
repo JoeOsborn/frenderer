@@ -1,5 +1,5 @@
 use crate::types::*;
-#[derive(Clone,Copy,Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct Camera {
     pub transform: Similarity3,
     pub fov: f32,
@@ -22,15 +22,16 @@ impl Camera {
     }
     pub fn as_matrix(&self) -> Mat4 {
         // projection * view
-        let proj =
-            ultraviolet::projection::rh_yup::perspective_reversed_infinite_z_vk(self.fov, self.ratio, 0.1);
+        let proj = ultraviolet::projection::rh_yup::perspective_reversed_infinite_z_vk(
+            self.fov, self.ratio, 0.1,
+        );
         proj * self.transform.into_homogeneous_matrix()
     }
-    pub fn interpolate(&self, other:&Self, r:f32) -> Self {
+    pub fn interpolate(&self, other: &Self, r: f32) -> Self {
         Self {
-            transform:self.transform.lerp(&other.transform, r),
-            fov:self.fov.lerp(other.fov, r),
-            ratio:self.ratio.lerp(other.ratio, r)
+            transform: self.transform.lerp(&other.transform, r),
+            fov: self.fov.lerp(other.fov, r),
+            ratio: self.ratio.lerp(other.ratio, r),
         }
     }
 }

@@ -51,7 +51,8 @@ impl Engine {
             .with_inner_size(winit::dpi::LogicalSize::new(ws.w as f32, ws.h as f32))
             .with_title(ws.title);
         let input = Input::new();
-        let default_cam = Camera::look_at(Vec3::new(0., 0., 0.), Vec3::new(0., 0., 1.), Vec3::unit_y());
+        let default_cam =
+            Camera::look_at(Vec3::new(0., 0., 0.), Vec3::new(0., 0., 1.), Vec3::unit_y());
         let mut vulkan = Vulkan::new(wb, &event_loop);
         Self {
             assets: Assets::new(),
@@ -61,8 +62,8 @@ impl Engine {
             flat_renderer: crate::renderer::flat::Renderer::new(&mut vulkan),
             vulkan,
             render_states: [
-                crate::renderer::RenderState::new(default_cam.clone()),
-                crate::renderer::RenderState::new(default_cam.clone()),
+                crate::renderer::RenderState::new(default_cam),
+                crate::renderer::RenderState::new(default_cam),
             ],
             interpolated_state: crate::renderer::RenderState::new(default_cam),
             dt,
@@ -145,23 +146,33 @@ impl Engine {
         let r = (self.acc / self.dt) as f32;
         // let r = 1.0;
         let ar = vulkan.viewport.dimensions[0] / vulkan.viewport.dimensions[1];
-        self.interpolated_state
-            .camera_mut()
-            .set_ratio(ar);
+        self.interpolated_state.camera_mut().set_ratio(ar);
         for rs in self.render_states.iter_mut() {
             rs.camera_mut().set_ratio(ar);
         }
         self.interpolated_state
             .interpolate_from(&self.render_states[0], &self.render_states[1], r);
 
-        self.skinned_renderer
-            .prepare(&self.interpolated_state, &self.assets, &self.interpolated_state.camera);
-        self.sprites_renderer
-            .prepare(&self.interpolated_state, &self.assets, &self.interpolated_state.camera);
-        self.flat_renderer
-            .prepare(&self.interpolated_state, &self.assets, &self.interpolated_state.camera);
-        self.textured_renderer
-            .prepare(&self.interpolated_state, &self.assets, &self.interpolated_state.camera);
+        self.skinned_renderer.prepare(
+            &self.interpolated_state,
+            &self.assets,
+            &self.interpolated_state.camera,
+        );
+        self.sprites_renderer.prepare(
+            &self.interpolated_state,
+            &self.assets,
+            &self.interpolated_state.camera,
+        );
+        self.flat_renderer.prepare(
+            &self.interpolated_state,
+            &self.assets,
+            &self.interpolated_state.camera,
+        );
+        self.textured_renderer.prepare(
+            &self.interpolated_state,
+            &self.assets,
+            &self.interpolated_state.camera,
+        );
 
         builder
             .begin_render_pass(
