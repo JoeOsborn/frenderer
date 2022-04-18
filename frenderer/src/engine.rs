@@ -9,18 +9,39 @@ use winit::event::{Event, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
 
+#[derive(Default)]
+pub struct FrendererSettings {
+    pub window: WindowSettings,
+    pub sprite: SpriteRendererSettings,
+    pub _ne: NE,
+}
 pub struct WindowSettings {
     pub w: usize,
     pub h: usize,
     pub title: String,
+    pub _ne: NE,
 }
-
 impl Default for WindowSettings {
     fn default() -> Self {
         Self {
             w: 1024,
             h: 768,
             title: "Engine Window".to_string(),
+            _ne: NE(()),
+        }
+    }
+}
+pub struct SpriteRendererSettings {
+    pub cull_back_faces: bool,
+    pub _ne: NE,
+}
+#[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct NE(pub(crate) ());
+impl Default for SpriteRendererSettings {
+    fn default() -> Self {
+        Self {
+            cull_back_faces: true,
+            _ne: NE(()),
         }
     }
 }
@@ -43,9 +64,10 @@ pub struct Engine {
 }
 
 impl Engine {
-    pub fn new(ws: WindowSettings, dt: f64) -> Self {
+    pub fn new(fs: FrendererSettings, dt: f64) -> Self {
         use crate::camera::Camera;
         use crate::types::Vec3;
+        let ws = fs.window;
         let event_loop = EventLoop::new();
         let wb = WindowBuilder::new()
             .with_inner_size(winit::dpi::LogicalSize::new(ws.w as f32, ws.h as f32))
@@ -57,7 +79,10 @@ impl Engine {
         Self {
             assets: Assets::new(),
             skinned_renderer: crate::renderer::skinned::Renderer::new(&mut vulkan),
-            sprites_renderer: crate::renderer::sprites::Renderer::new(&mut vulkan),
+            sprites_renderer: crate::renderer::sprites::Renderer::new(
+                &mut vulkan,
+                fs.sprite.cull_back_faces,
+            ),
             textured_renderer: crate::renderer::textured::Renderer::new(&mut vulkan),
             flat_renderer: crate::renderer::flat::Renderer::new(&mut vulkan),
             vulkan,

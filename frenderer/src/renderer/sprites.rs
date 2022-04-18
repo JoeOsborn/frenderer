@@ -81,7 +81,7 @@ pub struct Renderer {
 }
 
 impl Renderer {
-    pub fn new(vulkan: &mut Vulkan) -> Self {
+    pub fn new(vulkan: &mut Vulkan, cull_back_faces: bool) -> Self {
         mod vs {
             vulkano_shaders::shader! {
                 ty: "vertex",
@@ -152,7 +152,11 @@ void main() {
             .fragment_shader(fs.entry_point("main").unwrap(), ())
             .rasterization_state(
                 RasterizationState::new()
-                    .cull_mode(vulkano::pipeline::graphics::rasterization::CullMode::Back)
+                    .cull_mode(if cull_back_faces {
+                        vulkano::pipeline::graphics::rasterization::CullMode::Back
+                    } else {
+                        vulkano::pipeline::graphics::rasterization::CullMode::None
+                    })
                     .front_face(
                         vulkano::pipeline::graphics::rasterization::FrontFace::CounterClockwise,
                     ),

@@ -4,7 +4,7 @@ pub mod animation;
 pub mod assets;
 pub mod camera;
 mod engine;
-pub use engine::{Engine, WindowSettings};
+pub use engine::{Engine, FrendererSettings, SpriteRendererSettings, WindowSettings};
 mod image;
 mod input;
 pub use input::{Input, Key, MousePos};

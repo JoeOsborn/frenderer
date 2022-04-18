@@ -4,7 +4,7 @@ use frenderer::animation::{AnimationSettings, AnimationState};
 use frenderer::assets::AnimRef;
 use frenderer::camera::Camera;
 use frenderer::types::*;
-use frenderer::{Engine, Key, Result, WindowSettings};
+use frenderer::{Engine, FrendererSettings, Key, Result, SpriteRendererSettings};
 use std::rc::Rc;
 
 const DT: f64 = 1.0 / 60.0;
@@ -96,7 +96,16 @@ impl frenderer::World for World {
 fn main() -> Result<()> {
     frenderer::color_eyre::install()?;
 
-    let mut engine: Engine = Engine::new(WindowSettings::default(), DT);
+    let mut engine: Engine = Engine::new(
+        FrendererSettings {
+            sprite: SpriteRendererSettings {
+                cull_back_faces: false,
+                ..SpriteRendererSettings::default()
+            },
+            ..FrendererSettings::default()
+        },
+        DT,
+    );
 
     let camera = Camera::look_at(
         Vec3::new(0., 0., 100.),
