@@ -2,10 +2,8 @@ pub mod flat;
 pub mod skinned;
 pub mod sprites;
 pub mod textured;
-use crate::animation;
 use crate::assets;
 use crate::camera::Camera;
-use crate::types::*;
 use std::collections::HashMap;
 use std::rc::Rc;
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -72,7 +70,7 @@ impl<T: Renderer> RenderTable<T> {
 }
 
 pub struct RenderState {
-    skinned: HashMap<RenderKey, skinned::SingleRenderState>,
+    skinned: RenderTable<skinned::Renderer>,
     sprites: RenderTable<sprites::Renderer>,
     flats: RenderTable<flat::Renderer>,
     textured: RenderTable<textured::Renderer>,
@@ -81,7 +79,7 @@ pub struct RenderState {
 impl RenderState {
     pub fn new(cam: Camera) -> Self {
         Self {
-            skinned: HashMap::new(),
+            skinned: RenderTable::new(),
             sprites: RenderTable::new(),
             flats: RenderTable::new(),
             textured: RenderTable::new(),
@@ -101,32 +99,27 @@ impl RenderState {
         self.textured.clear();
     }
     pub fn interpolate_from(&mut self, rs1: &Self, rs2: &Self, r: f32) {
-        for (k, v1) in rs2.skinned.iter() {
-            let v0 = rs1.skinned.get(k).unwrap_or(v1);
-            self.skinned.insert(*k, v0.interpolate(v1, r));
-        }
+        self.skinned.interpolate_from(&rs1.skinned, &rs2.skinned, r);
         self.sprites.interpolate_from(&rs1.sprites, &rs2.sprites, r);
         self.flats.interpolate_from(&rs1.flats, &rs2.flats, r);
         self.textured
             .interpolate_from(&rs1.textured, &rs2.textured, r);
         self.camera = rs1.camera.interpolate(&rs2.camera, r);
     }
-
     pub fn render_skinned(
         &mut self,
-        model: Rc<skinned::Model>,
-        animation: assets::AnimRef,
-        state: animation::AnimationState,
-        transform: Similarity3,
         key: usize,
+        model: Rc<skinned::Model>,
+        data: skinned::SingleRenderState,
     ) {
-        assert!(self
-            .skinned
-            .insert(
-                RenderKey(key),
-                skinned::SingleRenderState::new(model, animation, state, transform),
-            )
-            .is_none());
+        self.skinned.insert(RenderKey(key), model, data);
+    }
+    pub fn render_skinneds_raw(
+        &mut self,
+        model: Rc<skinned::Model>,
+        data: impl IntoIterator<Item = skinned::SingleRenderState>,
+    ) {
+        self.skinned.extend_raw(model, data);
     }
     pub fn render_textured(
         &mut self,

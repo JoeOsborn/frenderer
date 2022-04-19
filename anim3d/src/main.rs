@@ -3,7 +3,10 @@
 use frenderer::animation::{AnimationSettings, AnimationState};
 use frenderer::assets::AnimRef;
 use frenderer::camera::Camera;
+use frenderer::renderer::flat::SingleRenderState as FFlat;
+use frenderer::renderer::skinned::SingleRenderState as FSkinned;
 use frenderer::renderer::sprites::SingleRenderState as FSprite;
+use frenderer::renderer::textured::SingleRenderState as FTextured;
 use frenderer::types::*;
 use frenderer::{Engine, FrendererSettings, Key, Result, SpriteRendererSettings};
 use std::rc::Rc;
@@ -81,16 +84,20 @@ impl frenderer::World for World {
     ) {
         rs.set_camera(self.camera);
         for (obj_i, obj) in self.things.iter_mut().enumerate() {
-            rs.render_skinned(obj.model.clone(), obj.animation, obj.state, obj.trf, obj_i);
+            rs.render_skinned(
+                obj_i,
+                obj.model.clone(),
+                FSkinned::new(obj.animation, obj.state, obj.trf),
+            );
         }
         for (s_i, s) in self.sprites.iter_mut().enumerate() {
             rs.render_sprite(s_i, s.tex, FSprite::new(s.cel, s.trf, s.size));
         }
         for (m_i, m) in self.flats.iter_mut().enumerate() {
-            rs.render_flat(m.model.clone(), m.trf, m_i);
+            rs.render_flat(m_i, m.model.clone(), FFlat::new(m.trf));
         }
         for (t_i, t) in self.textured.iter_mut().enumerate() {
-            rs.render_textured(t.model.clone(), t.trf, t_i);
+            rs.render_textured(t_i, t.model.clone(), FTextured::new(t.trf));
         }
     }
 }
