@@ -66,7 +66,7 @@ impl<T: Renderer> RenderTable<T> {
             self.raw
                 .entry(k.clone())
                 .or_insert(vec![])
-                .extend(vs.into_iter().cloned());
+                .extend(vs.iter().cloned());
         }
     }
 }
@@ -74,8 +74,8 @@ impl<T: Renderer> RenderTable<T> {
 pub struct RenderState {
     skinned: HashMap<RenderKey, skinned::SingleRenderState>,
     sprites: RenderTable<sprites::Renderer>,
-    flats: HashMap<RenderKey, flat::SingleRenderState>,
-    textured: HashMap<RenderKey, textured::SingleRenderState>,
+    flats: RenderTable<flat::Renderer>,
+    textured: RenderTable<textured::Renderer>,
     pub(crate) camera: Camera,
 }
 impl RenderState {
@@ -83,8 +83,8 @@ impl RenderState {
         Self {
             skinned: HashMap::new(),
             sprites: RenderTable::new(),
-            flats: HashMap::new(),
-            textured: HashMap::new(),
+            flats: RenderTable::new(),
+            textured: RenderTable::new(),
             camera: cam,
         }
     }
@@ -106,14 +106,9 @@ impl RenderState {
             self.skinned.insert(*k, v0.interpolate(v1, r));
         }
         self.sprites.interpolate_from(&rs1.sprites, &rs2.sprites, r);
-        for (k, v1) in rs2.flats.iter() {
-            let v0 = rs1.flats.get(k).unwrap_or(v1);
-            self.flats.insert(*k, v0.interpolate(v1, r));
-        }
-        for (k, v1) in rs2.textured.iter() {
-            let v0 = rs1.textured.get(k).unwrap_or(v1);
-            self.textured.insert(*k, v0.interpolate(v1, r));
-        }
+        self.flats.interpolate_from(&rs1.flats, &rs2.flats, r);
+        self.textured
+            .interpolate_from(&rs1.textured, &rs2.textured, r);
         self.camera = rs1.camera.interpolate(&rs2.camera, r);
     }
 
@@ -135,17 +130,18 @@ impl RenderState {
     }
     pub fn render_textured(
         &mut self,
-        model: Rc<textured::Model>,
-        transform: Similarity3,
         key: usize,
+        model: Rc<textured::Model>,
+        data: textured::SingleRenderState,
     ) {
-        assert!(self
-            .textured
-            .insert(
-                RenderKey(key),
-                textured::SingleRenderState::new(model, transform),
-            )
-            .is_none());
+        self.textured.insert(RenderKey(key), model, data);
+    }
+    pub fn render_textureds_raw(
+        &mut self,
+        model: Rc<textured::Model>,
+        data: impl IntoIterator<Item = textured::SingleRenderState>,
+    ) {
+        self.textured.extend_raw(model, data);
     }
     pub fn render_sprite(
         &mut self,
@@ -162,13 +158,19 @@ impl RenderState {
     ) {
         self.sprites.extend_raw(tex, data);
     }
-    pub fn render_flat(&mut self, model: Rc<flat::Model>, transform: Similarity3, key: usize) {
-        assert!(self
-            .flats
-            .insert(
-                RenderKey(key),
-                flat::SingleRenderState::new(model, transform),
-            )
-            .is_none());
+    pub fn render_flat(
+        &mut self,
+        key: usize,
+        model: Rc<flat::Model>,
+        data: flat::SingleRenderState,
+    ) {
+        self.flats.insert(RenderKey(key), model, data);
+    }
+    pub fn render_flats_raw(
+        &mut self,
+        model: Rc<flat::Model>,
+        data: impl IntoIterator<Item = flat::SingleRenderState>,
+    ) {
+        self.flats.extend_raw(model, data);
     }
 }

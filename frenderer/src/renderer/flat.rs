@@ -67,18 +67,18 @@ pub struct Mesh {
     pub verts: Arc<ImmutableBuffer<[Vertex]>>,
     pub idx: Arc<ImmutableBuffer<[u32]>>,
 }
-
+#[derive(Clone)]
 pub struct SingleRenderState {
-    model: Rc<Model>,
     transform: Similarity3,
 }
 impl SingleRenderState {
-    pub fn new(model: Rc<Model>, transform: Similarity3) -> Self {
-        Self { model, transform }
+    pub fn new(transform: Similarity3) -> Self {
+        Self { transform }
     }
-    pub fn interpolate(&self, other: &Self, r: f32) -> Self {
+}
+impl super::SingleRenderState for SingleRenderState {
+    fn interpolate(&self, other: &Self, r: f32) -> Self {
         Self {
-            model: other.model.clone(),
             transform: self.transform.lerp(&other.transform, r),
         }
     }
@@ -108,6 +108,11 @@ pub struct Renderer {
     uniform_binding: Option<Arc<SingleLayoutDescSet>>,
     instance_pool: CpuBufferPool<InstanceData, Arc<vulkano::memory::pool::StdMemoryPool>>,
     batches: HashMap<ModelKey, BatchData>,
+}
+
+impl super::Renderer for Renderer {
+    type BatchRenderKey = Rc<Model>;
+    type SingleRenderState = SingleRenderState;
 }
 
 impl Renderer {
@@ -200,24 +205,24 @@ void main() {
             uniform_binding: None,
         }
     }
-    pub(crate) fn push_model(
+    pub(crate) fn push_models<'a>(
         &mut self,
         key: ModelKey,
         mesh: &Mesh,
         material: &Material,
-        trf: Similarity3,
+        data: impl IntoIterator<Item = &'a SingleRenderState>,
     ) {
         use std::collections::hash_map::Entry;
-        let inst = InstanceData {
-            model: *trf.into_homogeneous_matrix().as_array(),
-        };
+        let insts = data.into_iter().map(|d| InstanceData {
+            model: *d.transform.into_homogeneous_matrix().as_array(),
+        });
         match self.batches.entry(key) {
             Entry::Vacant(v) => {
                 let mut b = Self::create_batch(self.pipeline.clone(), mesh, material);
-                b.push_instance(inst);
+                b.push_instances(insts);
                 v.insert(b);
             }
-            Entry::Occupied(v) => v.into_mut().push_instance(inst),
+            Entry::Occupied(v) => v.into_mut().push_instances(insts),
         }
     }
     fn create_batch(
@@ -241,11 +246,18 @@ void main() {
         }
     }
     pub fn prepare(&mut self, rs: &super::RenderState, assets: &assets::Assets, camera: &Camera) {
-        for v in rs.flats.values() {
-            for (meshr, matr) in v.model.meshes.iter().zip(v.model.materials.iter()) {
+        for (model, v) in rs.flats.interpolated.values() {
+            for (meshr, matr) in model.meshes.iter().zip(model.materials.iter()) {
                 let mesh = assets.flat_mesh(*meshr);
                 let mat = assets.material(*matr);
-                self.push_model(ModelKey(*meshr, *matr), mesh, mat, v.transform);
+                self.push_models(ModelKey(*meshr, *matr), mesh, mat, std::iter::once(v));
+            }
+        }
+        for (model, vs) in rs.flats.raw.iter() {
+            for (meshr, matr) in model.meshes.iter().zip(model.materials.iter()) {
+                let mesh = assets.flat_mesh(*meshr);
+                let mat = assets.material(*matr);
+                self.push_models(ModelKey(*meshr, *matr), mesh, mat, vs.iter());
             }
         }
         self.prepare_draw(camera);
@@ -330,7 +342,7 @@ impl BatchData {
     fn is_empty(&self) -> bool {
         self.instance_data.is_empty()
     }
-    fn push_instance(&mut self, inst: InstanceData) {
-        self.instance_data.push(inst);
+    fn push_instances(&mut self, insts: impl IntoIterator<Item = InstanceData>) {
+        self.instance_data.extend(insts);
     }
 }

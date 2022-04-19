@@ -38,7 +38,7 @@ pub struct Mesh {
     pub idx: Arc<ImmutableBuffer<[u32]>>,
 }
 impl Mesh {}
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct Model {
     meshes: Vec<assets::MeshRef<Mesh>>,
     textures: Vec<assets::TextureRef>,
@@ -54,19 +54,20 @@ impl Model {
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct ModelKey(assets::MeshRef<Mesh>, assets::TextureRef);
 
+#[derive(Clone)]
 pub struct SingleRenderState {
-    model: Rc<Model>,
     transform: Similarity3,
 }
-impl SingleRenderState {
-    pub(crate) fn new(model: Rc<Model>, transform: Similarity3) -> Self {
-        Self { model, transform }
-    }
-    pub fn interpolate(&self, other: &Self, r: f32) -> Self {
+impl super::SingleRenderState for SingleRenderState {
+    fn interpolate(&self, other: &Self, r: f32) -> Self {
         Self {
-            model: other.model.clone(),
             transform: self.transform.lerp(&other.transform, r),
         }
+    }
+}
+impl SingleRenderState {
+    pub fn new(transform: Similarity3) -> Self {
+        Self { transform }
     }
 }
 
@@ -96,6 +97,10 @@ pub struct Renderer {
     uniform_binding: Option<Arc<SingleLayoutDescSet>>,
     instance_pool: CpuBufferPool<InstanceData, Arc<vulkano::memory::pool::StdMemoryPool>>,
     batches: HashMap<ModelKey, BatchData>,
+}
+impl super::Renderer for Renderer {
+    type BatchRenderKey = Rc<Model>;
+    type SingleRenderState = SingleRenderState;
 }
 
 impl Renderer {
@@ -198,25 +203,25 @@ void main() {
             uniform_binding: None,
         }
     }
-    pub(crate) fn push_model(
+    pub(crate) fn push_models<'a>(
         &mut self,
         key: ModelKey,
         mesh: &Mesh,
         texture: &Texture,
-        trf: Similarity3,
+        data: impl IntoIterator<Item = &'a SingleRenderState>,
     ) {
         use std::collections::hash_map::Entry;
-        let inst = InstanceData {
-            model: *trf.into_homogeneous_matrix().as_array(),
-        };
+        let insts = data.into_iter().map(|d| InstanceData {
+            model: *d.transform.into_homogeneous_matrix().as_array(),
+        });
         match self.batches.entry(key) {
             Entry::Vacant(v) => {
                 let mut b =
                     Self::create_batch(self.pipeline.clone(), self.sampler.clone(), mesh, texture);
-                b.push_instance(inst);
+                b.push_instances(insts);
                 v.insert(b);
             }
-            Entry::Occupied(v) => v.into_mut().push_instance(inst),
+            Entry::Occupied(v) => v.into_mut().push_instances(insts),
         }
     }
     fn create_batch(
@@ -245,11 +250,18 @@ void main() {
         }
     }
     pub fn prepare(&mut self, rs: &RenderState, assets: &assets::Assets, camera: &Camera) {
-        for v in rs.textured.values() {
-            for (meshr, texr) in v.model.meshes.iter().zip(v.model.textures.iter()) {
+        for (model, v) in rs.textured.interpolated.values() {
+            for (meshr, texr) in model.meshes.iter().zip(model.textures.iter()) {
                 let mesh = assets.textured_mesh(*meshr);
                 let tex = assets.texture(*texr);
-                self.push_model(ModelKey(*meshr, *texr), mesh, tex, v.transform);
+                self.push_models(ModelKey(*meshr, *texr), mesh, tex, std::iter::once(v));
+            }
+        }
+        for (model, vs) in rs.textured.raw.iter() {
+            for (meshr, texr) in model.meshes.iter().zip(model.textures.iter()) {
+                let mesh = assets.textured_mesh(*meshr);
+                let tex = assets.texture(*texr);
+                self.push_models(ModelKey(*meshr, *texr), mesh, tex, vs.iter());
             }
         }
         self.prepare_draw(camera);
@@ -334,7 +346,7 @@ impl BatchData {
     fn is_empty(&self) -> bool {
         self.instance_data.is_empty()
     }
-    fn push_instance(&mut self, inst: InstanceData) {
-        self.instance_data.push(inst);
+    fn push_instances(&mut self, insts: impl IntoIterator<Item = InstanceData>) {
+        self.instance_data.extend(insts);
     }
 }
