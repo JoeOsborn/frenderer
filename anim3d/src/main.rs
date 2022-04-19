@@ -3,6 +3,7 @@
 use frenderer::animation::{AnimationSettings, AnimationState};
 use frenderer::assets::AnimRef;
 use frenderer::camera::Camera;
+use frenderer::renderer::sprites::SingleRenderState as FSprite;
 use frenderer::types::*;
 use frenderer::{Engine, FrendererSettings, Key, Result, SpriteRendererSettings};
 use std::rc::Rc;
@@ -83,7 +84,7 @@ impl frenderer::World for World {
             rs.render_skinned(obj.model.clone(), obj.animation, obj.state, obj.trf, obj_i);
         }
         for (s_i, s) in self.sprites.iter_mut().enumerate() {
-            rs.render_sprite(s.tex, s.cel, s.trf, s.size, s_i);
+            rs.render_sprite(s_i, s.tex, FSprite::new(s.cel, s.trf, s.size));
         }
         for (m_i, m) in self.flats.iter_mut().enumerate() {
             rs.render_flat(m.model.clone(), m.trf, m_i);
