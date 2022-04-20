@@ -2,7 +2,7 @@
 
 use frenderer::animation::{AnimationSettings, AnimationState};
 use frenderer::assets::AnimRef;
-use frenderer::camera::Camera;
+use frenderer::camera::{Camera, Projection};
 use frenderer::renderer::flat::SingleRenderState as FFlat;
 use frenderer::renderer::skinned::SingleRenderState as FSkinned;
 use frenderer::renderer::sprites::SingleRenderState as FSprite;
@@ -116,10 +116,33 @@ fn main() -> Result<()> {
     );
 
     let camera = Camera::look_at(
-        Vec3::new(0., 0., 100.),
-        Vec3::new(0., 0., 0.),
-        Vec3::new(0., 1., 0.),
+        Vec3::new(0.0, 0.0, 100.0),
+        Vec3::new(0.0, 0.0, 0.0),
+        Vec3::unit_y(),
+        Projection::Perspective { fov: (PI / 2.0) },
     );
+
+    // let camera = Camera::look_at(
+    //     Vec3::new(0.0, 500.0, 0.0),
+    //     Vec3::new(0.0, 0.0, 0.0),
+    //     -Vec3::unit_z(),
+    //     Projection::Orthographic {
+    //         width: 1000.0,
+    //         depth: 1000.0,
+    //     },
+    // );
+
+    // let camera = Camera::from_transform(
+    //     Similarity3::new(
+    //         Vec3::new(0.0, 0.0, -500.0),
+    //         Rotor3::from_rotation_yz(PI / 2.0),
+    //         1.0,
+    //     ),
+    //     Projection::Orthographic {
+    //         width: 1000.0,
+    //         depth: 1000.0,
+    //     },
+    // );
 
     let marble_tex = engine
         .assets()

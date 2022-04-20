@@ -63,7 +63,7 @@ pub struct Engine {
 
 impl Engine {
     pub fn new(fs: FrendererSettings, dt: f64) -> Self {
-        use crate::camera::Camera;
+        use crate::camera::{Camera, Projection};
         use crate::types::Vec3;
         let ws = fs.window;
         let event_loop = EventLoop::new();
@@ -71,8 +71,14 @@ impl Engine {
             .with_inner_size(winit::dpi::LogicalSize::new(ws.w as f32, ws.h as f32))
             .with_title(ws.title);
         let input = Input::new();
-        let default_cam =
-            Camera::look_at(Vec3::new(0., 0., 0.), Vec3::new(0., 0., 1.), Vec3::unit_y());
+        let default_cam = Camera::look_at(
+            Vec3::new(0., 0., 0.),
+            Vec3::new(0., 0., 1.),
+            Vec3::unit_y(),
+            Projection::Perspective {
+                fov: crate::types::PI / 2.0,
+            },
+        );
         let vulkan = Rc::new(RefCell::new(Vulkan::new(wb, &event_loop)));
         let assets = Assets::new(Rc::clone(&vulkan));
         let mut vulk = vulkan.borrow_mut();
