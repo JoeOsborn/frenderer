@@ -29,9 +29,9 @@ impl Camera {
     }
     pub fn interpolate(&self, other: &Self, r: f32) -> Self {
         Self {
-            transform: self.transform.lerp(&other.transform, r),
-            fov: self.fov.lerp(other.fov, r),
-            ratio: self.ratio.lerp(other.ratio, r),
+            transform: self.transform.interpolate(&other.transform, r),
+            fov: self.fov.interpolate(&other.fov, r),
+            ratio: self.ratio.interpolate(&other.ratio, r),
         }
     }
 }

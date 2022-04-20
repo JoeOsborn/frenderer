@@ -254,13 +254,21 @@ pub struct AnimationState {
     pub t: f32,
 }
 impl AnimationState {
-    pub fn interpolate(&self, other: &Self, r: f32) -> Self {
-        Self {
-            t: self.t.lerp(other.t, r),
-        }
-    }
     pub fn tick(&mut self, dt: f64) {
         self.t += dt as f32;
+    }
+}
+impl Interpolate for AnimationState {
+    fn interpolate(&self, other: &Self, r: f32) -> Self {
+        Self {
+            t: self.t.interpolate(&other.t, r),
+        }
+    }
+
+    fn interpolate_limit(&self, other: &Self, r: f32, lim: f32) -> Self {
+        Self {
+            t: self.t.interpolate_limit(&other.t, r, lim),
+        }
     }
 }
 #[derive(Clone, Copy, Debug)]

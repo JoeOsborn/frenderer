@@ -40,9 +40,9 @@ impl SingleRenderState {
 impl super::SingleRenderState for SingleRenderState {
     fn interpolate(&self, other: &Self, r: f32) -> Self {
         Self {
-            transform: self.transform.lerp(&other.transform, r),
-            size: self.size.lerp(other.size, r),
-            region: self.region.lerp(&other.region, r),
+            transform: self.transform.interpolate_limit(&other.transform, r, 10.0),
+            size: self.size.interpolate_limit(&other.size, r, 0.5),
+            region: other.region,
         }
     }
 }
