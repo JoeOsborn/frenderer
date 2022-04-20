@@ -5,10 +5,10 @@ use crate::renderer::{flat, skinned, textured};
 use crate::types::*;
 use crate::vulkan::Vulkan;
 use crate::Result;
-use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::rc::Rc;
 use std::sync::Arc;
+use std::{cell::RefCell, collections::HashMap};
 use thunderdome::{Arena, Index};
 use vulkano::image::immutable::ImmutableImage;
 use vulkano::sync::GpuFuture;
@@ -25,10 +25,11 @@ pub struct Assets {
     materials: Arena<flat::Material>,
     materials_by_name: HashMap<String, MaterialRef<flat::Material>>,
     flat_meshes: Arena<flat::Mesh>,
+    vulkan: Rc<RefCell<Vulkan>>,
 }
 impl Assets {
     #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
+    pub fn new(vulkan: Rc<RefCell<Vulkan>>) -> Self {
         Self {
             skinned_meshes: Arena::new(),
             textured_meshes: Arena::new(),
@@ -37,13 +38,11 @@ impl Assets {
             flat_meshes: Arena::new(),
             materials: Arena::new(),
             materials_by_name: HashMap::new(),
+            vulkan,
         }
     }
-    pub fn load_texture(
-        &mut self,
-        path: &std::path::Path,
-        vulkan: &mut Vulkan,
-    ) -> Result<TextureRef> {
+    pub fn load_texture(&mut self, path: &std::path::Path) -> Result<TextureRef> {
+        let mut vulkan = self.vulkan.borrow_mut();
         let img = Image::from_file(path)?;
         let (vulk_img, fut) = ImmutableImage::from_iter(
             img.as_slice().iter().copied(),
@@ -67,8 +66,8 @@ impl Assets {
         &mut self,
         path: &std::path::Path,
         node_root: &[&str],
-        vulkan: &mut Vulkan,
     ) -> Result<Vec<MeshRef<skinned::Mesh>>> {
+        let mut vulkan = self.vulkan.borrow_mut();
         use russimp::scene::{PostProcess, Scene};
         let scene = Scene::from_file(
             path.to_str()
@@ -181,8 +180,8 @@ impl Assets {
     pub fn load_textured(
         &mut self,
         path: &std::path::Path,
-        vulkan: &mut Vulkan,
     ) -> Result<Vec<MeshRef<textured::Mesh>>> {
+        let mut vulkan = self.vulkan.borrow_mut();
         use russimp::scene::{PostProcess, Scene};
         let scene = Scene::from_file(
             path.to_str()
@@ -283,11 +282,8 @@ impl Assets {
         let aid = self.animations.insert(anim);
         Ok(AnimRef(aid))
     }
-    pub fn load_flat(
-        &mut self,
-        path: &std::path::Path,
-        vulkan: &mut Vulkan,
-    ) -> Result<Rc<flat::Model>> {
+    pub fn load_flat(&mut self, path: &std::path::Path) -> Result<Rc<flat::Model>> {
+        let mut vulkan = self.vulkan.borrow_mut();
         use russimp::scene::{PostProcess, Scene};
         let scene = Scene::from_file(
             path.to_str()
@@ -402,6 +398,22 @@ impl Assets {
             meshes.iter().map(|(m, _)| m).copied().collect(),
             meshes.iter().map(|(_, m)| m).copied().collect(),
         )))
+    }
+    pub fn create_skinned_model(
+        &self,
+        meshes: Vec<MeshRef<skinned::Mesh>>,
+        textures: Vec<TextureRef>,
+    ) -> Rc<skinned::Model> {
+        assert_eq!(meshes.len(), textures.len());
+        Rc::new(skinned::Model::new(meshes, textures))
+    }
+    pub fn create_textured_model(
+        &self,
+        meshes: Vec<MeshRef<textured::Mesh>>,
+        textures: Vec<TextureRef>,
+    ) -> Rc<textured::Model> {
+        assert_eq!(meshes.len(), textures.len());
+        Rc::new(textured::Model::new(meshes, textures))
     }
     pub fn skinned_mesh(&self, m: MeshRef<skinned::Mesh>) -> &skinned::Mesh {
         &self.skinned_meshes[m.0]

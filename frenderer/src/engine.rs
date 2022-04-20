@@ -1,10 +1,8 @@
-use crate::animation;
-use crate::assets::{self, Assets};
+use crate::assets::Assets;
 use crate::input::Input;
-use crate::renderer;
 use crate::vulkan::Vulkan;
 use color_eyre::eyre::Result;
-use std::rc::Rc;
+use std::{cell::RefCell, rc::Rc};
 use winit::event::{Event, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::window::WindowBuilder;
@@ -49,7 +47,7 @@ impl Default for SpriteRendererSettings {
 pub struct Engine {
     assets: Assets,
     event_loop: Option<EventLoop<()>>,
-    vulkan: Vulkan,
+    vulkan: Rc<RefCell<Vulkan>>,
     input: Input,
     // 1 is new, 0 is old
     render_states: [crate::renderer::RenderState; 2],
@@ -75,16 +73,21 @@ impl Engine {
         let input = Input::new();
         let default_cam =
             Camera::look_at(Vec3::new(0., 0., 0.), Vec3::new(0., 0., 1.), Vec3::unit_y());
-        let mut vulkan = Vulkan::new(wb, &event_loop);
+        let vulkan = Rc::new(RefCell::new(Vulkan::new(wb, &event_loop)));
+        let assets = Assets::new(Rc::clone(&vulkan));
+        let mut vulk = vulkan.borrow_mut();
+        let sprites_renderer =
+            crate::renderer::sprites::Renderer::new(&mut vulk, fs.sprite.cull_back_faces);
+        let skinned_renderer = crate::renderer::skinned::Renderer::new(&mut vulk);
+        let textured_renderer = crate::renderer::textured::Renderer::new(&mut vulk);
+        let flat_renderer = crate::renderer::flat::Renderer::new(&mut vulk);
+        drop(vulk);
         Self {
-            assets: Assets::new(),
-            skinned_renderer: crate::renderer::skinned::Renderer::new(&mut vulkan),
-            sprites_renderer: crate::renderer::sprites::Renderer::new(
-                &mut vulkan,
-                fs.sprite.cull_back_faces,
-            ),
-            textured_renderer: crate::renderer::textured::Renderer::new(&mut vulkan),
-            flat_renderer: crate::renderer::flat::Renderer::new(&mut vulkan),
+            assets,
+            skinned_renderer,
+            sprites_renderer,
+            textured_renderer,
+            flat_renderer,
             vulkan,
             render_states: [
                 crate::renderer::RenderState::new(default_cam),
@@ -97,6 +100,9 @@ impl Engine {
             acc: 0.0,
             last_frame: std::time::Instant::now(),
         }
+    }
+    pub fn assets(&mut self) -> &mut Assets {
+        &mut self.assets
     }
     pub fn play(mut self, mut w: impl crate::World + 'static) -> Result<()> {
         let ev = self.event_loop.take().unwrap();
@@ -114,7 +120,7 @@ impl Engine {
                     event: WindowEvent::Resized(_),
                     ..
                 } => {
-                    self.vulkan.recreate_swapchain = true;
+                    self.vulkan.borrow_mut().recreate_swapchain = true;
                 }
                 // NewEvents: Let's start processing events.
                 Event::NewEvents(_) => {}
@@ -168,7 +174,7 @@ impl Engine {
             AutoCommandBufferBuilder, CommandBufferUsage, SubpassContents,
         };
 
-        let vulkan = &mut self.vulkan;
+        let mut vulkan = self.vulkan.borrow_mut();
         vulkan.recreate_swapchain_if_necessary();
         let image_num = vulkan.get_next_image();
         if image_num.is_none() {
@@ -230,49 +236,5 @@ impl Engine {
 
         let command_buffer = builder.build().unwrap();
         vulkan.execute_commands(command_buffer, image_num);
-    }
-    pub fn load_texture(&mut self, path: &std::path::Path) -> Result<assets::TextureRef> {
-        self.assets.load_texture(path, &mut self.vulkan)
-    }
-    pub fn load_skinned(
-        &mut self,
-        path: &std::path::Path,
-        node_root: &[&str],
-    ) -> Result<Vec<assets::MeshRef<renderer::skinned::Mesh>>> {
-        self.assets.load_skinned(path, node_root, &mut self.vulkan)
-    }
-    pub fn load_textured(
-        &mut self,
-        path: &std::path::Path,
-    ) -> Result<Vec<assets::MeshRef<renderer::textured::Mesh>>> {
-        self.assets.load_textured(path, &mut self.vulkan)
-    }
-    pub fn load_anim(
-        &mut self,
-        path: &std::path::Path,
-        mesh: assets::MeshRef<renderer::skinned::Mesh>,
-        settings: animation::AnimationSettings,
-        which: &str,
-    ) -> Result<assets::AnimRef> {
-        self.assets.load_anim(path, mesh, settings, which)
-    }
-    pub fn create_skinned_model(
-        &self,
-        meshes: Vec<assets::MeshRef<renderer::skinned::Mesh>>,
-        textures: Vec<assets::TextureRef>,
-    ) -> Rc<renderer::skinned::Model> {
-        assert_eq!(meshes.len(), textures.len());
-        Rc::new(renderer::skinned::Model::new(meshes, textures))
-    }
-    pub fn create_textured_model(
-        &self,
-        meshes: Vec<assets::MeshRef<renderer::textured::Mesh>>,
-        textures: Vec<assets::TextureRef>,
-    ) -> Rc<renderer::textured::Model> {
-        assert_eq!(meshes.len(), textures.len());
-        Rc::new(renderer::textured::Model::new(meshes, textures))
-    }
-    pub fn load_flat(&mut self, path: &std::path::Path) -> Result<Rc<renderer::flat::Model>> {
-        self.assets.load_flat(path, &mut self.vulkan)
     }
 }
