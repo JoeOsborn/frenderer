@@ -54,6 +54,7 @@ pub struct Engine {
     interpolated_state: crate::renderer::RenderState,
     skinned_renderer: crate::renderer::skinned::Renderer,
     sprites_renderer: crate::renderer::sprites::Renderer,
+    billboard_renderer: crate::renderer::billboard::Renderer,
     textured_renderer: crate::renderer::textured::Renderer,
     flat_renderer: crate::renderer::flat::Renderer,
     dt: f64,
@@ -84,6 +85,7 @@ impl Engine {
         let mut vulk = vulkan.borrow_mut();
         let sprites_renderer =
             crate::renderer::sprites::Renderer::new(&mut vulk, fs.sprite.cull_back_faces);
+        let billboard_renderer = crate::renderer::billboard::Renderer::new(&mut vulk);
         let skinned_renderer = crate::renderer::skinned::Renderer::new(&mut vulk);
         let textured_renderer = crate::renderer::textured::Renderer::new(&mut vulk);
         let flat_renderer = crate::renderer::flat::Renderer::new(&mut vulk);
@@ -92,6 +94,7 @@ impl Engine {
             assets,
             skinned_renderer,
             sprites_renderer,
+            billboard_renderer,
             textured_renderer,
             flat_renderer,
             vulkan,
@@ -223,6 +226,11 @@ impl Engine {
             &self.assets,
             &self.interpolated_state.camera,
         );
+        self.billboard_renderer.prepare(
+            &self.interpolated_state,
+            &self.assets,
+            &self.interpolated_state.camera,
+        );
 
         builder
             .begin_render_pass(
@@ -237,6 +245,7 @@ impl Engine {
         self.sprites_renderer.draw(&mut builder);
         self.flat_renderer.draw(&mut builder);
         self.textured_renderer.draw(&mut builder);
+        self.billboard_renderer.draw(&mut builder);
 
         builder.end_render_pass().unwrap();
 

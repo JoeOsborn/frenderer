@@ -26,22 +26,7 @@ impl Camera {
         self.ratio = r;
     }
     pub fn as_matrix(&self) -> Mat4 {
-        let proj = match self.projection {
-            Projection::Perspective { fov } => {
-                ultraviolet::projection::rh_yup::perspective_reversed_infinite_z_vk(
-                    fov, self.ratio, 0.1,
-                )
-            }
-            Projection::Orthographic { width, depth } => orthographic_reversed_z_vk(
-                -width / 2.0,
-                width / 2.0,
-                -(width / 2.0) / self.ratio,
-                (width / 2.0) / self.ratio,
-                0.1,
-                depth,
-            ),
-        };
-        proj * self.transform.into_homogeneous_matrix()
+        self.projection.as_matrix(self.ratio) * self.transform.into_homogeneous_matrix()
     }
     pub fn interpolate(&self, other: &Self, r: f32) -> Self {
         Self {
@@ -68,6 +53,21 @@ impl Projection {
                 depth: depth.interpolate(odepth, r),
             },
             (_, _) => *other,
+        }
+    }
+    pub fn as_matrix(&self, r: f32) -> Mat4 {
+        match self {
+            Projection::Perspective { fov } => {
+                ultraviolet::projection::rh_yup::perspective_reversed_infinite_z_vk(*fov, r, 0.1)
+            }
+            Projection::Orthographic { width, depth } => orthographic_reversed_z_vk(
+                -width / 2.0,
+                width / 2.0,
+                -(width / 2.0) / r,
+                (width / 2.0) / r,
+                0.1,
+                *depth,
+            ),
         }
     }
 }

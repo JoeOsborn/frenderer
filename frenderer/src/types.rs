@@ -7,7 +7,8 @@ pub use ultraviolet::transform::{Isometry3, Similarity3};
 pub use ultraviolet::vec::{Vec2, Vec3, Vec4};
 pub use ultraviolet::Lerp;
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[repr(C)]
+#[derive(Clone, Copy, Zeroable, Default, Pod, Debug, PartialEq)]
 pub struct Rect {
     pub pos: Vec2,
     pub sz: Vec2,

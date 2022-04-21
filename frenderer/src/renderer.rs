@@ -1,3 +1,4 @@
+pub mod billboard;
 pub mod flat;
 pub mod skinned;
 pub mod sprites;
@@ -72,6 +73,7 @@ impl<T: Renderer> RenderTable<T> {
 pub struct RenderState {
     skinned: RenderTable<skinned::Renderer>,
     sprites: RenderTable<sprites::Renderer>,
+    billboards: RenderTable<billboard::Renderer>,
     flats: RenderTable<flat::Renderer>,
     textured: RenderTable<textured::Renderer>,
     pub(crate) camera: Camera,
@@ -81,6 +83,7 @@ impl RenderState {
         Self {
             skinned: RenderTable::new(),
             sprites: RenderTable::new(),
+            billboards: RenderTable::new(),
             flats: RenderTable::new(),
             textured: RenderTable::new(),
             camera: cam,
@@ -95,12 +98,15 @@ impl RenderState {
     pub fn clear(&mut self) {
         self.skinned.clear();
         self.sprites.clear();
+        self.billboards.clear();
         self.flats.clear();
         self.textured.clear();
     }
     pub fn interpolate_from(&mut self, rs1: &Self, rs2: &Self, r: f32) {
         self.skinned.interpolate_from(&rs1.skinned, &rs2.skinned, r);
         self.sprites.interpolate_from(&rs1.sprites, &rs2.sprites, r);
+        self.billboards
+            .interpolate_from(&rs1.billboards, &rs2.billboards, r);
         self.flats.interpolate_from(&rs1.flats, &rs2.flats, r);
         self.textured
             .interpolate_from(&rs1.textured, &rs2.textured, r);
@@ -165,5 +171,20 @@ impl RenderState {
         data: impl IntoIterator<Item = flat::SingleRenderState>,
     ) {
         self.flats.extend_raw(model, data);
+    }
+    pub fn render_billboard(
+        &mut self,
+        key: usize,
+        (tex, mode): (assets::TextureRef, billboard::BlendMode),
+        data: billboard::SingleRenderState,
+    ) {
+        self.billboards.insert(RenderKey(key), (tex, mode), data);
+    }
+    pub fn render_billboards_raw(
+        &mut self,
+        (tex, mode): (assets::TextureRef, billboard::BlendMode),
+        data: impl IntoIterator<Item = billboard::SingleRenderState>,
+    ) {
+        self.billboards.extend_raw((tex, mode), data);
     }
 }
