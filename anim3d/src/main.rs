@@ -92,14 +92,14 @@ impl frenderer::World for World {
             );
         }
         for (s_i, s) in self.sprites.iter_mut().enumerate() {
-            // rs.render_sprite(s_i, s.tex, FSprite::new(s.cel, s.trf, s.size));
+            rs.render_sprite(s_i, s.tex, FSprite::new(s.cel, s.trf, s.size));
         }
         for (s_i, s) in self.sprites.iter_mut().enumerate() {
             use rand::prelude::*;
             let mut rng = rand::thread_rng();
             for i in 0..16 {
                 let random_offset = Vec3::new(rng.gen(), rng.gen(), rng.gen());
-                let random_rot: f32 = 3.0 * PI / 4.0; //rng.gen::<f32>() * PI / 8.0 - PI / 16.0;
+                let random_rot: f32 = rng.gen::<f32>() * PI / 4.0 - PI / 8.0;
                 let random_alpha: f32 = rng.gen::<f32>() * 0.2 + 0.1;
                 rs.render_billboard(
                     s_i * 16 + i,
