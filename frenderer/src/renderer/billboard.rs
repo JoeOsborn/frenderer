@@ -27,64 +27,49 @@ use vulkano::{
 #[repr(C)]
 #[derive(Clone, Copy, Zeroable, Default, Pod, Debug, PartialEq)]
 pub struct SingleRenderState {
-    uv_region: Rect,
+    pub uv_region: Rect,
 
-    position_rot: Vec4,
+    pub position: Vec3,
+    pub rot: f32,
 
-    size_alpha: Vec3,
+    pub size: Vec2,
+    pub rgba: [u8; 4],
 }
 #[repr(C)]
 #[derive(Clone, Copy, Zeroable, Default, Pod, Debug, PartialEq)]
 struct InstanceData {
     uv_region: [f32; 4],
     position_rot: [f32; 4],
-    size_alpha: [f32; 3],
+    size_rgba: [f32; 3], // 2 f32s for size, then one rgba u8;4 as an f32
 }
-vulkano::impl_vertex!(InstanceData, uv_region, position_rot, size_alpha);
+vulkano::impl_vertex!(InstanceData, uv_region, position_rot, size_rgba);
 
 impl SingleRenderState {
-    pub fn new(uv_region: Rect, position: Vec3, rot: f32, size: Vec2, alpha: f32) -> Self {
+    pub fn new(uv_region: Rect, position: Vec3, rot: f32, size: Vec2, rgba: [u8; 4]) -> Self {
         Self {
             uv_region,
-            position_rot: Vec4::new(position.x, position.y, position.z, rot),
-            size_alpha: Vec3::new(size.x, size.y, alpha),
+            position,
+            rot,
+            size,
+            rgba,
+        }
+    }
+    pub fn adjust_rgba(&mut self, rgba: [i16; 4]) {
+        for (old, new) in self.rgba.iter_mut().zip(rgba.iter()) {
+            *old = (*old as i16 + new).clamp(0, 255) as u8;
         }
     }
 }
 impl super::SingleRenderState for SingleRenderState {
-    fn interpolate(&self, other: &Self, r: f32) -> Self {
-        Self {
-            position_rot: {
-                let pos = self.position_rot.truncated().interpolate_limit(
-                    &other.position_rot.truncated(),
-                    r,
-                    10.0,
-                );
-                Vec4::new(
-                    pos.x,
-                    pos.y,
-                    pos.z,
-                    self.position_rot
-                        .w
-                        .interpolate_limit(&other.position_rot.w, r, PI / 4.0),
-                )
-            },
-            size_alpha: {
-                let sz = self.size_alpha.truncated().interpolate_limit(
-                    &other.size_alpha.truncated(),
-                    r,
-                    0.5,
-                );
-                Vec3::new(
-                    sz.x,
-                    sz.y,
-                    self.size_alpha
-                        .z
-                        .interpolate_limit(&other.size_alpha.z, r, 0.25),
-                )
-            },
-            uv_region: other.uv_region,
-        }
+    fn interpolate(&self, other: &Self, _r: f32) -> Self {
+        *other
+        //  Self {
+        //     position: self.position.interpolate_limit(&other.position, r, 10.0),
+        //     rot: self.rot.interpolate_limit(&other.rot, r, PI / 4.0),
+        //     size: self.size.interpolate_limit(&other.size, r, 0.5),
+        //     rgba: self.rgba.interpolate_limit(&other.rgba, r, 32),
+        //     uv_region: other.uv_region,
+        // }
     }
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -135,19 +120,26 @@ impl Renderer {
 // instance data
 layout(location = 0) in vec4 uv_region;
 layout(location = 1) in vec4 position_rot;
-layout(location = 2) in vec3 size_alpha;
+layout(location = 2) in vec3 size_rgba;
 
 // outputs
-layout(location = 0) out vec3 out_uv_a;
+layout(location = 0) out vec2 out_uv;
+layout(location = 1) out vec4 out_color;
 
 // uniforms
 layout(set=0, binding=0) uniform BatchData { mat4 view; mat4 proj; };
 
 void main() {
-  float w = size_alpha.x;
-  float h = size_alpha.y;
+  float w = size_rgba.x;
+  float h = size_rgba.y;
   float rot = position_rot.w;
-  float alpha = size_alpha.z;
+  uint rgba = floatBitsToUint(size_rgba.z);
+  vec4 color = vec4(
+    ((rgba&0x000000FF)/255.0),
+    ((rgba&0x0000FF00)>>8) / 255.0,
+    ((rgba&0x00FF0000)>>16) / 255.0,
+    ((rgba&0xFF000000)>>24)/255.0
+  );
 
   // 0: TL, 1: BL, 2: BR, 3: TR
   vec2 posns[] = {
@@ -164,12 +156,12 @@ void main() {
     pos.y*h*cos(rot)+pos.x*w*sin(rot)
   );
   gl_Position = proj * vec4(rot_pos.x+center.x,rot_pos.y+center.y,center.z,1.0);
-  out_uv_a = vec3(uv_corner.xy, alpha);
+  out_uv = uv_corner;
+  out_color = color;
 }
 "
             }
         }
-
         mod fs {
             vulkano_shaders::shader! {
                 ty: "fragment",
@@ -177,13 +169,13 @@ void main() {
 #version 450
 
 layout(set = 1, binding = 0) uniform sampler2D tex;
-layout(location = 0) in vec3 uv_a;
+layout(location = 0) in vec2 uv;
+layout(location = 1) in vec4 color;
 layout(location = 0) out vec4 f_color;
 
 void main() {
-  vec4 col = texture(tex, uv_a.xy);
+  vec4 col = texture(tex, uv)*color;
   if (col.a < 0.01) { discard; }
-  col.a *= uv_a.z;
   f_color = col;
 }
 "

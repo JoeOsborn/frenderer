@@ -97,10 +97,13 @@ impl frenderer::World for World {
         for (s_i, s) in self.sprites.iter_mut().enumerate() {
             use rand::prelude::*;
             let mut rng = rand::thread_rng();
-            for i in 0..16 {
+            for i in 0..8 {
                 let random_offset = Vec3::new(rng.gen(), rng.gen(), rng.gen());
                 let random_rot: f32 = rng.gen::<f32>() * PI / 4.0 - PI / 8.0;
-                let random_alpha: f32 = rng.gen::<f32>() * 0.2 + 0.1;
+                let mut random_color: [u8; 4] = rng.gen::<[u8; 4]>();
+                for c in random_color.iter_mut() {
+                    *c = (*c).max(32);
+                }
                 rs.render_billboard(
                     s_i * 16 + i,
                     (s.tex, FBlend::Additive),
@@ -109,7 +112,7 @@ impl frenderer::World for World {
                         s.trf.translation + random_offset,
                         random_rot,
                         s.size,
-                        random_alpha,
+                        random_color,
                     ),
                 );
             }
