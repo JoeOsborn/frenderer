@@ -100,6 +100,7 @@ layout(set=0, binding=0) uniform BatchData { mat4 viewproj; };
 void main() {
   float w = size_uv.x;
   float h = size_uv.y;
+  vec2 uv = size_uv.wz;
   // 0: TL, 1: BL, 2: BR, 3: TR
   vec2 posns[] = {
     vec2(-0.5, 0.5),
@@ -109,7 +110,7 @@ void main() {
   };
   vec2 pos = posns[gl_VertexIndex].xy;
   gl_Position = viewproj * model * vec4(pos.xy, 0.0, 1.0);
-  out_uv = vec2(size_uv.z,1.0-size_uv.w) + vec2(size_uv.x*(pos.x+0.5),size_uv.y*(1.0-(pos.y+0.5)));
+  out_uv = vec2(uv.x+(pos.x+0.5)*w,1.0-(uv.y+(pos.y+0.5)*h));
 }
 "
             }

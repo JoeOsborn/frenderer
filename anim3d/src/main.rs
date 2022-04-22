@@ -143,7 +143,7 @@ fn main() -> Result<()> {
         Vec3::new(0.0, 0.0, 100.0),
         Vec3::new(0.0, 0.0, 0.0),
         Vec3::unit_y(),
-        Projection::Perspective { fov: (PI / 2.0) },
+        Projection::Perspective { fov: PI / 2.0 },
     );
 
     // let camera = Camera::look_at(
@@ -218,7 +218,7 @@ fn main() -> Result<()> {
         sprites: vec![Sprite {
             trf: Isometry3::new(Vec3::new(20.0, 5.0, -10.0), Rotor3::identity()),
             size: Vec2::new(16.0, 16.0),
-            cel: Rect::new(0.5, 0.5, 0.5, 0.5),
+            cel: Rect::new(0.0, 0.0, 1.0, 1.0),
             tex: king,
         }],
         flats: vec![Flat {

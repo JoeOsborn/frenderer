@@ -149,7 +149,7 @@ void main() {
     vec2(0.5, 0.5),
   };
   vec2 pos = posns[gl_VertexIndex].xy;
-  vec2 uv_corner = vec2(uv_region.x,1.0-uv_region.y) + vec2(uv_region.z*(pos.x+0.5),uv_region.w*(1.0-(pos.y+0.5)));
+  vec2 uv_corner = vec2(uv_region.x+uv_region.z*(pos.x+0.5),1.0-(uv_region.y+uv_region.w*(pos.y+0.5)));
   vec4 center = view * vec4(position_rot.xyz, 1.0);
   vec2 rot_pos = vec2(
     pos.x*w*cos(rot)-pos.y*h*sin(rot),
