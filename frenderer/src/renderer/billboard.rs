@@ -149,14 +149,16 @@ void main() {
     vec2(0.5, 0.5),
   };
   vec2 pos = posns[gl_VertexIndex].xy;
-  vec2 uv_corner = vec2(uv_region.x+uv_region.z*(pos.x+0.5),1.0-(uv_region.y+uv_region.w*(pos.y+0.5)));
   vec4 center = view * vec4(position_rot.xyz, 1.0);
   vec2 rot_pos = vec2(
     pos.x*w*cos(rot)-pos.y*h*sin(rot),
     pos.y*h*cos(rot)+pos.x*w*sin(rot)
   );
   gl_Position = proj * vec4(rot_pos.x+center.x,rot_pos.y+center.y,center.z,1.0);
-  out_uv = uv_corner;
+  float uw = uv_region.z;
+  float uh = uv_region.w;
+  vec2 uv = uv_region.xy;
+  out_uv = vec2(uv.x+(pos.x+0.5)*uw,1.0-(uv.y+(pos.y+0.5)*uh));
   out_color = color;
 }
 "

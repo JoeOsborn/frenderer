@@ -218,7 +218,7 @@ fn main() -> Result<()> {
         sprites: vec![Sprite {
             trf: Isometry3::new(Vec3::new(20.0, 5.0, -10.0), Rotor3::identity()),
             size: Vec2::new(16.0, 16.0),
-            cel: Rect::new(0.0, 0.0, 1.0, 1.0),
+            cel: Rect::new(0.5, 0.0, 0.5, 0.5),
             tex: king,
         }],
         flats: vec![Flat {

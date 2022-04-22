@@ -100,7 +100,7 @@ layout(set=0, binding=0) uniform BatchData { mat4 viewproj; };
 void main() {
   float w = size_uv.x;
   float h = size_uv.y;
-  vec2 uv = size_uv.wz;
+  vec2 uv = size_uv.zw;
   // 0: TL, 1: BL, 2: BR, 3: TR
   vec2 posns[] = {
     vec2(-0.5, 0.5),
