@@ -62,10 +62,7 @@ impl<T: Renderer> RenderTable<T> {
             );
         }
         for (k, vs) in rt2.raw.iter() {
-            self.raw
-                .entry(k.clone())
-                .or_insert(vec![])
-                .extend(vs.iter().cloned());
+            *self.raw.entry(k.clone()).or_insert(vec![]) = vs.clone();
         }
     }
 }

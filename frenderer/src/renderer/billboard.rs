@@ -72,7 +72,7 @@ impl super::SingleRenderState for SingleRenderState {
         // }
     }
 }
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum BlendMode {
     Additive,
     //Alpha,
@@ -322,7 +322,6 @@ void main() {
         let uds = self.uniform_binding.clone().unwrap();
 
         builder.bind_pipeline_graphics(self.pipeline.clone());
-
         for (_b, dat) in self.batches.iter() {
             dat.draw(self.pipeline.clone(), uds.clone(), builder);
         }
