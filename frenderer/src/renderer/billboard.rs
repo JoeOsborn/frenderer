@@ -177,7 +177,6 @@ layout(location = 0) out vec4 f_color;
 
 void main() {
   vec4 col = texture(tex, uv)*color;
-  if (col.a < 0.01) { discard; }
   f_color = col;
 }
 "
