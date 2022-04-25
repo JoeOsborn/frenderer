@@ -3,8 +3,8 @@ pub mod flat;
 pub mod skinned;
 pub mod sprites;
 pub mod textured;
-use crate::assets;
 use crate::camera::Camera;
+use crate::{assets, types::Interpolate};
 use std::collections::HashMap;
 use std::rc::Rc;
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -108,7 +108,7 @@ impl RenderState {
         self.flats.interpolate_from(&rs1.flats, &rs2.flats, r);
         self.textured
             .interpolate_from(&rs1.textured, &rs2.textured, r);
-        self.camera = rs1.camera.interpolate(&rs2.camera, r);
+        self.camera = rs1.camera.interpolate_limit(rs2.camera, r, 5.0);
     }
     pub fn render_skinned(
         &mut self,

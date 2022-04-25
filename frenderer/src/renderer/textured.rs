@@ -61,7 +61,7 @@ pub struct SingleRenderState {
 impl super::SingleRenderState for SingleRenderState {
     fn interpolate(&self, other: &Self, r: f32) -> Self {
         Self {
-            transform: self.transform.interpolate_limit(&other.transform, r, 10.0),
+            transform: self.transform.interpolate_limit(other.transform, r, 10.0),
         }
     }
 }

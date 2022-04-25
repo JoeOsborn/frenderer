@@ -28,16 +28,43 @@ impl Camera {
     pub fn as_matrix(&self) -> Mat4 {
         self.projection.as_matrix(self.ratio) * self.transform.into_homogeneous_matrix()
     }
-    pub fn interpolate(&self, other: &Self, r: f32) -> Self {
+}
+impl Interpolate for Camera {
+    fn interpolate(&self, other: Self, r: f32) -> Self {
         Self {
-            transform: self.transform.interpolate(&other.transform, r),
-            ratio: self.ratio.interpolate(&other.ratio, r),
-            projection: self.projection.interpolate(&other.projection, r),
+            transform: self.transform.interpolate(other.transform, r),
+            ratio: self.ratio.interpolate(other.ratio, r),
+            projection: self.projection.interpolate(other.projection, r),
+        }
+    }
+    fn interpolate_limit(&self, other: Self, r: f32, lim: f32) -> Self {
+        Self {
+            transform: self.transform.interpolate_limit(other.transform, r, lim),
+            ratio: self.ratio.interpolate_limit(other.ratio, r, lim),
+            projection: self.projection.interpolate_limit(other.projection, r, lim),
         }
     }
 }
 impl Projection {
-    pub fn interpolate(&self, other: &Self, r: f32) -> Self {
+    pub fn as_matrix(&self, r: f32) -> Mat4 {
+        match self {
+            Projection::Perspective { fov } => {
+                ultraviolet::projection::rh_yup::perspective_reversed_infinite_z_vk(*fov, r, 0.1)
+            }
+            Projection::Orthographic { width, depth } => orthographic_reversed_z_vk(
+                -width / 2.0,
+                width / 2.0,
+                -(width / 2.0) / r,
+                (width / 2.0) / r,
+                0.1,
+                *depth,
+            ),
+        }
+    }
+}
+
+impl Interpolate for Projection {
+    fn interpolate(&self, other: Self, r: f32) -> Self {
         match (self, other) {
             (Self::Perspective { fov }, Self::Perspective { fov: ofov }) => Self::Perspective {
                 fov: fov.interpolate(ofov, r),
@@ -52,22 +79,25 @@ impl Projection {
                 width: width.interpolate(owidth, r),
                 depth: depth.interpolate(odepth, r),
             },
-            (_, _) => *other,
+            (_, _) => other,
         }
     }
-    pub fn as_matrix(&self, r: f32) -> Mat4 {
-        match self {
-            Projection::Perspective { fov } => {
-                ultraviolet::projection::rh_yup::perspective_reversed_infinite_z_vk(*fov, r, 0.1)
-            }
-            Projection::Orthographic { width, depth } => orthographic_reversed_z_vk(
-                -width / 2.0,
-                width / 2.0,
-                -(width / 2.0) / r,
-                (width / 2.0) / r,
-                0.1,
-                *depth,
-            ),
+    fn interpolate_limit(&self, other: Self, r: f32, lim: f32) -> Self {
+        match (self, other) {
+            (Self::Perspective { fov }, Self::Perspective { fov: ofov }) => Self::Perspective {
+                fov: fov.interpolate_limit(ofov, r, lim),
+            },
+            (
+                Self::Orthographic { width, depth },
+                Self::Orthographic {
+                    width: owidth,
+                    depth: odepth,
+                },
+            ) => Self::Orthographic {
+                width: width.interpolate_limit(owidth, r, lim),
+                depth: depth.interpolate_limit(odepth, r, lim),
+            },
+            (_, _) => other,
         }
     }
 }

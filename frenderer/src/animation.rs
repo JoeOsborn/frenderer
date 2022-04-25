@@ -259,15 +259,15 @@ impl AnimationState {
     }
 }
 impl Interpolate for AnimationState {
-    fn interpolate(&self, other: &Self, r: f32) -> Self {
+    fn interpolate(&self, other: Self, r: f32) -> Self {
         Self {
-            t: self.t.interpolate(&other.t, r),
+            t: self.t.interpolate(other.t, r),
         }
     }
 
-    fn interpolate_limit(&self, other: &Self, r: f32, lim: f32) -> Self {
+    fn interpolate_limit(&self, other: Self, r: f32, lim: f32) -> Self {
         Self {
-            t: self.t.interpolate_limit(&other.t, r, lim),
+            t: self.t.interpolate_limit(other.t, r, lim),
         }
     }
 }

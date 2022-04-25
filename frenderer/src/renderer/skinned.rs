@@ -84,9 +84,9 @@ impl SingleRenderState {
 impl super::SingleRenderState for SingleRenderState {
     fn interpolate(&self, other: &Self, r: f32) -> Self {
         Self {
-            transform: self.transform.interpolate_limit(&other.transform, r, 10.0),
+            transform: self.transform.interpolate_limit(other.transform, r, 10.0),
             animation: other.animation,
-            state: self.state.interpolate_limit(&other.state, r, 0.25),
+            state: self.state.interpolate_limit(other.state, r, 0.25),
         }
     }
 }
