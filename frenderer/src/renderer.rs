@@ -50,6 +50,7 @@ impl<T: Renderer> RenderTable<T> {
         self.raw.entry(bk).or_insert(vec![]).extend(rs);
     }
     fn interpolate_from(&mut self, rt1: &Self, rt2: &Self, r: f32) {
+        self.clear();
         for (k, (bk, v1)) in rt2.interpolated.iter() {
             let v0 = rt1.interpolated.get(k).map(|(_, v0)| v0);
             self.interpolated.insert(
