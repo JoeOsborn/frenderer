@@ -51,10 +51,12 @@ impl super::SingleRenderState for SingleRenderState {
 #[repr(C)]
 #[derive(Clone, Copy, Zeroable, Default, Pod, Debug, PartialEq)]
 struct InstanceData {
-    model: [f32; 4 * 4],
     uv_cel: [f32; 4],
+    translation: [f32; 3],
+    rotor: [f32; 4],
+    size: [f32; 2],
 }
-vulkano::impl_vertex!(InstanceData, model, uv_cel);
+vulkano::impl_vertex!(InstanceData, uv_cel, translation, rotor, size);
 struct BatchData {
     material_pds: Arc<vulkano::descriptor_set::PersistentDescriptorSet>,
     instance_data: Vec<InstanceData>,
@@ -89,8 +91,10 @@ impl Renderer {
 
 // vertex attributes---none!
 // instance data
-layout(location = 0) in mat4 model;
-layout(location = 4) in vec4 uv_cel;
+layout(location = 0) in vec4 uv_cel;
+layout(location = 1) in vec3 translation;
+layout(location = 2) in vec4 rotor;
+layout(location = 3) in vec2 size;
 
 // outputs
 layout(location = 0) out vec2 out_uv;
@@ -98,7 +102,62 @@ layout(location = 0) out vec2 out_uv;
 // uniforms
 layout(set=0, binding=0) uniform BatchData { mat4 viewproj; };
 
+mat4 rotor_to_matrix(vec4 rotor) {
+  float s = rotor.x;
+  float xy = rotor.y;
+  float xz = rotor.z;
+  float yz = rotor.w;
+  float s2 = s * s;
+  float bxy2 = xy * xy;
+  float bxz2 = xz * xz;
+  float byz2 = yz * yz;
+  float s_bxy = s * xy;
+  float s_bxz = s * xz;
+  float s_byz = s * yz;
+  float bxz_byz = xz * yz;
+  float bxy_byz = xy * yz;
+  float bxy_bxz = xy * xz;
+
+  float two = 2.0;
+
+  return mat4(
+    vec4(
+      s2 - bxy2 - bxz2 + byz2,
+      -2.0 * (bxz_byz + s_bxy),
+      2.0 * (bxy_byz - s_bxz),
+      0.0
+    ),
+    vec4(
+      2.0 * (s_bxy - bxz_byz),
+      s2 - bxy2 + bxz2 - byz2,
+      -2.0 * (s_byz + bxy_bxz),
+      0.0
+    ),
+    vec4(
+      2.0 * (s_bxz + bxy_byz),
+      2.0 * (s_byz - bxy_bxz),
+      s2 + bxy2 - bxz2 - byz2,
+      0.0
+    ),
+    vec4(0.0,0.0,0.0,1.0)
+  );
+}
+
 void main() {
+  mat4 trans = mat4(
+    vec4(1.0,0.0,0.0,0.0),
+    vec4(0.0,1.0,0.0,0.0),
+    vec4(0.0,0.0,1.0,0.0),
+    vec4(translation.xyz,1.0)
+  );
+  mat4 rot = rotor_to_matrix(rotor);
+  mat4 scale = mat4(
+    vec4(size.x,0.0,0.0,0.0),
+    vec4(0.0,size.y,0.0,0.0),
+    vec4(0.0,0.0,1.0,0.0),
+    vec4(0.0,0.0,0.0,1.0)
+  );
+  mat4 model = trans * rot * scale;
   float w = uv_cel.z;
   float h = uv_cel.w;
   vec2 uv = uv_cel.xy;
@@ -206,15 +265,15 @@ void main() {
     ) {
         use std::collections::hash_map::Entry;
         let insts = dat.into_iter().map(|srs| InstanceData {
-            model: *(srs.transform.into_homogeneous_matrix()
-                * Mat4::from_nonuniform_scale(Vec3::new(srs.size.x, srs.size.y, 1.0)))
-            .as_array(),
-            uv_cel: [
-                srs.region.pos.x,
-                srs.region.pos.y,
-                srs.region.sz.x,
-                srs.region.sz.y,
+            translation: *srs.transform.translation.as_array(),
+            rotor: [
+                srs.transform.rotation.s,
+                srs.transform.rotation.bv.xy,
+                srs.transform.rotation.bv.xz,
+                srs.transform.rotation.bv.yz,
             ],
+            size: *srs.size.as_array(),
+            uv_cel: srs.region.to_array(),
         });
         match self.batches.entry(tr) {
             Entry::Vacant(v) => {

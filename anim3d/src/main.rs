@@ -54,24 +54,23 @@ impl frenderer::World for World {
         let dscale = input.key_axis(Key::E, Key::R) * 1.0 * DT as f32;
         let rot = Rotor3::from_euler_angles(roll, pitch, yaw);
         for obj in self.things.iter_mut() {
-            obj.trf.append_rotation(rot);
-            obj.trf.scale = (obj.trf.scale + dscale).max(0.01);
-            // dbg!(obj.trf.rotation);
+            obj.trf.prepend_rotation(rot);
+            obj.trf.prepend_scaling(1.0 + dscale);
             obj.tick_animation();
         }
 
         for s in self.sprites.iter_mut() {
-            s.trf.append_rotation(rot);
-            s.size.x += dscale;
-            s.size.y += dscale;
+            s.trf.prepend_rotation(rot);
+            s.size.x *= 1.0 + dscale;
+            s.size.y *= 1.0 + dscale;
         }
         for m in self.flats.iter_mut() {
-            m.trf.append_rotation(rot);
-            m.trf.scale += dscale;
+            m.trf.prepend_rotation(rot);
+            m.trf.prepend_scaling(1.0 + dscale);
         }
         for m in self.textured.iter_mut() {
-            m.trf.append_rotation(rot);
-            m.trf.scale += dscale;
+            m.trf.prepend_rotation(rot);
+            m.trf.prepend_scaling(1.0 + dscale);
         }
         let camera_drot = input.key_axis(Key::Left, Key::Right) * PI / 4.0 * DT as f32;
         self.camera
@@ -227,13 +226,13 @@ fn main() -> Result<()> {
         }],
         textured: vec![
             Textured {
-                trf: Similarity3::new(Vec3::new(0.0, 0.0, -10.0), Rotor3::identity(), 5.0),
+                trf: Similarity3::new(Vec3::new(40.0, 25.0, -10.0), Rotor3::identity(), 5.0),
                 model: marble,
             },
-            Textured {
-                trf: Similarity3::new(Vec3::new(0.0, -25.0, 0.0), Rotor3::identity(), 10.0),
-                model: floor,
-            },
+            // Textured {
+            //     trf: Similarity3::new(Vec3::new(0.0, -25.0, 0.0), Rotor3::identity(), 10.0),
+            //     model: floor,
+            // },
         ],
     };
     engine.play(world)

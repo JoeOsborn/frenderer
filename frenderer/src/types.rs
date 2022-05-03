@@ -26,6 +26,9 @@ impl Rect {
         let obr = other.pos + other.sz;
         self.pos.x <= other.pos.x && self.pos.y <= other.pos.y && obr.x <= br.x && obr.y <= br.y
     }
+    pub fn to_array(&self) -> [f32; 4] {
+        [self.pos.x, self.pos.y, self.sz.x, self.sz.y]
+    }
 }
 
 #[repr(C)]
