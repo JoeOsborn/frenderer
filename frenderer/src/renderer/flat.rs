@@ -67,7 +67,8 @@ pub struct Mesh {
     pub verts: Arc<ImmutableBuffer<[Vertex]>>,
     pub idx: Arc<ImmutableBuffer<[u32]>>,
 }
-#[derive(Clone)]
+#[repr(C)]
+#[derive(Clone, Default, Debug, Copy, Pod, Zeroable)]
 pub struct SingleRenderState {
     translation: Vec3,
     sz: f32,
