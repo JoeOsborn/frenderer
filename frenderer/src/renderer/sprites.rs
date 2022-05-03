@@ -22,7 +22,8 @@ use vulkano::pipeline::Pipeline;
 use vulkano::render_pass::Subpass;
 use vulkano::sampler::Sampler;
 
-#[derive(Clone)]
+#[repr(C)]
+#[derive(Clone, Copy, Zeroable, Default, Pod, Debug, PartialEq)]
 pub struct SingleRenderState {
     region: Rect,
     transform: Isometry3,
@@ -51,9 +52,9 @@ impl super::SingleRenderState for SingleRenderState {
 #[derive(Clone, Copy, Zeroable, Default, Pod, Debug, PartialEq)]
 struct InstanceData {
     model: [f32; 4 * 4],
-    size_uv: [f32; 4],
+    uv_cel: [f32; 4],
 }
-vulkano::impl_vertex!(InstanceData, model, size_uv);
+vulkano::impl_vertex!(InstanceData, model, uv_cel);
 struct BatchData {
     material_pds: Arc<vulkano::descriptor_set::PersistentDescriptorSet>,
     instance_data: Vec<InstanceData>,
@@ -89,7 +90,7 @@ impl Renderer {
 // vertex attributes---none!
 // instance data
 layout(location = 0) in mat4 model;
-layout(location = 4) in vec4 size_uv;
+layout(location = 4) in vec4 uv_cel;
 
 // outputs
 layout(location = 0) out vec2 out_uv;
@@ -98,9 +99,9 @@ layout(location = 0) out vec2 out_uv;
 layout(set=0, binding=0) uniform BatchData { mat4 viewproj; };
 
 void main() {
-  float w = size_uv.x;
-  float h = size_uv.y;
-  vec2 uv = size_uv.zw;
+  float w = uv_cel.z;
+  float h = uv_cel.w;
+  vec2 uv = uv_cel.xy;
   // 0: TL, 1: BL, 2: BR, 3: TR
   vec2 posns[] = {
     vec2(-0.5, 0.5),
@@ -208,11 +209,11 @@ void main() {
             model: *(srs.transform.into_homogeneous_matrix()
                 * Mat4::from_nonuniform_scale(Vec3::new(srs.size.x, srs.size.y, 1.0)))
             .as_array(),
-            size_uv: [
-                srs.region.sz.x,
-                srs.region.sz.y,
+            uv_cel: [
                 srs.region.pos.x,
                 srs.region.pos.y,
+                srs.region.sz.x,
+                srs.region.sz.y,
             ],
         });
         match self.batches.entry(tr) {
