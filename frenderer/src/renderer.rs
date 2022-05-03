@@ -1,4 +1,5 @@
 pub mod billboard;
+mod common;
 pub mod flat;
 pub mod skinned;
 pub mod sprites;

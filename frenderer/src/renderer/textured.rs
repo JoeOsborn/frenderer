@@ -1,3 +1,5 @@
+use super::common::matrix_only::InstanceData;
+pub use super::common::matrix_only::SingleRenderState;
 use super::RenderState;
 use crate::assets;
 use crate::assets::Texture;
@@ -54,30 +56,6 @@ impl Model {
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct ModelKey(assets::MeshRef<Mesh>, assets::TextureRef);
 
-#[derive(Clone)]
-pub struct SingleRenderState {
-    transform: Similarity3,
-}
-impl super::SingleRenderState for SingleRenderState {
-    fn interpolate(&self, other: &Self, r: f32) -> Self {
-        Self {
-            transform: self.transform.interpolate_limit(other.transform, r, 10.0),
-        }
-    }
-}
-impl SingleRenderState {
-    pub fn new(transform: Similarity3) -> Self {
-        Self { transform }
-    }
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Zeroable, Default, Pod, Debug, PartialEq)]
-struct InstanceData {
-    model: [f32; 4 * 4],
-}
-vulkano::impl_vertex!(InstanceData, model);
-
 struct BatchData {
     verts: Arc<ImmutableBuffer<[Vertex]>>,
     idxs: Arc<ImmutableBuffer<[u32]>>,
@@ -115,7 +93,8 @@ impl Renderer {
 layout(location = 0) in vec3 position;
 layout(location = 1) in vec2 uv;
 // instance data
-layout(location = 4) in mat4 model;
+layout(location = 2) in vec4 translation_sz;
+layout(location = 3) in vec4 rotor;
 
 // outputs
 layout(location = 0) out vec2 out_uv;
@@ -123,7 +102,61 @@ layout(location = 0) out vec2 out_uv;
 // uniforms
 layout(set=0, binding=0) uniform BatchData { mat4 viewproj; };
 
+mat4 rotor_to_matrix(vec4 rotor) {
+  float s = rotor.x;
+  float xy = rotor.y;
+  float xz = rotor.z;
+  float yz = rotor.w;
+  float s2 = s * s;
+  float bxy2 = xy * xy;
+  float bxz2 = xz * xz;
+  float byz2 = yz * yz;
+  float s_bxy = s * xy;
+  float s_bxz = s * xz;
+  float s_byz = s * yz;
+  float bxz_byz = xz * yz;
+  float bxy_byz = xy * yz;
+  float bxy_bxz = xy * xz;
+
+  float two = 2.0;
+
+  return mat4(
+    vec4(
+      s2 - bxy2 - bxz2 + byz2,
+      -2.0 * (bxz_byz + s_bxy),
+      2.0 * (bxy_byz - s_bxz),
+      0.0
+    ),
+    vec4(
+      2.0 * (s_bxy - bxz_byz),
+      s2 - bxy2 + bxz2 - byz2,
+      -2.0 * (s_byz + bxy_bxz),
+      0.0
+    ),
+    vec4(
+      2.0 * (s_bxz + bxy_byz),
+      2.0 * (s_byz - bxy_bxz),
+      s2 + bxy2 - bxz2 - byz2,
+      0.0
+    ),
+    vec4(0.0,0.0,0.0,1.0)
+  );
+}
 void main() {
+  mat4 trans = mat4(
+    vec4(1.0,0.0,0.0,0.0),
+    vec4(0.0,1.0,0.0,0.0),
+    vec4(0.0,0.0,1.0,0.0),
+    vec4(translation_sz.xyz,1.0)
+  );
+  mat4 rot = rotor_to_matrix(rotor);
+  mat4 scale = mat4(
+    vec4(translation_sz.w,0.0,0.0,0.0),
+    vec4(0.0,translation_sz.w,0.0,0.0),
+    vec4(0.0,0.0,translation_sz.w,0.0),
+    vec4(0.0,0.0,0.0,1.0)
+  );
+  mat4 model = trans * rot * scale;
   gl_Position = viewproj * model * vec4(position.xyz, 1.0);
   out_uv = uv;
 }
@@ -211,8 +244,19 @@ void main() {
         data: impl IntoIterator<Item = &'a SingleRenderState>,
     ) {
         use std::collections::hash_map::Entry;
-        let insts = data.into_iter().map(|d| InstanceData {
-            model: *d.transform.into_homogeneous_matrix().as_array(),
+        let insts = data.into_iter().map(|srs| InstanceData {
+            translation_sz: [
+                srs.translation.x,
+                srs.translation.y,
+                srs.translation.z,
+                srs.sz,
+            ],
+            rotor: [
+                srs.rotation.s,
+                srs.rotation.bv.xy,
+                srs.rotation.bv.xz,
+                srs.rotation.bv.yz,
+            ],
         });
         match self.batches.entry(key) {
             Entry::Vacant(v) => {

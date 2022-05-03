@@ -1,3 +1,5 @@
+use super::common::matrix_only::InstanceData;
+pub use super::common::matrix_only::SingleRenderState;
 use crate::assets::{self, MaterialRef, MeshRef};
 use crate::camera::Camera;
 use crate::types::*;
@@ -67,40 +69,6 @@ pub struct Mesh {
     pub verts: Arc<ImmutableBuffer<[Vertex]>>,
     pub idx: Arc<ImmutableBuffer<[u32]>>,
 }
-#[repr(C)]
-#[derive(Clone, Default, Debug, Copy, Pod, Zeroable)]
-pub struct SingleRenderState {
-    translation: Vec3,
-    sz: f32,
-    rotation: Rotor3,
-}
-impl SingleRenderState {
-    pub fn new(transform: Similarity3) -> Self {
-        Self {
-            translation: transform.translation,
-            sz: transform.scale,
-            rotation: transform.rotation,
-        }
-    }
-    pub fn transform(&self) -> Similarity3 {
-        Similarity3::new(self.translation, self.rotation, self.sz)
-    }
-}
-impl super::SingleRenderState for SingleRenderState {
-    fn interpolate(&self, other: &Self, r: f32) -> Self {
-        Self::new(
-            self.transform()
-                .interpolate_limit(other.transform(), r, 10.0),
-        )
-    }
-}
-#[repr(C)]
-#[derive(Clone, Copy, Zeroable, Default, Pod, Debug, PartialEq)]
-struct InstanceData {
-    translation_sz: [f32; 4],
-    rotor: [f32; 4],
-}
-vulkano::impl_vertex!(InstanceData, translation_sz, rotor);
 
 struct BatchData {
     verts: Arc<ImmutableBuffer<[Vertex]>>,
