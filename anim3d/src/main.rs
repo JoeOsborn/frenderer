@@ -221,7 +221,7 @@ fn main() -> Result<()> {
             tex: king,
         }],
         flats: vec![Flat {
-            trf: Similarity3::new(Vec3::new(0.0, 0.0, -10.0), Rotor3::identity(), 1.0),
+            trf: Similarity3::new(Vec3::new(0.0, 25.0, -10.0), Rotor3::identity(), 1.0),
             model: flat_model,
         }],
         textured: vec![
@@ -229,10 +229,10 @@ fn main() -> Result<()> {
                 trf: Similarity3::new(Vec3::new(40.0, 25.0, -10.0), Rotor3::identity(), 5.0),
                 model: marble,
             },
-            // Textured {
-            //     trf: Similarity3::new(Vec3::new(0.0, -25.0, 0.0), Rotor3::identity(), 10.0),
-            //     model: floor,
-            // },
+            Textured {
+                trf: Similarity3::new(Vec3::new(0.0, -25.0, 0.0), Rotor3::identity(), 10.0),
+                model: floor,
+            },
         ],
     };
     engine.play(world)
