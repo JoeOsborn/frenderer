@@ -45,7 +45,7 @@ impl Material {
         }
     }
 }
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Model {
     materials: Vec<MaterialRef<Material>>,
     meshes: Vec<MeshRef<Mesh>>,
@@ -64,6 +64,7 @@ pub struct Vertex {
     pub position: [f32; 3],
 }
 vulkano::impl_vertex!(Vertex, position);
+#[derive(Debug)]
 pub struct Mesh {
     pub mesh: russimp::mesh::Mesh,
     pub verts: Arc<ImmutableBuffer<[Vertex]>>,
@@ -293,18 +294,20 @@ void main() {
         }
     }
     pub fn prepare(&mut self, rs: &super::RenderState, assets: &assets::Assets, camera: &Camera) {
-        for (model, v) in rs.flats.interpolated.values() {
+        for (model, (_ks, vs)) in rs.flats.interpolated.iter() {
             for (meshr, matr) in model.meshes.iter().zip(model.materials.iter()) {
                 let mesh = assets.flat_mesh(*meshr);
                 let mat = assets.material(*matr);
-                self.push_models(ModelKey(*meshr, *matr), mesh, mat, std::iter::once(v));
+                self.push_models(ModelKey(*meshr, *matr), mesh, mat, vs.borrow().iter());
             }
         }
         for (model, vs) in rs.flats.raw.iter() {
             for (meshr, matr) in model.meshes.iter().zip(model.materials.iter()) {
                 let mesh = assets.flat_mesh(*meshr);
                 let mat = assets.material(*matr);
-                self.push_models(ModelKey(*meshr, *matr), mesh, mat, vs.iter());
+                for srs_vec in vs.iter() {
+                    self.push_models(ModelKey(*meshr, *matr), mesh, mat, srs_vec.borrow().iter());
+                }
             }
         }
         self.prepare_draw(camera);

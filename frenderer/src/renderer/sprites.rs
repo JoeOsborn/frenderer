@@ -314,13 +314,15 @@ void main() {
         }
     }
     pub fn prepare(&mut self, rs: &RenderState, assets: &assets::Assets, camera: &Camera) {
-        for (tex_id, v) in rs.sprites.interpolated.values() {
+        for (tex_id, (_ks, vs)) in rs.sprites.interpolated.iter() {
             let tex = assets.texture(*tex_id);
-            self.push_models(*tex_id, tex, std::iter::once(v));
+            self.push_models(*tex_id, tex, vs.borrow().iter());
         }
         for (tex_id, vs) in rs.sprites.raw.iter() {
             let tex = assets.texture(*tex_id);
-            self.push_models(*tex_id, tex, vs);
+            for srs_vec in vs.iter() {
+                self.push_models(*tex_id, tex, srs_vec.borrow().iter());
+            }
         }
         self.prepare_draw(camera);
     }

@@ -34,13 +34,14 @@ pub struct Vertex {
     pub uv: [f32; 2],
 }
 vulkano::impl_vertex!(Vertex, position, uv);
+#[derive(Debug)]
 pub struct Mesh {
     pub mesh: russimp::mesh::Mesh,
     pub verts: Arc<ImmutableBuffer<[Vertex]>>,
     pub idx: Arc<ImmutableBuffer<[u32]>>,
 }
 impl Mesh {}
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Model {
     meshes: Vec<assets::MeshRef<Mesh>>,
     textures: Vec<assets::TextureRef>,
@@ -236,28 +237,15 @@ void main() {
             uniform_binding: None,
         }
     }
-    pub(crate) fn push_models<'a>(
+    pub(crate) fn push_models(
         &mut self,
         key: ModelKey,
         mesh: &Mesh,
         texture: &Texture,
-        data: impl IntoIterator<Item = &'a SingleRenderState>,
+        data: &[SingleRenderState],
     ) {
         use std::collections::hash_map::Entry;
-        let insts = data.into_iter().map(|srs| InstanceData {
-            translation_sz: [
-                srs.translation.x,
-                srs.translation.y,
-                srs.translation.z,
-                srs.sz,
-            ],
-            rotor: [
-                srs.rotation.s,
-                srs.rotation.bv.xy,
-                srs.rotation.bv.xz,
-                srs.rotation.bv.yz,
-            ],
-        });
+        let (_, insts, _) = unsafe { data.align_to::<InstanceData>() };
         match self.batches.entry(key) {
             Entry::Vacant(v) => {
                 let mut b =
@@ -294,18 +282,20 @@ void main() {
         }
     }
     pub fn prepare(&mut self, rs: &RenderState, assets: &assets::Assets, camera: &Camera) {
-        for (model, v) in rs.textured.interpolated.values() {
+        for (model, (_ks, vs)) in rs.textured.interpolated.iter() {
             for (meshr, texr) in model.meshes.iter().zip(model.textures.iter()) {
                 let mesh = assets.textured_mesh(*meshr);
                 let tex = assets.texture(*texr);
-                self.push_models(ModelKey(*meshr, *texr), mesh, tex, std::iter::once(v));
+                self.push_models(ModelKey(*meshr, *texr), mesh, tex, &*vs.borrow());
             }
         }
         for (model, vs) in rs.textured.raw.iter() {
             for (meshr, texr) in model.meshes.iter().zip(model.textures.iter()) {
                 let mesh = assets.textured_mesh(*meshr);
                 let tex = assets.texture(*texr);
-                self.push_models(ModelKey(*meshr, *texr), mesh, tex, vs.iter());
+                for srs_vec in vs.iter() {
+                    self.push_models(ModelKey(*meshr, *texr), mesh, tex, &*srs_vec.borrow());
+                }
             }
         }
         self.prepare_draw(camera);
@@ -390,7 +380,7 @@ impl BatchData {
     fn is_empty(&self) -> bool {
         self.instance_data.is_empty()
     }
-    fn push_instances(&mut self, insts: impl IntoIterator<Item = InstanceData>) {
-        self.instance_data.extend(insts);
+    fn push_instances<'a>(&mut self, insts: impl IntoIterator<Item = &'a InstanceData>) {
+        self.instance_data.extend(insts.into_iter().copied());
     }
 }

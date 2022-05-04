@@ -36,6 +36,7 @@ pub struct Vertex {
     pub bone_weights: [f32; 4],
 }
 vulkano::impl_vertex!(Vertex, position, uv, bone_ids, bone_weights);
+#[derive(Debug)]
 pub struct Mesh {
     pub mesh: russimp::mesh::Mesh,
     pub rig: animation::Rig,
@@ -47,7 +48,7 @@ impl Mesh {
         self.rig.joints.len()
     }
 }
-#[derive(Clone, Hash, PartialEq, Eq)]
+#[derive(Clone, Hash, PartialEq, Eq, Debug)]
 pub struct Model {
     meshes: Vec<assets::MeshRef<Mesh>>,
     textures: Vec<assets::TextureRef>,
@@ -62,7 +63,7 @@ impl Model {
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct ModelKey(assets::MeshRef<Mesh>, assets::TextureRef);
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SingleRenderState {
     transform: Similarity3,
     animation: assets::AnimRef,
@@ -344,12 +345,15 @@ void main() {
         }
     }
     pub fn prepare(&mut self, rs: &RenderState, assets: &assets::Assets, camera: &Camera) {
-        for (model, v) in rs.skinned.interpolated.values() {
+        for (model, (_ks, vs)) in rs.skinned.interpolated.iter() {
             for (meshr, texr) in model.meshes.iter().zip(model.textures.iter()) {
                 let mesh = assets.skinned_mesh(*meshr);
                 let tex = assets.texture(*texr);
-                let anim = assets.animation(v.animation);
-                self.push_models(ModelKey(*meshr, *texr), mesh, tex, anim, std::iter::once(v));
+                for v in vs.borrow().iter() {
+                    // TODO could group by anim and reduce number of calls to push_models
+                    let anim = assets.animation(v.animation);
+                    self.push_models(ModelKey(*meshr, *texr), mesh, tex, anim, std::iter::once(v));
+                }
             }
         }
         for (model, vs) in rs.skinned.raw.iter() {
@@ -357,9 +361,17 @@ void main() {
                 let mesh = assets.skinned_mesh(*meshr);
                 let tex = assets.texture(*texr);
                 // TODO future group by animation too?
-                for v in vs.iter() {
-                    let anim = assets.animation(v.animation);
-                    self.push_models(ModelKey(*meshr, *texr), mesh, tex, anim, std::iter::once(v));
+                for srs_vec in vs.iter() {
+                    for v in srs_vec.borrow().iter() {
+                        let anim = assets.animation(v.animation);
+                        self.push_models(
+                            ModelKey(*meshr, *texr),
+                            mesh,
+                            tex,
+                            anim,
+                            std::iter::once(v),
+                        );
+                    }
                 }
             }
         }

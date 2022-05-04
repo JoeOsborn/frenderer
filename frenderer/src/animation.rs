@@ -6,11 +6,13 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+#[derive(Debug)]
 pub struct Rig {
     pub joints: Vec<Joint>,
     ibms: Vec<Mat4>,
     joints_by_name: HashMap<String, u8>,
 }
+#[derive(Debug)]
 pub struct Joint {
     transform: Similarity3,
     children: [u8; 4],

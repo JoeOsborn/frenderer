@@ -84,14 +84,14 @@ impl frenderer::World for World {
     ) {
         rs.set_camera(self.camera);
         for (obj_i, obj) in self.things.iter_mut().enumerate() {
-            rs.render_skinned(
-                obj_i,
+            rs.render_skinned_interpolated(
                 obj.model.clone(),
+                obj_i,
                 FSkinned::new(obj.animation, obj.state, obj.trf),
             );
         }
         for (s_i, s) in self.sprites.iter_mut().enumerate() {
-            rs.render_sprite(s_i, s.tex, FSprite::new(s.cel, s.trf, s.size));
+            rs.render_sprite_interpolated(s.tex, s_i, FSprite::new(s.cel, s.trf, s.size));
         }
         for (s_i, s) in self.sprites.iter_mut().enumerate() {
             use rand::prelude::*;
@@ -103,9 +103,9 @@ impl frenderer::World for World {
                 for c in random_color.iter_mut() {
                     *c = (*c).max(32);
                 }
-                rs.render_billboard(
-                    s_i * 16 + i,
+                rs.render_billboard_interpolated(
                     (s.tex, FBlend::Additive),
+                    s_i * 16 + i,
                     FBillboard::new(
                         s.cel,
                         s.trf.translation + random_offset,
@@ -117,10 +117,10 @@ impl frenderer::World for World {
             }
         }
         for (m_i, m) in self.flats.iter_mut().enumerate() {
-            rs.render_flat(m_i, m.model.clone(), FFlat::new(m.trf));
+            rs.render_flat_interpolated(m.model.clone(), m_i, FFlat::new(m.trf));
         }
         for (t_i, t) in self.textured.iter_mut().enumerate() {
-            rs.render_textured(t_i, t.model.clone(), FTextured::new(t.trf));
+            rs.render_textured_interpolated(t.model.clone(), t_i, FTextured::new(t.trf));
         }
     }
 }

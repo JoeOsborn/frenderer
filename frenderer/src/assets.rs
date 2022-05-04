@@ -435,6 +435,7 @@ impl Assets {
     }
 }
 
+#[derive(Debug)]
 pub struct MeshRef<M>(Index, PhantomData<M>);
 impl<M> Clone for MeshRef<M> {
     fn clone(&self) -> Self {
@@ -457,6 +458,7 @@ impl<M> std::hash::Hash for MeshRef<M> {
     }
 }
 
+#[derive(Debug)]
 pub struct MaterialRef<M>(Index, PhantomData<M>);
 impl<M> Clone for MaterialRef<M> {
     fn clone(&self) -> Self {

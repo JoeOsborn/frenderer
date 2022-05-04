@@ -5,9 +5,9 @@ use crate::camera::Camera;
 use crate::types::*;
 use crate::vulkan::Vulkan;
 use bytemuck::{Pod, Zeroable};
-use std::collections::HashMap;
 use std::sync::Arc;
-use vulkano::buffer::{BufferUsage, CpuBufferPool, ImmutableBuffer};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use vulkano::buffer::{BufferUsage, CpuBufferPool, ImmutableBuffer, TypedBufferAccess};
 use vulkano::command_buffer::AutoCommandBufferBuilder;
 use vulkano::descriptor_set::single_layout_pool::SingleLayoutDescSet;
 use vulkano::descriptor_set::PersistentDescriptorSet;
@@ -61,15 +61,14 @@ impl SingleRenderState {
     }
 }
 impl super::SingleRenderState for SingleRenderState {
-    fn interpolate(&self, other: &Self, _r: f32) -> Self {
-        *other
-        //  Self {
-        //     position: self.position.interpolate_limit(&other.position, r, 10.0),
-        //     rot: self.rot.interpolate_limit(&other.rot, r, PI / 4.0),
-        //     size: self.size.interpolate_limit(&other.size, r, 0.5),
-        //     rgba: self.rgba.interpolate_limit(&other.rgba, r, 32),
-        //     uv_region: other.uv_region,
-        // }
+    fn interpolate(&self, other: &Self, r: f32) -> Self {
+        Self {
+            position: self.position.interpolate_limit(other.position, r, 10.0),
+            rot: self.rot.interpolate_limit(other.rot, r, PI / 4.0),
+            size: self.size.interpolate_limit(other.size, r, 0.5),
+            rgba: self.rgba.interpolate_limit(other.rgba, r, 32.0),
+            uv_region: other.uv_region,
+        }
     }
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -79,9 +78,8 @@ pub enum BlendMode {
 }
 struct BatchData {
     material_pds: Arc<vulkano::descriptor_set::PersistentDescriptorSet>,
-    instance_data: Vec<InstanceData>,
-    instance_buf:
-        Option<Arc<CpuBufferPoolChunk<InstanceData, Arc<vulkano::memory::pool::StdMemoryPool>>>>,
+    instance_bufs:
+        Vec<Arc<CpuBufferPoolChunk<InstanceData, Arc<vulkano::memory::pool::StdMemoryPool>>>>,
     index_buf: Arc<ImmutableBuffer<[u16]>>,
 }
 
@@ -245,10 +243,9 @@ void main() {
         &mut self,
         (tr, bm): (assets::TextureRef, BlendMode),
         texture: &Texture,
-        dat: impl IntoIterator<Item = &'a SingleRenderState>,
+        dat: Rc<RefCell<Vec<SingleRenderState>>>,
     ) {
         use std::collections::hash_map::Entry;
-        let insts = dat.into_iter().copied();
         match self.batches.entry((tr, bm)) {
             Entry::Vacant(v) => {
                 let mut b = Self::create_batch(
@@ -257,10 +254,12 @@ void main() {
                     texture,
                     self.index_buf.clone(),
                 );
-                b.push_instances(insts);
+                b.push_instances(&*dat.borrow(), &self.instance_pool);
                 v.insert(b);
             }
-            Entry::Occupied(v) => v.into_mut().push_instances(insts),
+            Entry::Occupied(v) => v
+                .into_mut()
+                .push_instances(&*dat.borrow(), &self.instance_pool),
         }
     }
     fn create_batch(
@@ -270,8 +269,7 @@ void main() {
         index_buf: Arc<ImmutableBuffer<[u16]>>,
     ) -> BatchData {
         BatchData {
-            instance_data: vec![],
-            instance_buf: None,
+            instance_bufs: vec![],
             index_buf,
             material_pds: PersistentDescriptorSet::new(
                 pipeline.layout().set_layouts().get(1).unwrap().clone(),
@@ -288,13 +286,15 @@ void main() {
         }
     }
     pub fn prepare(&mut self, rs: &RenderState, assets: &assets::Assets, camera: &Camera) {
-        for ((tex_id, bm), v) in rs.billboards.interpolated.values() {
+        for ((tex_id, bm), (_ks, vs)) in rs.billboards.interpolated.iter() {
             let tex = assets.texture(*tex_id);
-            self.push_models((*tex_id, *bm), tex, std::iter::once(v));
+            self.push_models((*tex_id, *bm), tex, vs.clone());
         }
         for ((tex_id, bm), vs) in rs.billboards.raw.iter() {
             let tex = assets.texture(*tex_id);
-            self.push_models((*tex_id, *bm), tex, vs);
+            for srs_vec in vs.iter() {
+                self.push_models((*tex_id, *bm), tex, srs_vec.clone());
+            }
         }
         self.prepare_draw(camera);
     }
@@ -313,9 +313,6 @@ void main() {
             )])
             .unwrap();
         self.uniform_binding = Some(uds);
-        for (_k, b) in self.batches.iter_mut() {
-            b.prepare_draw(&self.instance_pool);
-        }
     }
     pub fn draw<P, L>(&mut self, builder: &mut AutoCommandBufferBuilder<P, L>) {
         let uds = self.uniform_binding.clone().unwrap();
@@ -336,52 +333,46 @@ void main() {
 }
 
 impl BatchData {
-    fn prepare_draw(
-        &mut self,
-        instance_pool: &CpuBufferPool<InstanceData, Arc<vulkano::memory::pool::StdMemoryPool>>,
-    ) {
-        self.instance_buf = Some(
-            instance_pool
-                .chunk(self.instance_data.iter().copied())
-                .unwrap(),
-        );
-    }
     fn draw<P, L>(
         &self,
         pipeline: Arc<GraphicsPipeline>,
         unis: Arc<vulkano::descriptor_set::single_layout_pool::SingleLayoutDescSet>,
         builder: &mut AutoCommandBufferBuilder<P, L>,
     ) {
-        builder
-            .bind_vertex_buffers(0, [self.instance_buf.clone().unwrap()])
-            .bind_index_buffer(self.index_buf.clone())
-            .bind_descriptor_sets(
-                vulkano::pipeline::PipelineBindPoint::Graphics,
-                (*pipeline).layout().clone(),
-                0,
-                unis,
-            )
-            .bind_descriptor_sets(
-                vulkano::pipeline::PipelineBindPoint::Graphics,
-                (*pipeline).layout().clone(),
-                1,
-                self.material_pds.clone(),
-            )
-            .draw_indexed(6, self.instance_data.len() as u32, 0, 0, 0)
-            .unwrap();
+        for buf in self.instance_bufs.iter() {
+            builder
+                .bind_vertex_buffers(0, [buf.clone()])
+                .bind_index_buffer(self.index_buf.clone())
+                .bind_descriptor_sets(
+                    vulkano::pipeline::PipelineBindPoint::Graphics,
+                    (*pipeline).layout().clone(),
+                    0,
+                    unis.clone(),
+                )
+                .bind_descriptor_sets(
+                    vulkano::pipeline::PipelineBindPoint::Graphics,
+                    (*pipeline).layout().clone(),
+                    1,
+                    self.material_pds.clone(),
+                )
+                .draw_indexed(6, buf.len() as u32, 0, 0, 0)
+                .unwrap();
+        }
     }
     fn clear_frame(&mut self) {
-        self.instance_data.clear();
+        self.instance_bufs.clear();
     }
     fn is_empty(&self) -> bool {
-        self.instance_data.is_empty()
+        self.instance_bufs.is_empty()
     }
-    fn push_instances(&mut self, insts: impl IntoIterator<Item = SingleRenderState>) {
+    fn push_instances(
+        &mut self,
+        insts: &[SingleRenderState],
+        instance_pool: &CpuBufferPool<InstanceData, Arc<vulkano::memory::pool::StdMemoryPool>>,
+    ) {
         // Safety: srs and instancedata have the same layout, both are Pod
-        self.instance_data.extend(
-            insts
-                .into_iter()
-                .map(|srs| unsafe { std::mem::transmute::<_, InstanceData>(srs) }),
-        );
+        let (_, insts, _) = unsafe { insts.align_to() };
+        self.instance_bufs
+            .push(instance_pool.chunk(insts.into_iter().copied()).unwrap());
     }
 }

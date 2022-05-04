@@ -69,6 +69,47 @@ impl Interpolate for f32 {
         }
     }
 }
+impl Interpolate for [f32; 4] {
+    fn interpolate(&self, other: Self, r: f32) -> Self {
+        let [a, b, c, d] = self;
+        let [w, x, y, z] = other;
+        [
+            a.interpolate(w, r),
+            b.interpolate(x, r),
+            c.interpolate(y, r),
+            d.interpolate(z, r),
+        ]
+    }
+    fn interpolate_limit(&self, other: Self, r: f32, lim: f32) -> Self {
+        let [a, b, c, d] = self;
+        let [w, x, y, z] = other;
+        let abs_diff = (a - w).abs() + (b - x).abs() + (c - y).abs() + (d - z).abs();
+        if abs_diff >= lim {
+            other
+        } else {
+            self.interpolate(other, r)
+        }
+    }
+}
+impl Interpolate for [u8; 4] {
+    fn interpolate(&self, other: Self, r: f32) -> Self {
+        let [a, b, c, d] = *self;
+        let [w, x, y, z] = other;
+        let [a, b, c, d] = [a as f32, b as f32, c as f32, d as f32]
+            .interpolate([w as f32, x as f32, y as f32, z as f32], r);
+        [a as u8, b as u8, c as u8, d as u8]
+    }
+    fn interpolate_limit(&self, other: Self, r: f32, lim: f32) -> Self {
+        let [a, b, c, d] = *self;
+        let [w, x, y, z] = other;
+        let [a, b, c, d] = [a as f32, b as f32, c as f32, d as f32].interpolate_limit(
+            [w as f32, x as f32, y as f32, z as f32],
+            r,
+            lim,
+        );
+        [a as u8, b as u8, c as u8, d as u8]
+    }
+}
 impl Interpolate for Similarity3 {
     fn interpolate(&self, other: Self, r: f32) -> Self {
         Self::new(
