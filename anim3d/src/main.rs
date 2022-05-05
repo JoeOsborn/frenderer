@@ -214,12 +214,23 @@ fn main() -> Result<()> {
             animation,
             state: AnimationState { t: 0.0 },
         }],
-        sprites: vec![Sprite {
-            trf: Isometry3::new(Vec3::new(20.0, 5.0, -10.0), Rotor3::identity()),
-            size: Vec2::new(16.0, 16.0),
-            cel: Rect::new(0.5, 0.0, 0.5, 0.5),
-            tex: king,
-        }],
+        sprites: vec![
+            Sprite {
+                trf: Isometry3::new(Vec3::new(20.0, 5.0, -10.0), Rotor3::identity()),
+                size: Vec2::new(16.0, 16.0),
+                cel: Rect::new(0.5, 0.0, 0.5, 0.5),
+                tex: king,
+            },
+            Sprite {
+                trf: Isometry3::new(
+                    Vec3::new(20.0, 35.0, -10.0),
+                    Rotor3::from_rotation_xy(PI / 2.0),
+                ),
+                size: Vec2::new(16.0, 16.0),
+                cel: Rect::new(0.0, 0.0, 0.5, 0.5),
+                tex: king,
+            },
+        ],
         flats: vec![Flat {
             trf: Similarity3::new(Vec3::new(0.0, 25.0, -10.0), Rotor3::identity(), 1.0),
             model: flat_model,
