@@ -7,7 +7,7 @@ use crate::vulkan::Vulkan;
 use bytemuck::{Pod, Zeroable};
 use std::sync::Arc;
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
-use vulkano::buffer::{BufferUsage, CpuBufferPool, ImmutableBuffer, TypedBufferAccess};
+use vulkano::buffer::{CpuBufferPool, TypedBufferAccess};
 use vulkano::command_buffer::AutoCommandBufferBuilder;
 use vulkano::descriptor_set::single_layout_pool::SingleLayoutDescSet;
 use vulkano::descriptor_set::PersistentDescriptorSet;
@@ -34,13 +34,14 @@ pub struct SingleRenderState {
 
     pub size: Vec2,
     pub rgba: [u8; 4],
+    pad: f32,
 }
 #[repr(C)]
 #[derive(Clone, Copy, Zeroable, Default, Pod, Debug, PartialEq)]
 struct InstanceData {
     uv_region: [f32; 4],
     position_rot: [f32; 4],
-    size_rgba: [f32; 3], // 2 f32s for size, then one rgba u8;4 as an f32
+    size_rgba: [f32; 4], // 2 f32s for size, then one rgba u8;4 as an f32, then a padding float
 }
 vulkano::impl_vertex!(InstanceData, uv_region, position_rot, size_rgba);
 
@@ -52,6 +53,7 @@ impl SingleRenderState {
             rot,
             size,
             rgba,
+            pad: 0.0,
         }
     }
     pub fn adjust_rgba(&mut self, rgba: [i16; 4]) {
@@ -68,6 +70,7 @@ impl super::SingleRenderState for SingleRenderState {
             size: self.size.interpolate_limit(other.size, r, 0.5),
             rgba: self.rgba.interpolate_limit(other.rgba, r, 32.0),
             uv_region: other.uv_region,
+            pad: 0.0,
         }
     }
 }
@@ -80,7 +83,7 @@ struct BatchData {
     material_pds: Arc<vulkano::descriptor_set::PersistentDescriptorSet>,
     instance_bufs:
         Vec<Arc<CpuBufferPoolChunk<InstanceData, Arc<vulkano::memory::pool::StdMemoryPool>>>>,
-    index_buf: Arc<ImmutableBuffer<[u16]>>,
+    storage_pds: Vec<Arc<SingleLayoutDescSet>>,
 }
 
 #[repr(C)]
@@ -98,7 +101,7 @@ pub struct Renderer {
     uniform_buffers: CpuBufferPool<Uniforms>,
     uniform_pds: SingleLayoutDescSetPool,
     uniform_binding: Option<Arc<SingleLayoutDescSet>>,
-    index_buf: Arc<ImmutableBuffer<[u16]>>,
+    instance_sds: SingleLayoutDescSetPool,
     instance_pool: CpuBufferPool<InstanceData, Arc<vulkano::memory::pool::StdMemoryPool>>,
     batches: HashMap<(assets::TextureRef, BlendMode), BatchData>,
 }
@@ -115,10 +118,7 @@ impl Renderer {
 #version 450
 
 // vertex attributes---none!
-// instance data
-layout(location = 0) in vec4 uv_region;
-layout(location = 1) in vec4 position_rot;
-layout(location = 2) in vec3 size_rgba;
+// instance data---none!
 
 // outputs
 layout(location = 0) out vec2 out_uv;
@@ -127,7 +127,21 @@ layout(location = 1) out vec4 out_color;
 // uniforms
 layout(set=0, binding=0) uniform BatchData { mat4 view; mat4 proj; };
 
+// storage buffer uniforms
+struct SpriteData {
+  vec4 uv_region;
+  vec4 position_rot;
+  vec4 size_rgba_pad;
+};
+layout(std430, set = 2, binding = 0) buffer Sprites { SpriteData data[]; };
+
 void main() {
+  int which_sprite = gl_VertexIndex / 6;
+  int which_vert = gl_VertexIndex % 6;
+  SpriteData sd = data[which_sprite];
+  vec4 uv_region = sd.uv_region;
+  vec4 position_rot = sd.position_rot;
+  vec3 size_rgba = sd.size_rgba_pad.xyz;
   float w = size_rgba.x;
   float h = size_rgba.y;
   float rot = position_rot.w;
@@ -141,12 +155,15 @@ void main() {
 
   // 0: TL, 1: BL, 2: BR, 3: TR
   vec2 posns[] = {
-    vec2(-0.5, 0.5),
-    vec2(-0.5, -0.5),
-    vec2(0.5, -0.5),
-    vec2(0.5, 0.5),
+    vec2(-0.5, 0.5), // 0
+    vec2(-0.5, -0.5),// 1
+    vec2(0.5, -0.5), // 2
+    vec2(0.5, 0.5),  // 3
+    vec2(-0.5, 0.5), // 0 again
+    vec2(0.5, -0.5), // 2 again
+    vec2(0.5, 0.5),  // 3 again
   };
-  vec2 pos = posns[gl_VertexIndex].xy;
+  vec2 pos = posns[which_vert].xy;
   vec4 center = view * vec4(position_rot.xyz, 1.0);
   vec2 rot_pos = vec2(
     pos.x*w*cos(rot)-pos.y*h*sin(rot),
@@ -187,7 +204,7 @@ void main() {
         let sampler = Sampler::new(vulkan.device.clone(), SamplerCreateInfo::default()).unwrap();
         use vulkano::pipeline::graphics::depth_stencil::*;
         let pipeline = GraphicsPipeline::start()
-            .vertex_input_state(BuffersDefinition::new().instance::<InstanceData>())
+            .vertex_input_state(BuffersDefinition::new())
             .vertex_shader(vs.entry_point("main").unwrap(), ())
             .input_assembly_state(InputAssemblyState::new().topology(
                 vulkano::pipeline::graphics::input_assembly::PrimitiveTopology::TriangleList,
@@ -218,22 +235,24 @@ void main() {
         let uniform_buffers = CpuBufferPool::uniform_buffer(vulkan.device.clone());
         let uniform_pds =
             SingleLayoutDescSetPool::new(pipeline.layout().set_layouts().get(0).unwrap().clone());
-        let instance_pool = CpuBufferPool::vertex_buffer(vulkan.device.clone());
-
-        let (index_buf, fut) = ImmutableBuffer::from_iter(
-            [0_u16, 1, 2, 0, 2, 3].into_iter(),
-            BufferUsage::index_buffer(),
-            vulkan.queue.clone(),
-        )
-        .unwrap();
-        vulkan.wait_for(Box::new(fut));
+        let instance_pool = CpuBufferPool::new(
+            vulkan.device.clone(),
+            vulkano::buffer::BufferUsage {
+                storage_buffer: true,
+                uniform_buffer: true,
+                transfer_destination: true,
+                ..Default::default()
+            },
+        );
+        let instance_sds =
+            SingleLayoutDescSetPool::new(pipeline.layout().set_layouts().get(2).unwrap().clone());
 
         Self {
             sampler,
             pipeline,
             uniform_buffers,
             uniform_pds,
-            index_buf,
+            instance_sds,
             instance_pool,
             batches: HashMap::new(),
             uniform_binding: None,
@@ -248,29 +267,26 @@ void main() {
         use std::collections::hash_map::Entry;
         match self.batches.entry((tr, bm)) {
             Entry::Vacant(v) => {
-                let mut b = Self::create_batch(
-                    self.pipeline.clone(),
-                    self.sampler.clone(),
-                    texture,
-                    self.index_buf.clone(),
-                );
-                b.push_instances(&*dat.borrow(), &self.instance_pool);
+                let mut b =
+                    Self::create_batch(self.pipeline.clone(), self.sampler.clone(), texture);
+                b.push_instances(&*dat.borrow(), &self.instance_pool, &mut self.instance_sds);
                 v.insert(b);
             }
-            Entry::Occupied(v) => v
-                .into_mut()
-                .push_instances(&*dat.borrow(), &self.instance_pool),
+            Entry::Occupied(v) => v.into_mut().push_instances(
+                &*dat.borrow(),
+                &self.instance_pool,
+                &mut self.instance_sds,
+            ),
         }
     }
     fn create_batch(
         pipeline: Arc<vulkano::pipeline::GraphicsPipeline>,
         sampler: Arc<Sampler>,
         texture: &Texture,
-        index_buf: Arc<ImmutableBuffer<[u16]>>,
     ) -> BatchData {
         BatchData {
             instance_bufs: vec![],
-            index_buf,
+            storage_pds: vec![],
             material_pds: PersistentDescriptorSet::new(
                 pipeline.layout().set_layouts().get(1).unwrap().clone(),
                 [
@@ -339,28 +355,34 @@ impl BatchData {
         unis: Arc<vulkano::descriptor_set::single_layout_pool::SingleLayoutDescSet>,
         builder: &mut AutoCommandBufferBuilder<P, L>,
     ) {
-        for buf in self.instance_bufs.iter() {
+        builder
+            .bind_descriptor_sets(
+                vulkano::pipeline::PipelineBindPoint::Graphics,
+                (*pipeline).layout().clone(),
+                0,
+                unis.clone(),
+            )
+            .bind_descriptor_sets(
+                vulkano::pipeline::PipelineBindPoint::Graphics,
+                (*pipeline).layout().clone(),
+                1,
+                self.material_pds.clone(),
+            );
+        for (buf, pds) in self.instance_bufs.iter().zip(self.storage_pds.iter()) {
             builder
-                .bind_vertex_buffers(0, [buf.clone()])
-                .bind_index_buffer(self.index_buf.clone())
                 .bind_descriptor_sets(
                     vulkano::pipeline::PipelineBindPoint::Graphics,
                     (*pipeline).layout().clone(),
-                    0,
-                    unis.clone(),
+                    2,
+                    pds.clone(),
                 )
-                .bind_descriptor_sets(
-                    vulkano::pipeline::PipelineBindPoint::Graphics,
-                    (*pipeline).layout().clone(),
-                    1,
-                    self.material_pds.clone(),
-                )
-                .draw_indexed(6, buf.len() as u32, 0, 0, 0)
+                .draw(6 * buf.len() as u32, 1, 0, 0)
                 .unwrap();
         }
     }
     fn clear_frame(&mut self) {
         self.instance_bufs.clear();
+        self.storage_pds.clear();
     }
     fn is_empty(&self) -> bool {
         self.instance_bufs.is_empty()
@@ -369,10 +391,18 @@ impl BatchData {
         &mut self,
         insts: &[SingleRenderState],
         instance_pool: &CpuBufferPool<InstanceData, Arc<vulkano::memory::pool::StdMemoryPool>>,
+        slds_pool: &mut SingleLayoutDescSetPool,
     ) {
         // Safety: srs and instancedata have the same layout, both are Pod
         let (_, insts, _) = unsafe { insts.align_to() };
-        self.instance_bufs
-            .push(instance_pool.chunk(insts.into_iter().copied()).unwrap());
+        let chunk = instance_pool.chunk(insts.into_iter().copied()).unwrap();
+        self.instance_bufs.push(chunk.clone());
+        self.storage_pds.push(
+            slds_pool
+                .next([vulkano::descriptor_set::WriteDescriptorSet::buffer(
+                    0, chunk,
+                )])
+                .unwrap(),
+        );
     }
 }
