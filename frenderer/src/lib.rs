@@ -1,18 +1,34 @@
-pub use color_eyre;
-pub use color_eyre::eyre::Result;
-pub mod animation;
-pub mod assets;
-pub mod camera;
-mod engine;
-pub use engine::{Engine, FrendererSettings, SpriteRendererSettings, WindowSettings};
-mod image;
-mod input;
-pub use input::{Input, Key, MousePos};
-pub mod renderer;
-pub mod types;
-mod vulkan;
+pub mod input;
 
-pub trait World {
-    fn update(&mut self, inp: &input::Input, assets: &mut assets::Assets);
-    fn render(&mut self, assets: &mut assets::Assets, render_state: &mut renderer::RenderState);
+#[cfg(not(feature = "webgl"))]
+pub(crate) const USE_STORAGE: bool = true;
+#[cfg(feature = "webgl")]
+pub(crate) const USE_STORAGE: bool = false;
+
+mod gpu;
+pub use gpu::WGPU;
+
+mod sprites;
+pub use sprites::{GPUCamera, GPUSprite};
+
+pub trait Runtime {
+    fn run_future<F: std::future::Future>(&self, f: F) -> F::Output;
 }
+#[cfg(not(target_arch = "wasm32"))]
+struct PollsterRuntime();
+#[cfg(not(target_arch = "wasm32"))]
+impl Runtime for PollsterRuntime {
+    fn run_future<F: std::future::Future>(&self, f: F) -> F::Output {
+        pollster::block_on(f)
+    }
+}
+#[cfg(target_arch = "wasm32")]
+struct WebRuntime();
+#[cfg(target_arch = "wasm32")]
+impl Runtime for WebRuntime {
+    fn run_future<F: std::future::Future>(&self, f: F) -> F::Output {
+        wasm_bindgen_futures::spawn_local(f)
+    }
+}
+pub mod frenderer;
+pub use frenderer::*;

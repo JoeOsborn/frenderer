@@ -1,22 +1,38 @@
 [package]
 name = "frenderer"
-version = "0.6.0"
+version = "2.0.0"
 edition = "2021"
-authors = ["Joseph C. Osborn <joseph.osborn@pomona.edu>"]
-license="GPL-3.0-or-later"
-repository="https://github.com/JoeOsborn/frenderer"
-homepage="https://github.com/JoeOsborn/frenderer"
-description="The friendly little Vulkan renderer"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
 [dependencies]
-vulkano = "0.29"
-vulkano-shaders = "0.29"
-winit = "0.26.1"
-vulkano-win = "0.29"
-image_reading = {version="0.24", package = "image"}
-ultraviolet= {version="0.9", features=["bytemuck", "mint"]}
-bytemuck = { version = "1.7", features = ["derive", "extern_crate_std", "min_const_generics"] }
-russimp={version="1.0.2", features=["prebuilt"]}
-color-eyre = {version="0.5"}
-thunderdome="0.5.0"
+async-trait = "0.1.73"
+bytemuck = {version="1.13.1",features=["derive"]}
+env_logger = "0.10"
+image = "0.24"
+log = "0.4"
+pollster = "0.3"
+rand = "0.8.5"
+wgpu = "0.17"
+winit = "0.28.6"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys = "0.3.64"
+console_error_panic_hook = "0.1.7"
+console_log = "1"
+wasm-bindgen-futures = "0.4.34"
+web-sys = {version="0.3.64", features = [
+    "Location",
+    "Blob",
+    "RequestInit",
+    "RequestMode",
+    "Request",
+    "Response",
+    "WebGl2RenderingContext",
+    "CanvasRenderingContext2d"
+] }
+
+
+[features]
+default = []
+webgl = ["wgpu/webgl"]

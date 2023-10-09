@@ -1,6 +1,7 @@
 [workspace]
-members = ["anim3d", "particles", "frenderer"]
+members = ["frenderer", "test2d"]
 exclude = ["target", "content"]
+resolver = "2"
 
 [profile.dev.package.backtrace]
 opt-level = 3
