@@ -1,10 +1,10 @@
-use frenderer::{input, GPUCamera, GPUSprite};
+use frenderer::{input, GPUCamera, Region};
 use rand::Rng;
 
 fn main() {
     let event_loop = winit::event_loop::EventLoop::new();
     let window = winit::window::Window::new(&event_loop).unwrap();
-    let mut frend = frenderer::with_default_runtime(window);
+    let mut frend = frenderer::with_default_runtime(&window);
     let mut input = input::Input::default();
     // init game code here
     let (sprite_tex, _sprite_img) = frend.block_on(async {
@@ -20,22 +20,35 @@ fn main() {
     };
 
     let mut rng = rand::thread_rng();
+    const COUNT: usize = 100_000;
     frend.sprites.add_sprite_group(
         &frend.gpu,
         sprite_tex,
-        (0..1_000_000)
-            .map(|_n| GPUSprite {
-                screen_region: [
-                    rng.gen_range(0.0..(camera.screen_size[0] - 16.0)),
-                    rng.gen_range(0.0..(camera.screen_size[1] - 16.0)),
-                    16.0,
-                    16.0,
-                ],
-                sheet_region: [0.0, 0.5, 0.5, 0.5],
+        (0..COUNT)
+            .map(|_n| Region {
+                x: rng.gen_range(0.0..(camera.screen_size[0] - 16.0)),
+                y: rng.gen_range(0.0..(camera.screen_size[1] - 16.0)),
+                w: 16.0,
+                h: 16.0,
             })
             .collect(),
+        vec![
+            Region {
+                x: 0.0,
+                y: 0.5,
+                w: 0.5,
+                h: 0.5
+            };
+            COUNT
+        ],
         camera,
     );
+    const DT: f32 = 1.0 / 60.0;
+    const DT_FUDGE_AMOUNT: f32 = 0.0002;
+    const DT_MAX: f32 = DT * 5.0;
+    const TIME_SNAPS: [f32; 4] = [15.0, 30.0, 60.0, 120.0];
+    let mut acc = 0.0;
+    let mut now = std::time::Instant::now();
     event_loop.run(move |event, _, control_flow| {
         use winit::event::{Event, WindowEvent};
         control_flow.set_poll();
@@ -47,17 +60,42 @@ fn main() {
                 *control_flow = winit::event_loop::ControlFlow::Exit;
             }
             Event::MainEventsCleared => {
-                // some number of times
-                //update_game();
-                camera.screen_pos[0] += 0.01;
+                // compute elapsed time since last frame
+                let mut elapsed = now.elapsed().as_secs_f32();
+                println!("{elapsed}");
+                // snap time to nearby vsync framerate
+                TIME_SNAPS.iter().for_each(|s| {
+                    if (elapsed - 1.0 / s).abs() < DT_FUDGE_AMOUNT {
+                        elapsed = 1.0 / s;
+                    }
+                });
+                // Death spiral prevention
+                if elapsed > DT_MAX {
+                    acc = 0.0;
+                    elapsed = DT;
+                }
+                acc += elapsed;
+                now = std::time::Instant::now();
+                // While we have time to spend
+                while acc >= DT {
+                    // simulate a frame
+                    acc -= DT;
+                    println!("tick");
+                    //update_game();
+                    camera.screen_pos[0] += 0.01;
+                    input.next_frame();
+                }
+                // Render prep
                 frend.sprites.set_camera_all(&frend.gpu, camera);
-                input.next_frame();
+                // update sprite positions and sheet regions
                 // ok now render
-                let elapsed = frend.render();
-                println!("{}", elapsed.as_secs_f32());
+                frend.render();
+                window.request_redraw();
             }
             event => {
-                frend.process_window_event(&event);
+                if frend.process_window_event(&event) {
+                    window.request_redraw();
+                }
                 input.process_input_event(&event);
             }
         }

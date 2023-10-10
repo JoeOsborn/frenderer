@@ -9,7 +9,6 @@ use winit::event::{Event, WindowEvent};
 pub struct Frenderer<RT: super::Runtime> {
     pub gpu: WGPU,
     pub sprites: SpriteRenderer,
-    pub window: winit::window::Window,
     runtime: RT,
 }
 
@@ -18,12 +17,12 @@ pub struct Frenderer<RT: super::Runtime> {
 /// On web, this also adds a canvas to the given window.  If you don't need all that behavior,
 /// consider using your own [`super::Runtime`].
 #[cfg(not(target_arch = "wasm32"))]
-pub fn with_default_runtime(window: winit::window::Window) -> Frenderer<impl super::Runtime> {
+pub fn with_default_runtime(window: &winit::window::Window) -> Frenderer<impl super::Runtime> {
     env_logger::init();
     Frenderer::with_runtime(window, super::PollsterRuntime {})
 }
 #[cfg(target_arch = "wasm32")]
-pub fn with_default_runtime(window: winit::Window::Window) -> Frenderer<impl super::Runtime> {
+pub fn with_default_runtime(window: &winit::Window::Window) -> Frenderer<impl super::Runtime> {
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
     console_log::init_with_level(log::Level::Trace).expect("could not initialize logger");
     use winit::platform::web::WindowExtWebSys;
@@ -41,13 +40,12 @@ pub fn with_default_runtime(window: winit::Window::Window) -> Frenderer<impl sup
 
 impl<RT: super::Runtime> Frenderer<RT> {
     /// Create a new Frenderer with the given window and runtime.
-    pub fn with_runtime(window: winit::window::Window, runtime: RT) -> Self {
-        let gpu = runtime.run_future(WGPU::new(&window));
+    pub fn with_runtime(window: &winit::window::Window, runtime: RT) -> Self {
+        let gpu = runtime.run_future(WGPU::new(window));
         let sprites = SpriteRenderer::new(&gpu);
         Self {
             gpu,
             sprites,
-            window,
             runtime,
         }
     }
@@ -58,27 +56,24 @@ impl<RT: super::Runtime> Frenderer<RT> {
     /// Process a window event
     /// (e.g. [`winit::event::WindowEvent::Resized`]).  Will resize
     /// the surface or perform other renderer-appropriate actions.
-    pub fn process_window_event<T>(&mut self, ev: &Event<T>) {
+    /// Returns `true` if the window should be redrawn.
+    pub fn process_window_event<T>(&mut self, ev: &Event<T>) -> bool {
         match *ev {
             Event::WindowEvent {
                 event: WindowEvent::Resized(size),
                 ..
             } => {
                 self.gpu.resize(size);
-                // On macos the window needs to be redrawn manually after resizing
-                self.window.request_redraw();
+                true
             }
-            _ => (),
+            _ => false,
         }
     }
-    /// Create a [`wgpu::RenderPass`] and draw into it.  Returns the
-    /// amount of time taken to create the render program, submit the
-    /// queue, and present the frame.  In the future this should take
-    /// the [`wgpu::RenderPass`] or the queue/command encoder as a
-    /// parameter and not present the surface on its own, so it can
-    /// fit more smoothly into other rendering schemes.
-    pub fn render(&self) -> std::time::Duration {
-        let start = std::time::Instant::now();
+    /// Create a [`wgpu::RenderPass`] and draw into it.  In the future
+    /// this should take the [`wgpu::RenderPass`] or the queue/command
+    /// encoder as a parameter and not present the surface on its own,
+    /// so it can fit more smoothly into other rendering schemes.
+    pub fn render(&self) {
         let frame = self
             .gpu
             .surface
@@ -108,7 +103,5 @@ impl<RT: super::Runtime> Frenderer<RT> {
         }
         self.gpu.queue.submit(Some(encoder.finish()));
         frame.present();
-        self.window.request_redraw();
-        start.elapsed()
     }
 }

@@ -14,15 +14,12 @@ struct Camera {
     screen_size: vec2<f32>,
 }
 
-struct GPUSprite {
-    to_rect:vec4<f32>,
-    from_rect:vec4<f32>
-}
-
 @group(0) @binding(0)
 var<uniform> camera: Camera;
 @group(0) @binding(1)
-var<storage, read> s_sprites: array<GPUSprite>;
+var<storage, read> s_world: array<vec4<f32>>;
+@group(0) @binding(2)
+var<storage, read> s_sheet: array<vec4<f32>>;
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
@@ -32,10 +29,10 @@ struct VertexOutput {
 @vertex
 fn vs_storage_main(@builtin(vertex_index) in_vertex_index: u32, @builtin(instance_index) sprite_index:u32) -> VertexOutput {
     // We'll just look up the vertex data in those constant arrays
-    let corner:vec4<f32> = vec4(s_sprites[sprite_index].to_rect.xy,0.,1.);
-    let size:vec2<f32> = s_sprites[sprite_index].to_rect.zw;
-    let tex_corner:vec2<f32> = s_sprites[sprite_index].from_rect.xy;
-    let tex_size:vec2<f32> = s_sprites[sprite_index].from_rect.zw;
+    let corner:vec4<f32> = vec4(s_world[sprite_index].xy,0.,1.);
+    let size:vec2<f32> = s_world[sprite_index].zw;
+    let tex_corner:vec2<f32> = s_sheet[sprite_index].xy;
+    let tex_size:vec2<f32> = s_sheet[sprite_index].zw;
     let which_vtx:vec2<f32> = VERTICES[in_vertex_index];
     let which_uv: vec2<f32> = vec2(VERTICES[in_vertex_index].x, 1.0 - VERTICES[in_vertex_index].y);
     return VertexOutput(
@@ -49,10 +46,10 @@ fn vs_storage_noinstance_main(@builtin(vertex_index) in_vertex_index: u32) -> Ve
     let sprite_index:u32 = in_vertex_index / u32(6);
     let vertex_index:u32 = in_vertex_index - (sprite_index * u32(6));
     // We'll just look up the vertex data in those constant arrays
-    let corner:vec4<f32> = vec4(s_sprites[sprite_index].to_rect.xy,0.,1.);
-    let size:vec2<f32> = s_sprites[sprite_index].to_rect.zw;
-    let tex_corner:vec2<f32> = s_sprites[sprite_index].from_rect.xy;
-    let tex_size:vec2<f32> = s_sprites[sprite_index].from_rect.zw;
+    let corner:vec4<f32> = vec4(s_world[sprite_index].xy,0.,1.);
+    let size:vec2<f32> = s_world[sprite_index].zw;
+    let tex_corner:vec2<f32> = s_sheet[sprite_index].xy;
+    let tex_size:vec2<f32> = s_sheet[sprite_index].zw;
     let which_vtx:vec2<f32> = VERTICES[vertex_index];
     let which_uv: vec2<f32> = vec2(VERTICES[vertex_index].x, 1.0 - VERTICES[vertex_index].y);
     return VertexOutput(
@@ -61,18 +58,14 @@ fn vs_storage_noinstance_main(@builtin(vertex_index) in_vertex_index: u32) -> Ve
     );
 }
 
-struct InstanceInput {
-    @location(0) to_rect: vec4<f32>,
-    @location(1) from_rect: vec4<f32>,
-};
 
 @vertex
-fn vs_vbuf_main(@builtin(vertex_index) in_vertex_index: u32, sprite_data:InstanceInput) -> VertexOutput {
+fn vs_vbuf_main(@builtin(vertex_index) in_vertex_index: u32, @location(0) world_region:vec4<f32>, @location(1) sheet_region:vec4<f32>) -> VertexOutput {
     // We'll still just look up the vertex positions in those constant arrays
-    let corner:vec4<f32> = vec4(sprite_data.to_rect.xy,0.,1.);
-    let size:vec2<f32> = sprite_data.to_rect.zw;
-    let tex_corner:vec2<f32> = sprite_data.from_rect.xy;
-    let tex_size:vec2<f32> = sprite_data.from_rect.zw;
+    let corner:vec4<f32> = vec4(world_region.xy,0.,1.);
+    let size:vec2<f32> = world_region.zw;
+    let tex_corner:vec2<f32> = sheet_region.xy;
+    let tex_size:vec2<f32> = sheet_region.zw;
     let which_vtx:vec2<f32> = VERTICES[in_vertex_index];
     let which_uv: vec2<f32> = vec2(VERTICES[in_vertex_index].x, 1.0 - VERTICES[in_vertex_index].y);
     return VertexOutput(

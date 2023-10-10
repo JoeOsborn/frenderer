@@ -11,9 +11,11 @@ use bytemuck::{Pod, Zeroable};
 /// spritesheet region (in normalized texture coordinates).
 #[repr(C)]
 #[derive(Clone, Copy, Zeroable, Pod)]
-pub struct GPUSprite {
-    pub screen_region: [f32; 4],
-    pub sheet_region: [f32; 4],
+pub struct Region {
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
 }
 
 /// GPUCamera is a transform for a sprite layer, defining a scale
@@ -28,8 +30,10 @@ pub struct GPUCamera {
 #[allow(dead_code)]
 struct SpriteGroup {
     tex: wgpu::Texture,
-    sprite_buffer: wgpu::Buffer,
-    sprites: Vec<GPUSprite>,
+    world_buffer: wgpu::Buffer,
+    sheet_buffer: wgpu::Buffer,
+    world_regions: Vec<Region>,
+    sheet_regions: Vec<Region>,
     camera: GPUCamera,
     camera_buffer: wgpu::Buffer,
     tex_bind_group: wgpu::BindGroup,
@@ -127,6 +131,20 @@ impl SpriteRenderer {
                             // No count, not a buffer array binding
                             count: None,
                         },
+                        wgpu::BindGroupLayoutEntry {
+                            // This matches the binding in the shader
+                            binding: 2,
+                            // Available in vertex shader
+                            visibility: wgpu::ShaderStages::VERTEX,
+                            // It's a buffer
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Storage { read_only: true },
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            // No count, not a buffer array binding
+                            count: None,
+                        },
                     ],
                 })
         } else {
@@ -159,22 +177,26 @@ impl SpriteRenderer {
                     buffers: if USE_STORAGE {
                         &[]
                     } else {
-                        &[wgpu::VertexBufferLayout {
-                            array_stride: std::mem::size_of::<GPUSprite>() as u64,
-                            step_mode: wgpu::VertexStepMode::Instance,
-                            attributes: &[
-                                wgpu::VertexAttribute {
+                        &[
+                            wgpu::VertexBufferLayout {
+                                array_stride: std::mem::size_of::<Region>() as u64,
+                                step_mode: wgpu::VertexStepMode::Instance,
+                                attributes: &[wgpu::VertexAttribute {
                                     format: wgpu::VertexFormat::Float32x4,
                                     offset: 0,
                                     shader_location: 0,
-                                },
-                                wgpu::VertexAttribute {
+                                }],
+                            },
+                            wgpu::VertexBufferLayout {
+                                array_stride: std::mem::size_of::<Region>() as u64,
+                                step_mode: wgpu::VertexStepMode::Instance,
+                                attributes: &[wgpu::VertexAttribute {
                                     format: wgpu::VertexFormat::Float32x4,
-                                    offset: std::mem::size_of::<[f32; 4]>() as u64,
+                                    offset: 0,
                                     shader_location: 1,
-                                },
-                            ],
-                        }]
+                                }],
+                            },
+                        ]
                     },
                 },
                 fragment: Some(wgpu::FragmentState {
@@ -201,7 +223,8 @@ impl SpriteRenderer {
         &mut self,
         gpu: &WGPU,
         tex: wgpu::Texture,
-        sprites: Vec<GPUSprite>,
+        world_regions: Vec<Region>,
+        sheet_regions: Vec<Region>,
         camera: GPUCamera,
     ) -> usize {
         let view_sprite = tex.create_view(&wgpu::TextureViewDescriptor::default());
@@ -223,9 +246,19 @@ impl SpriteRenderer {
                 },
             ],
         });
-        let buffer_sprite = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+        let buffer_world = gpu.device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
-            size: sprites.len() as u64 * std::mem::size_of::<GPUSprite>() as u64,
+            size: world_regions.len() as u64 * std::mem::size_of::<Region>() as u64,
+            usage: if USE_STORAGE {
+                wgpu::BufferUsages::STORAGE
+            } else {
+                wgpu::BufferUsages::VERTEX
+            } | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let buffer_sheet = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: sheet_regions.len() as u64 * std::mem::size_of::<Region>() as u64,
             usage: if USE_STORAGE {
                 wgpu::BufferUsages::STORAGE
             } else {
@@ -250,7 +283,11 @@ impl SpriteRenderer {
                     },
                     wgpu::BindGroupEntry {
                         binding: 1,
-                        resource: buffer_sprite.as_entire_binding(),
+                        resource: buffer_world.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: buffer_sheet.as_entire_binding(),
                     },
                 ],
             })
@@ -265,13 +302,17 @@ impl SpriteRenderer {
             })
         };
         gpu.queue
-            .write_buffer(&buffer_sprite, 0, bytemuck::cast_slice(&sprites));
+            .write_buffer(&buffer_world, 0, bytemuck::cast_slice(&world_regions));
+        gpu.queue
+            .write_buffer(&buffer_sheet, 0, bytemuck::cast_slice(&sheet_regions));
         gpu.queue
             .write_buffer(&camera_buffer, 0, bytemuck::bytes_of(&camera));
         self.groups.push(SpriteGroup {
             tex,
-            sprite_buffer: buffer_sprite,
-            sprites,
+            world_buffer: buffer_world,
+            sheet_buffer: buffer_sheet,
+            world_regions,
+            sheet_regions,
             tex_bind_group,
             sprite_bind_group,
             camera,
@@ -291,13 +332,25 @@ impl SpriteRenderer {
     /// it could be expensive.
     pub fn resize_sprite_group(&mut self, gpu: &WGPU, which: usize, len: usize) -> usize {
         let group = &mut self.groups[which];
-        let old_len = group.sprites.len();
-        // shrink or grow sprite vec
-        group.sprites.resize(len, GPUSprite::zeroed());
+        let old_len = group.world_regions.len();
+        assert_eq!(old_len, group.sheet_regions.len());
+        // shrink or grow sprite vecs
+        group.world_regions.resize(len, Region::zeroed());
+        group.sheet_regions.resize(len, Region::zeroed());
         // realloc buffer if needed, remake sprite_bind_group if using storage buffers
-        let new_size = len * std::mem::size_of::<GPUSprite>();
-        if new_size > group.sprite_buffer.size() as usize {
-            group.sprite_buffer = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+        let new_size = len * std::mem::size_of::<Region>();
+        if new_size > group.world_buffer.size() as usize {
+            group.world_buffer = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+                label: None,
+                size: new_size as u64,
+                usage: if USE_STORAGE {
+                    wgpu::BufferUsages::STORAGE
+                } else {
+                    wgpu::BufferUsages::VERTEX
+                } | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            group.sheet_buffer = gpu.device.create_buffer(&wgpu::BufferDescriptor {
                 label: None,
                 size: new_size as u64,
                 usage: if USE_STORAGE {
@@ -319,15 +372,24 @@ impl SpriteRenderer {
                             },
                             wgpu::BindGroupEntry {
                                 binding: 1,
-                                resource: group.sprite_buffer.as_entire_binding(),
+                                resource: group.world_buffer.as_entire_binding(),
+                            },
+                            wgpu::BindGroupEntry {
+                                binding: 2,
+                                resource: group.sheet_buffer.as_entire_binding(),
                             },
                         ],
                     });
             };
             gpu.queue.write_buffer(
-                &group.sprite_buffer,
+                &group.world_buffer,
                 0,
-                bytemuck::cast_slice(&group.sprites),
+                bytemuck::cast_slice(&group.world_regions),
+            );
+            gpu.queue.write_buffer(
+                &group.sheet_buffer,
+                0,
+                bytemuck::cast_slice(&group.sheet_regions),
             );
         }
         old_len
@@ -348,19 +410,36 @@ impl SpriteRenderer {
     /// Send a range of stored sprite data for a particular group to the GPU.
     /// You must call this yourself after modifying sprite data.
     pub fn upload_sprites(&mut self, gpu: &WGPU, which: usize, range: Range<usize>) {
+        self.upload_world_regions(gpu, which, range.clone());
+        self.upload_sheet_regions(gpu, which, range);
+    }
+    /// Upload only position changes to the GPU
+    pub fn upload_world_regions(&mut self, gpu: &WGPU, which: usize, range: Range<usize>) {
         gpu.queue.write_buffer(
-            &self.groups[which].sprite_buffer,
+            &self.groups[which].world_buffer,
             range.start as u64,
-            bytemuck::cast_slice(&self.groups[which].sprites[range]),
+            bytemuck::cast_slice(&self.groups[which].world_regions[range]),
         );
     }
-    /// Get a read-only slice of a specified sprite group.
-    pub fn get_sprites(&self, which: usize) -> &[GPUSprite] {
-        &self.groups[which].sprites
+    /// Upload only animation changes to the GPU
+    pub fn upload_sheet_regions(&mut self, gpu: &WGPU, which: usize, range: Range<usize>) {
+        gpu.queue.write_buffer(
+            &self.groups[which].sheet_buffer,
+            range.start as u64,
+            bytemuck::cast_slice(&self.groups[which].sheet_regions[range]),
+        );
     }
-    /// Get a mutable slice of a specified sprite group.
-    pub fn get_sprites_mut(&mut self, which: usize) -> &mut [GPUSprite] {
-        &mut self.groups[which].sprites
+    /// Get a read-only slice of a specified sprite group's world positions and texture regions.
+    pub fn get_sprites(&self, which: usize) -> (&[Region], &[Region]) {
+        (
+            &self.groups[which].world_regions,
+            &self.groups[which].sheet_regions,
+        )
+    }
+    /// Get a mutable slice of a specified sprite group's world positions and texture regions.
+    pub fn get_sprites_mut(&mut self, which: usize) -> (&mut [Region], &mut [Region]) {
+        let group = &mut self.groups[which];
+        (&mut group.world_regions, &mut group.sheet_regions)
     }
     /// Render all sprite groups into the given pass.
     pub(crate) fn render<'s, 'pass>(&'s self, rpass: &mut wgpu::RenderPass<'pass>)
@@ -370,7 +449,8 @@ impl SpriteRenderer {
         rpass.set_pipeline(&self.pipeline);
         for group in self.groups.iter() {
             if !USE_STORAGE {
-                rpass.set_vertex_buffer(0, group.sprite_buffer.slice(..));
+                rpass.set_vertex_buffer(0, group.world_buffer.slice(..));
+                rpass.set_vertex_buffer(0, group.sheet_buffer.slice(..));
             }
             rpass.set_bind_group(0, &group.sprite_bind_group, &[]);
             rpass.set_bind_group(1, &group.tex_bind_group, &[]);
@@ -378,7 +458,8 @@ impl SpriteRenderer {
             // this uses instanced drawing, but it would also be okay
             // to draw 6 * sprites.len() vertices and use modular arithmetic
             // to figure out which sprite we're drawing.
-            rpass.draw(0..6, 0..group.sprites.len() as u32);
+            assert_eq!(group.world_regions.len(), group.sheet_regions.len());
+            rpass.draw(0..6, 0..group.world_regions.len() as u32);
             //rpass.draw(0..(6 * group.sprites.len() as u32), 0..1);
         }
     }
