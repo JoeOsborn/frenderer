@@ -6,6 +6,8 @@ license="GPL-3.0-or-later"
 description = "The friendly WGPU renderer."
 repository="https://github.com/JoeOsborn/frenderer"
 authors = ["Joseph C. Osborn <joseph.osborn@pomona.edu>"]
+documentation = "https://docs.rs/frenderer"
+readme = "../README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
