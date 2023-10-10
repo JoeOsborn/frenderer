@@ -55,7 +55,7 @@ fn main() {
     const DT: f32 = 1.0 / 60.0;
     const DT_FUDGE_AMOUNT: f32 = 0.0002;
     const DT_MAX: f32 = DT * 5.0;
-    const TIME_SNAPS: [f32; 4] = [15.0, 30.0, 60.0, 120.0];
+    const TIME_SNAPS: [f32; 5] = [15.0, 30.0, 60.0, 120.0, 144.0];
     let mut acc = 0.0;
     let mut now = std::time::Instant::now();
     event_loop.run(move |event, _, control_flow| {
