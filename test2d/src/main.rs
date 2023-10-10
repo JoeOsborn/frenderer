@@ -1,4 +1,4 @@
-use frenderer::{input, GPUCamera, Region};
+use frenderer::{input, wgpu, GPUCamera, Region};
 use rand::Rng;
 
 fn main() {
@@ -88,8 +88,30 @@ fn main() {
                 // Render prep
                 frend.sprites.set_camera_all(&frend.gpu, camera);
                 // update sprite positions and sheet regions
-                // ok now render
-                frend.render();
+                // ok now render.
+                // We could just call frend.render();.
+                // Or we could do this to integrate frenderer into a larger system.
+                // (This first call isn't necessary if we make our own framebuffer/view and encoder)
+                let (frame, view, mut encoder) = frend.render_setup();
+                {
+                    // This is us manually making a renderpass
+                    let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                        label: None,
+                        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                            view: &view,
+                            resolve_target: None,
+                            ops: frenderer::wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                                store: true,
+                            },
+                        })],
+                        depth_stencil_attachment: None,
+                    });
+                    // frend has render_into to do the actual rendering
+                    frend.render_into(&mut rpass);
+                }
+                // This just submits the command encoder and presents the frame, we wouldn't need it if we did that some other way.
+                frend.render_finish(frame, encoder);
                 window.request_redraw();
             }
             event => {

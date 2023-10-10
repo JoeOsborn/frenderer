@@ -69,23 +69,10 @@ impl<RT: super::Runtime> Frenderer<RT> {
             _ => false,
         }
     }
-    /// Create a [`wgpu::RenderPass`] and draw into it.  In the future
-    /// this should take the [`wgpu::RenderPass`] or the queue/command
-    /// encoder as a parameter and not present the surface on its own,
-    /// so it can fit more smoothly into other rendering schemes.
+    /// Acquire the next frame, create a [`wgpu::RenderPass`], draw
+    /// into it, and submit the encoder.
     pub fn render(&self) {
-        let frame = self
-            .gpu
-            .surface
-            .get_current_texture()
-            .expect("Failed to acquire next swap chain texture");
-        let view = frame
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-        let mut encoder = self
-            .gpu
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        let (frame, view, mut encoder) = self.render_setup();
         {
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: None,
@@ -99,8 +86,45 @@ impl<RT: super::Runtime> Frenderer<RT> {
                 })],
                 depth_stencil_attachment: None,
             });
-            self.sprites.render(&mut rpass);
+            self.render_into(&mut rpass);
         }
+        self.render_finish(frame, encoder);
+    }
+    /// Renders all the frenderer stuff into a given
+    /// [`wgpu::RenderPass`].  Just does rendering, no encoder
+    /// submitting or frame acquire/present.
+    pub fn render_into<'s, 'pass>(&'s self, rpass: &mut wgpu::RenderPass<'pass>)
+    where
+        's: 'pass,
+    {
+        self.sprites.render(rpass);
+    }
+    /// Convenience method for acquiring a surface texture, view, and
+    /// command encoder
+    pub fn render_setup(
+        &self,
+    ) -> (
+        wgpu::SurfaceTexture,
+        wgpu::TextureView,
+        wgpu::CommandEncoder,
+    ) {
+        let frame = self
+            .gpu
+            .surface
+            .get_current_texture()
+            .expect("Failed to acquire next swap chain texture");
+        let view = frame
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
+        let encoder = self
+            .gpu
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        (frame, view, encoder)
+    }
+    /// Convenience method for submitting a command encoder and
+    /// presenting the swapchain image.
+    pub fn render_finish(&self, frame: wgpu::SurfaceTexture, encoder: wgpu::CommandEncoder) {
         self.gpu.queue.submit(Some(encoder.finish()));
         frame.present();
     }

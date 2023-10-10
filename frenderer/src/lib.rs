@@ -10,17 +10,16 @@
 //!
 //! Except for the WGPU initialization, frenderer is fully modular; in
 //! particular, it does not take control of the event loop.  Typical
-//! usage will call [`frenderer::with_default_runtime()`]
-//! to install frenderer inside a [`winit::window::Window`], call
+//! usage will call [`frenderer::with_default_runtime()`] to install
+//! frenderer inside a [`winit::window::Window`], call
 //! [`sprites::SpriteRenderer::add_sprite_group()`] on the resulting
 //! [`frenderer::Frenderer`] value, and eventually call
 //! [`frenderer::Frenderer::process_window_event()`],
 //! [`sprites::SpriteRenderer::upload_sprites()`], and
-//! [`frenderer::Frenderer::render`] to draw.
+//! [`frenderer::Frenderer::render`] or
+//! [`frenderer::Frenderer::render_into`] to draw.
 //!
-//! In the future, calling code will have the option of constructing
-//! its own [`wgpu::RenderPass`] to provide to frenderer's rendering
-//! subroutine.  More types of renderers including 3D renderers will
+//! In the future, more types of renderers including 3D renderers will
 //! also be provided.
 
 pub mod input;
@@ -33,6 +32,7 @@ pub(crate) const USE_STORAGE: bool = false;
 
 mod gpu;
 pub use gpu::WGPU;
+pub use wgpu;
 
 mod sprites;
 pub use sprites::{GPUCamera, Region, SpriteRenderer};

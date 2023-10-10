@@ -442,7 +442,7 @@ impl SpriteRenderer {
         (&mut group.world_regions, &mut group.sheet_regions)
     }
     /// Render all sprite groups into the given pass.
-    pub(crate) fn render<'s, 'pass>(&'s self, rpass: &mut wgpu::RenderPass<'pass>)
+    pub fn render<'s, 'pass>(&'s self, rpass: &mut wgpu::RenderPass<'pass>)
     where
         's: 'pass,
     {
