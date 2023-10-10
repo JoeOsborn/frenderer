@@ -23,7 +23,7 @@ fn main() {
     frend.sprites.add_sprite_group(
         &frend.gpu,
         sprite_tex,
-        (0..10_000)
+        (0..1_000_000)
             .map(|_n| GPUSprite {
                 screen_region: [
                     rng.gen_range(0.0..(camera.screen_size[0] - 16.0)),

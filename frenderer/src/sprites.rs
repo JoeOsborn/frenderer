@@ -1,8 +1,14 @@
+//! A sprite renderer with multiple layers ("sprite groups") which can
+//! be independently transformed.
+
 use std::{borrow::Cow, ops::Range};
 
 use crate::{USE_STORAGE, WGPU};
 use bytemuck::{Pod, Zeroable};
 
+/// GPUSprite is in essence a blit operation to be carried out on the
+/// GPU, with a destination region (in world coordinates) and a
+/// spritesheet region (in normalized texture coordinates).
 #[repr(C)]
 #[derive(Clone, Copy, Zeroable, Pod)]
 pub struct GPUSprite {
@@ -10,6 +16,8 @@ pub struct GPUSprite {
     pub sheet_region: [f32; 4],
 }
 
+/// GPUCamera is a transform for a sprite layer, defining a scale
+/// followed by a translation.
 #[repr(C)]
 #[derive(Clone, Copy, Zeroable, Pod)]
 pub struct GPUCamera {
@@ -28,6 +36,9 @@ struct SpriteGroup {
     sprite_bind_group: wgpu::BindGroup,
 }
 
+/// SpriteRenderer hosts a number of sprite layers (called groups).
+/// Each layer has a specified spritesheet texture, a vector of
+/// [`GPUSprite`], and a [`GPUCamera`] to define its transform.
 pub struct SpriteRenderer {
     pipeline: wgpu::RenderPipeline,
     sprite_bind_group_layout: wgpu::BindGroupLayout,
@@ -184,6 +195,8 @@ impl SpriteRenderer {
             texture_bind_group_layout,
         }
     }
+    /// Create a new sprite group sized to fit `sprites`.  Returns a
+    /// sprite group handle (for now, a usize).
     pub fn add_sprite_group(
         &mut self,
         gpu: &WGPU,
@@ -266,9 +279,16 @@ impl SpriteRenderer {
         });
         self.groups.len() - 1
     }
+    /// Deletes a sprite group.  Note that this currently invalidates
+    /// all the old handles, which is not great.  Only use it on the
+    /// last sprite group if that matters to you.
     pub fn remove_sprite_group(&mut self, which: usize) {
         self.groups.remove(which);
     }
+    /// Resizes a sprite group.  If the new size is smaller, this is
+    /// very cheap; if it's larger, it might involve reallocating the
+    /// [`Vec<GPUSprite>`] or the GPU buffer used to draw sprites, so
+    /// it could be expensive.
     pub fn resize_sprite_group(&mut self, gpu: &WGPU, which: usize, len: usize) -> usize {
         let group = &mut self.groups[which];
         let old_len = group.sprites.len();
@@ -312,17 +332,21 @@ impl SpriteRenderer {
         }
         old_len
     }
+    /// Set the given camera transform on all sprite groups.  Uploads to the GPU.
     pub fn set_camera_all(&mut self, gpu: &WGPU, camera: GPUCamera) {
         for sg_index in 0..self.groups.len() {
             self.set_camera(gpu, sg_index, camera);
         }
     }
+    /// Set the given camera transform on a specific sprite group.  Uploads to the GPU.
     pub fn set_camera(&mut self, gpu: &WGPU, which: usize, camera: GPUCamera) {
         let sg = &mut self.groups[which];
         sg.camera = camera;
         gpu.queue
             .write_buffer(&sg.camera_buffer, 0, bytemuck::bytes_of(&sg.camera));
     }
+    /// Send a range of stored sprite data for a particular group to the GPU.
+    /// You must call this yourself after modifying sprite data.
     pub fn upload_sprites(&mut self, gpu: &WGPU, which: usize, range: Range<usize>) {
         gpu.queue.write_buffer(
             &self.groups[which].sprite_buffer,
@@ -330,12 +354,15 @@ impl SpriteRenderer {
             bytemuck::cast_slice(&self.groups[which].sprites[range]),
         );
     }
+    /// Get a read-only slice of a specified sprite group.
     pub fn get_sprites(&self, which: usize) -> &[GPUSprite] {
         &self.groups[which].sprites
     }
+    /// Get a mutable slice of a specified sprite group.
     pub fn get_sprites_mut(&mut self, which: usize) -> &mut [GPUSprite] {
         &mut self.groups[which].sprites
     }
+    /// Render all sprite groups into the given pass.
     pub(crate) fn render<'s, 'pass>(&'s self, rpass: &mut wgpu::RenderPass<'pass>)
     where
         's: 'pass,

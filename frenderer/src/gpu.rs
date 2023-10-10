@@ -1,5 +1,12 @@
+//! A wrapper for WGPU state.
+//!
+//! In a future version of frenderer, this type will be fully public
+//! so that it can be provided by client code rather than initialized
+//! solely within frenderer.
+
 use crate::USE_STORAGE;
 
+/// A wrapper for a WGPU instance, surface, adapter, device, queue, and surface configuration.
 #[allow(dead_code)]
 pub struct WGPU {
     instance: wgpu::Instance,
@@ -11,6 +18,7 @@ pub struct WGPU {
 }
 
 impl WGPU {
+    /// Load a texture from a path (or, on web, a URL).  Returns the WGPU texture and an [`image::RgbaImage`].
     pub async fn load_texture(
         &self,
         path: &std::path::Path,
@@ -71,7 +79,7 @@ impl WGPU {
         );
         Ok((texture, img))
     }
-
+    /// Initialize [`wgpu`] with the given [`winit::window::Window`].
     pub(crate) async fn new(window: &winit::window::Window) -> Self {
         let size = window.inner_size();
 
@@ -140,7 +148,7 @@ impl WGPU {
             config,
         }
     }
-
+    /// Resize the WGPU surface
     pub(crate) fn resize(&mut self, size: winit::dpi::PhysicalSize<u32>) {
         self.config.width = size.width;
         self.config.height = size.height;
