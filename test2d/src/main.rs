@@ -1,4 +1,4 @@
-use frenderer::{input, wgpu, GPUCamera, Region};
+use frenderer::{input, wgpu, GPUCamera, Region, Transform};
 use rand::Rng;
 
 fn main() {
@@ -34,11 +34,12 @@ fn main() {
         &frend.gpu,
         sprite_tex,
         (0..COUNT)
-            .map(|_n| Region {
+            .map(|_n| Transform {
                 x: rng.gen_range(0.0..(camera.screen_size[0] - 16.0)),
                 y: rng.gen_range(0.0..(camera.screen_size[1] - 16.0)),
-                w: 16.0,
-                h: 16.0,
+                w: 16,
+                h: 16,
+                rot: rng.gen_range(0.0..(std::f32::consts::TAU)),
             })
             .collect(),
         vec![

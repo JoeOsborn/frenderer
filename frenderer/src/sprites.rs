@@ -16,14 +16,14 @@ pub struct Region {
     pub h: f32,
 }
 
-/// A Transform describes a location, an extent, and a rotation in 2D space.  Width and height are crammed into 4 bytes meaning the maximum width and height are 2^16 and fractional widths and heights are not supported.
+/// A Transform describes a location, an extent, and a rotation in 2D space.  Width and height are crammed into 4 bytes meaning the maximum width and height are 2^16 and fractional widths and heights are not supported.  The location (x,y) is interpreted as the center of the sprite.
 #[repr(C)]
 #[derive(Clone, Copy, Zeroable, Pod)]
 pub struct Transform {
-    pub x: f32,
-    pub y: f32,
     pub w: u16,
     pub h: u16,
+    pub x: f32,
+    pub y: f32,
     pub rot: f32,
 }
 
@@ -171,6 +171,7 @@ impl SpriteRenderer {
                 push_constant_ranges: &[],
             });
 
+        assert_eq!(std::mem::size_of::<Transform>(), 4 * 4);
         let pipeline = gpu
             .device
             .create_render_pipeline(&wgpu::RenderPipelineDescriptor {

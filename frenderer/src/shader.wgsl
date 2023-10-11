@@ -1,12 +1,12 @@
 // A square!
 var<private> VERTICES:array<vec2<f32>,6> = array<vec2<f32>,6>(
-    // Bottom left, bottom right, top left; then top left, bottom right, top right..
-    vec2<f32>(0., 0.),
-    vec2<f32>(1., 0.),
-    vec2<f32>(0., 1.),
-    vec2<f32>(0., 1.),
-    vec2<f32>(1., 0.),
-    vec2<f32>(1., 1.)
+    // Bottom left, bottom right, top left; then top left, bottom right, top right.
+    vec2<f32>(-0.5, -0.5),
+    vec2<f32>(0.5, -0.5),
+    vec2<f32>(-0.5, 0.5),
+    vec2<f32>(-0.5, 0.5),
+    vec2<f32>(0.5, -0.5),
+    vec2<f32>(0.5, 0.5)
 );
 
 struct Camera {
@@ -26,68 +26,52 @@ struct VertexOutput {
     @location(0) tex_coords: vec2<f32>,
 }
 
-// TODO the below stinks, refactor and use proper matrix multiplication?
+fn sprite_to_vert(trf:vec4<f32>, uvs:vec4<f32>, norm_vert:vec2<f32>) -> VertexOutput {
+  let center:vec2<f32> = trf.yz;
+  let size_bits:u32 = bitcast<u32>(trf.x);
+  let size:vec2<f32> = vec2(f32((size_bits & 0xFFFF0000u) >> 16u),
+                            f32(size_bits & 0x0000FFFFu)
+                            );
+  let rot:f32 = trf.w;
+  let sinrot:f32 = sin(rot);
+  let cosrot:f32 = cos(rot);
+  // scale
+  var scaled = norm_vert*size;
+  var rotated = vec2(
+                     scaled.x*cosrot-scaled.y*sinrot,
+                     scaled.x*sinrot+scaled.y*cosrot
+                     );
+  // now translate by trf (center, size):
+  let world_pos = (center+size*0.5) + rotated;
+  let camera_pos = world_pos - camera.screen_pos;
+  let box_pos = camera_pos / (camera.screen_size*0.5);
+  let ndc_pos = vec4(box_pos.xy, 0.0, 1.0) - vec4(1.0, 1.0, 0.0, 0.0);
+  let tex_corner = uvs.xy;
+  let tex_size = uvs.zw;
+  let norm_uv = vec2(norm_vert.x+0.5, 1.0-(norm_vert.y+0.5));
+  return VertexOutput(ndc_pos, tex_corner + norm_uv*tex_size);
+}
 
 @vertex
 fn vs_storage_main(@builtin(vertex_index) in_vertex_index: u32, @builtin(instance_index) sprite_index:u32) -> VertexOutput {
   // We'll just look up the vertex data in those constant arrays
   let trf = s_world[sprite_index];
-  let corner:vec4<f32> = vec4(trf.xy,0.,1.);
-  let size:vec2<f32> = vec2(
-                            f32((u32(trf.z) | 0xFF00) >> 8),
-                            f32(u32(trf.z) | 0x00FF)
-                            );
-  let rot:f32 = trf.w;
-  let tex_corner:vec2<f32> = s_sheet[sprite_index].xy;
-  let tex_size:vec2<f32> = s_sheet[sprite_index].zw;
-  let which_vtx:vec2<f32> = VERTICES[in_vertex_index];
-  let which_uv: vec2<f32> = vec2(VERTICES[in_vertex_index].x, 1.0 - VERTICES[in_vertex_index].y);
-  return VertexOutput(
-                      ((corner + vec4(which_vtx*size,0.,0.) - vec4(camera.screen_pos,0.,0.)) / vec4(camera.screen_size/2., 1.0, 1.0)) - vec4(1.0, 1.0, 0.0, 0.0),
-                      tex_corner + which_uv*tex_size
-                      );
+  let uvs = s_sheet[sprite_index];
+  return sprite_to_vert(trf, uvs, VERTICES[in_vertex_index]);
 }
 
 @vertex
 fn vs_storage_noinstance_main(@builtin(vertex_index) in_vertex_index: u32) -> VertexOutput {
     let sprite_index:u32 = in_vertex_index / u32(6);
     let vertex_index:u32 = in_vertex_index - (sprite_index * u32(6));
-    // We'll just look up the vertex data in those constant arrays
     let trf = s_world[sprite_index];
-    let corner:vec4<f32> = vec4(trf.xy,0.,1.);
-    let size:vec2<f32> = vec2(
-                              f32((u32(trf.z) | 0xFF00) >> 8),
-                              f32(u32(trf.z) | 0x00FF)
-                              );
-    let rot:f32 = trf.w;
-    let tex_corner:vec2<f32> = s_sheet[sprite_index].xy;
-    let tex_size:vec2<f32> = s_sheet[sprite_index].zw;
-    let which_vtx:vec2<f32> = VERTICES[vertex_index];
-    let which_uv: vec2<f32> = vec2(VERTICES[vertex_index].x, 1.0 - VERTICES[vertex_index].y);
-    return VertexOutput(
-        ((corner + vec4(which_vtx*size,0.,0.) - vec4(camera.screen_pos,0.,0.)) / vec4(camera.screen_size/2., 1.0, 1.0)) - vec4(1.0, 1.0, 0.0, 0.0),
-        tex_corner + which_uv*tex_size
-    );
+    let uvs = s_sheet[sprite_index];
+    return sprite_to_vert(trf, uvs, VERTICES[in_vertex_index]);
 }
-
 
 @vertex
 fn vs_vbuf_main(@builtin(vertex_index) in_vertex_index: u32, @location(0) trf:vec4<f32>, @location(1) sheet_region:vec4<f32>) -> VertexOutput {
-    // We'll still just look up the vertex positions in those constant arrays
-  let corner:vec4<f32> = vec4(trf.xy,0.,1.);
-  let size:vec2<f32> = vec2(
-                            f32((u32(trf.z) | 0xFF00) >> 8),
-                            f32(u32(trf.z) | 0x00FF)
-                            );
-  let rot:f32 = trf.w;
-  let tex_corner:vec2<f32> = sheet_region.xy;
-  let tex_size:vec2<f32> = sheet_region.zw;
-  let which_vtx:vec2<f32> = VERTICES[in_vertex_index];
-  let which_uv: vec2<f32> = vec2(VERTICES[in_vertex_index].x, 1.0 - VERTICES[in_vertex_index].y);
-  return VertexOutput(
-                      ((corner + vec4(which_vtx*size,0.,0.) - vec4(camera.screen_pos,0.,0.)) / vec4(camera.screen_size/2., 1.0, 1.0)) - vec4(1.0, 1.0, 0.0, 0.0),
-                      tex_corner + which_uv*tex_size
-                      );
+    return sprite_to_vert(trf, sheet_region, VERTICES[in_vertex_index]);
 }
 
 

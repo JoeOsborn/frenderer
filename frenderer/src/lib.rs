@@ -35,7 +35,7 @@ pub use gpu::WGPU;
 pub use wgpu;
 
 mod sprites;
-pub use sprites::{GPUCamera, Region, SpriteRenderer};
+pub use sprites::{GPUCamera, Region, SpriteRenderer, Transform};
 
 /// A runtime for frenderer; mainly wraps an async runtime, but also sets up logging, etc.
 /// In the future it might be responsible for setting up WGPU/providing a rendering context as well.
