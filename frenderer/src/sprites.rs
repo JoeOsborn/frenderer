@@ -16,7 +16,7 @@ pub struct Region {
     pub h: f32,
 }
 
-/// A Transform describes a location, an extent, and a rotation in 2D space.  Width and height are crammed into 4 bytes meaning the maximum width and height are 2^16 and fractional widths and heights are not supported.  The location (x,y) is interpreted as the center of the sprite.
+/// A Transform describes a location, an extent, and a rotation (about its center) in 2D space.  Width and height are crammed into 4 bytes meaning the maximum width and height are 2^16 and fractional widths and heights are not supported.  The location (x,y) is interpreted as the center of the sprite.  Rotations are in radians, counterclockwise.
 #[repr(C)]
 #[derive(Clone, Copy, Zeroable, Pod)]
 pub struct Transform {
@@ -192,6 +192,12 @@ impl SpriteRenderer {
                                 array_stride: std::mem::size_of::<Transform>() as u64,
                                 step_mode: wgpu::VertexStepMode::Instance,
                                 attributes: &[wgpu::VertexAttribute {
+                                    // This is a fun little trick, we
+                                    // lie and say it's four floats.
+                                    // In the shader the first float
+                                    // is cast bitwise to a u32 and
+                                    // then the w and h are masked out
+                                    // and casted back to f32.
                                     format: wgpu::VertexFormat::Float32x4,
                                     offset: 0,
                                     shader_location: 0,
