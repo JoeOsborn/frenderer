@@ -7,13 +7,22 @@ fn main() {
     let mut frend = frenderer::with_default_runtime(&window);
     let mut input = input::Input::default();
     // init game code here
-    let (sprite_tex, _sprite_img) = frend.block_on(async {
-        frend
-            .gpu
-            .load_texture(std::path::Path::new("content/king.png"), None)
-            .await
-            .expect("Couldn't load spritesheet texture")
-    });
+    #[cfg(target_arch = "wasm32")]
+    let sprite_img = {
+        let img_bytes = include_bytes!("content/king.png");
+        image::load_from_memory_with_format(&img_bytes, image::ImageFormat::Png)
+            .map_err(|e| e.to_string())
+            .unwrap()
+            .into_rgba8()
+    };
+    #[cfg(not(target_arch = "wasm32"))]
+    let sprite_img = image::open("content/king.png").unwrap().into_rgba8();
+    let sprite_tex = frend.gpu.create_texture(
+        &sprite_img,
+        wgpu::TextureFormat::Rgba8UnormSrgb,
+        sprite_img.dimensions(),
+        Some("spr-king.png"),
+    );
     let mut camera = GPUCamera {
         screen_pos: [0.0, 0.0],
         screen_size: [1024.0, 768.0],
