@@ -37,7 +37,7 @@ fn main() {
             .map(|_n| Transform {
                 x: rng.gen_range(0.0..(camera.screen_size[0] - 16.0)),
                 y: rng.gen_range(0.0..(camera.screen_size[1] - 16.0)),
-                w: 16,
+                w: 11,
                 h: 16,
                 rot: rng.gen_range(0.0..(std::f32::consts::TAU)),
             })
@@ -46,7 +46,7 @@ fn main() {
             Region {
                 x: 0.0,
                 y: 0.5,
-                w: 0.5,
+                w: (11.0 / 32.0),
                 h: 0.5
             };
             COUNT

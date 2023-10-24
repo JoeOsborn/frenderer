@@ -29,8 +29,8 @@ struct VertexOutput {
 fn sprite_to_vert(trf:vec4<f32>, uvs:vec4<f32>, norm_vert:vec2<f32>) -> VertexOutput {
   let center:vec2<f32> = trf.yz;
   let size_bits:u32 = bitcast<u32>(trf.x);
-  let size:vec2<f32> = vec2(f32((size_bits & 0xFFFF0000u) >> 16u),
-                            f32(size_bits & 0x0000FFFFu)
+  let size:vec2<f32> = vec2(f32(size_bits & 0x0000FFFFu),
+                            f32((size_bits & 0xFFFF0000u) >> 16u)
                             );
   let rot:f32 = trf.w;
   let sinrot:f32 = sin(rot);
