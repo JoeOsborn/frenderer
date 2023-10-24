@@ -1,0 +1,16 @@
+[package]
+name = "engine"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+frenderer = {path="../frenderer"}
+winit = "0.28"
+image = {version="0.24", features=["png"]}
+
+[features]
+default = []
+webgl = ["frenderer/webgl"]
+

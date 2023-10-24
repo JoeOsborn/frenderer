@@ -1,17 +1,9 @@
 [workspace]
-members = ["frenderer", "test2d"]
+members = ["frenderer", "test2d", "engine", "engine-game"]
 exclude = ["target", "content"]
 resolver = "2"
 
-[profile.dev.package.backtrace]
-opt-level = 3
-[profile.dev.package.image]
-opt-level = 3
-[profile.dev.package.png]
-opt-level = 3
-[profile.dev.package.adler]
-opt-level = 3
-[profile.dev.package.miniz_oxide]
+[profile.dev.package.'*']
 opt-level = 3
 [profile.release]
 debug=true

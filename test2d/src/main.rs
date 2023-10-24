@@ -99,7 +99,7 @@ fn main() {
                 frend.sprites.set_camera_all(&frend.gpu, camera);
                 // update sprite positions and sheet regions
                 // ok now render.
-                // We could just call frend.render();.
+                // We could just call frend.render().
                 // Or we could do this to integrate frenderer into a larger system.
                 // (This first call isn't necessary if we make our own framebuffer/view and encoder)
                 let (frame, view, mut encoder) = frend.render_setup();

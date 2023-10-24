@@ -22,7 +22,7 @@ pub fn with_default_runtime(window: &winit::window::Window) -> Frenderer<impl su
     Frenderer::with_runtime(window, super::PollsterRuntime {})
 }
 #[cfg(target_arch = "wasm32")]
-pub fn with_default_runtime(window: &winit::Window::Window) -> Frenderer<impl super::Runtime> {
+pub fn with_default_runtime(window: &winit::window::Window) -> Frenderer<impl super::Runtime> {
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
     console_log::init_with_level(log::Level::Trace).expect("could not initialize logger");
     use winit::platform::web::WindowExtWebSys;
