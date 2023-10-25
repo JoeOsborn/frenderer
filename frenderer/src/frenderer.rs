@@ -1,12 +1,12 @@
-//! [`Frenderer`] is the main user-facing type of this crate.  You can
+//! [`Renderer`] is the main user-facing type of this crate.  You can
 //! make one using [`with_default_runtime()`] or provide your own
-//! [`super::Runtime`] implementor via [`Frenderer::with_runtime()`].
+//! [`super::Runtime`] implementor via [`Renderer::with_runtime()`].
 
 use crate::{sprites::SpriteRenderer, WGPU};
 use winit::event::{Event, WindowEvent};
 
 /// A wrapper over GPU state and (for now) a sprite renderer.
-pub struct Frenderer<RT: super::Runtime> {
+pub struct Renderer<RT: super::Runtime> {
     pub gpu: WGPU,
     pub sprites: SpriteRenderer,
     runtime: RT,
@@ -17,12 +17,12 @@ pub struct Frenderer<RT: super::Runtime> {
 /// On web, this also adds a canvas to the given window.  If you don't need all that behavior,
 /// consider using your own [`super::Runtime`].
 #[cfg(not(target_arch = "wasm32"))]
-pub fn with_default_runtime(window: &winit::window::Window) -> Frenderer<impl super::Runtime> {
+pub fn with_default_runtime(window: &winit::window::Window) -> super::Frenderer {
     env_logger::init();
-    Frenderer::with_runtime(window, super::PollsterRuntime {})
+    Renderer::with_runtime(window, super::PollsterRuntime(0))
 }
 #[cfg(target_arch = "wasm32")]
-pub fn with_default_runtime(window: &winit::window::Window) -> Frenderer<impl super::Runtime> {
+pub fn with_default_runtime(window: &winit::window::Window) -> super::Frenderer {
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
     console_log::init_with_level(log::Level::Trace).expect("could not initialize logger");
     use winit::platform::web::WindowExtWebSys;
@@ -35,11 +35,11 @@ pub fn with_default_runtime(window: &winit::window::Window) -> Frenderer<impl su
                 .ok()
         })
         .expect("couldn't append canvas to document body");
-    Frenderer::with_runtime(window, super::WebRuntime)
+    Renderer::with_runtime(window, super::WebRuntime(0))
 }
 
-impl<RT: super::Runtime> Frenderer<RT> {
-    /// Create a new Frenderer with the given window and runtime.
+impl<RT: super::Runtime> Renderer<RT> {
+    /// Create a new Renderer with the given window and runtime.
     pub fn with_runtime(window: &winit::window::Window, runtime: RT) -> Self {
         let gpu = runtime.run_future(WGPU::new(window));
         let sprites = SpriteRenderer::new(&gpu);

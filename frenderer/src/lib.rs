@@ -45,7 +45,7 @@ pub trait Runtime {
 }
 #[cfg(not(target_arch = "wasm32"))]
 /// A runtime using [`pollster`] for native builds
-struct PollsterRuntime();
+pub struct PollsterRuntime(u8);
 #[cfg(not(target_arch = "wasm32"))]
 impl Runtime for PollsterRuntime {
     fn run_future<F: std::future::Future>(&self, f: F) -> F::Output {
@@ -54,7 +54,7 @@ impl Runtime for PollsterRuntime {
 }
 #[cfg(target_arch = "wasm32")]
 /// A runtime using [`wasm_bindgen_futures`] for web builds
-struct WebRuntime();
+pub struct WebRuntime(u8);
 #[cfg(target_arch = "wasm32")]
 impl Runtime for WebRuntime {
     fn run_future<F: std::future::Future>(&self, f: F) -> F::Output {
@@ -63,3 +63,7 @@ impl Runtime for WebRuntime {
 }
 pub mod frenderer;
 pub use frenderer::*;
+#[cfg(not(target_arch = "wasm32"))]
+pub type Frenderer = Renderer<PollsterRuntime>;
+#[cfg(target_arch = "wasm32")]
+pub type Frenderer = Renderer<WebRuntime>;

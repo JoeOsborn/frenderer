@@ -1,45 +1,40 @@
+use std::{any::Any, ops::Range};
+
 pub use frenderer::{input::Input, Frenderer, GPUCamera, Region, Transform};
-pub struct Engine<RT: frenderer::Runtime> {
-    renderer: Frenderer<RT>,
-    input: Input,
+pub struct Engine {
+    pub renderer: Frenderer,
+    pub input: Input,
     event_loop: winit::event_loop::EventLoop<()>,
     window: winit::window::Window,
+    camera_: geom::Rect,
 }
 
-/// Initialize frenderer with default settings for the current target
-/// architecture, including logging via `env_logger` on native or `console_log` on web.
-/// On web, this also adds a canvas to the given window.  If you don't need all that behavior,
-/// consider using your own [`super::Runtime`].
-#[cfg(not(target_arch = "wasm32"))]
-pub fn with_default_runtime(
-    builder: winit::window::WindowBuilder,
-) -> Engine<impl frenderer::Runtime> {
-    let event_loop = winit::event_loop::EventLoop::new();
-    let window = builder.build(&event_loop).unwrap();
-    let renderer = frenderer::with_default_runtime(&window);
-    Engine::with_renderer(window, event_loop, renderer)
-}
-#[cfg(target_arch = "wasm32")]
-pub fn with_default_runtime(window: winit::window::WindowBuilder) -> Engine<impl super::Runtime> {
-    let event_loop = winit::event_loop::EventLoop::new();
-    let window = builder.build(&event_loop).unwrap();
-    let renderer = frenderer::with_default_runtime(&window);
-    Engine::with_renderer(window, event_loop, renderer)
-}
-
-impl<RT: frenderer::Runtime + 'static> Engine<RT> {
-    pub fn with_renderer(
-        window: winit::window::Window,
-        event_loop: winit::event_loop::EventLoop<()>,
-        renderer: Frenderer<RT>,
-    ) -> Self {
+impl Engine {
+    pub fn new(builder: winit::window::WindowBuilder) -> Self {
+        let event_loop = winit::event_loop::EventLoop::new();
+        let window = builder.build(&event_loop).unwrap();
+        let renderer = frenderer::with_default_runtime(&window);
+        let camera = geom::Rect {
+            pos: geom::Vec2 { x: 0.0, y: 0.0 },
+            size: geom::Vec2 {
+                x: renderer.gpu.config.width as f32,
+                y: renderer.gpu.config.height as f32,
+            },
+        };
         let input = Input::default();
         Self {
             renderer,
             input,
             window,
             event_loop,
+            camera_: camera,
         }
+    }
+    pub fn camera(&self) -> geom::Rect {
+        self.camera_
+    }
+    pub fn set_camera(&mut self, r: geom::Rect) {
+        self.camera_ = r;
     }
     pub fn run(mut self) {
         const DT: f32 = 1.0 / 60.0;
@@ -99,5 +94,140 @@ impl<RT: frenderer::Runtime + 'static> Engine<RT> {
                 }
             }
         });
+    }
+    pub fn create_entity_type<'s, Controller: EntityController>(
+        &'s mut self,
+        controller: Controller,
+    ) -> EntityTypeBuilder<'s, Controller> {
+        EntityTypeBuilder {
+            engine: self,
+            spritesheet_: None,
+            sprite_size_: None,
+            animations_: vec![],
+            collision_: CollisionFlags::NONE,
+            gravity_: Vec2 { x: 0.0, y: 0.0 },
+            size_: None,
+            controller,
+        }
+    }
+    pub fn create_entity<T: EntityController>(
+        &mut self,
+        type_id: EntityTypeID<T>,
+        pos: geom::Vec2,
+        dat: T::InitData,
+    ) -> &mut Entity {
+        todo!();
+    }
+}
+pub mod geom;
+
+#[repr(C)]
+#[derive(
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    bytemuck::Zeroable,
+    bytemuck::Pod,
+    serde::Serialize,
+    serde::Deserialize,
+)]
+pub struct CollisionFlags(u8);
+bitflags::bitflags! {
+    impl CollisionFlags: u8 {
+        const NONE    = 0b000;
+        const TRIGGER = 0b001;
+        const MOVABLE = 0b010;
+        const SOLID   = 0b100;
+    }
+    // e.g. a moving platform could be MOVABLE | SOLID
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct EntityTypeID<T: EntityController>(usize, PhantomData<T>);
+
+pub struct Entity {
+    pub pos: geom::Vec2,
+    pub size: geom::Vec2,
+    pub vel: geom::Vec2,
+    pub acc: geom::Vec2,
+    pub gravity: geom::Vec2,
+    anim: usize,
+    anim_t: f32,
+    collision: CollisionFlags,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct EntityID(usize);
+
+pub trait EntityController {
+    type InitData;
+    fn update(&mut self, engine: &mut Engine);
+    fn entity_created(
+        &mut self,
+        engine: &mut Engine,
+        entity: EntityID,
+        custom_data: Self::InitData,
+    );
+    fn entity_destroyed(&mut self, engine: &mut Engine, which: EntityID);
+}
+
+#[derive(Default)]
+pub struct BasicController {}
+impl EntityController for BasicController {
+    type InitData = ();
+    fn update(&mut self, _engine: &mut Engine) {}
+
+    fn entity_created(
+        &mut self,
+        _engine: &mut Engine,
+        _entity: EntityID,
+        _custom_data: Self::InitData,
+    ) {
+    }
+
+    fn entity_destroyed(&mut self, engine: &mut Engine, which: EntityID) {}
+}
+
+pub struct EntityTypeBuilder<'e, Controller: EntityController = BasicController> {
+    engine: &'e mut Engine,
+    spritesheet_: Option<(frenderer::wgpu::Texture, geom::IVec2)>,
+    sprite_size_: Option<geom::IVec2>,
+    animations_: Vec<(Range<usize>, f32)>,
+    collision_: CollisionFlags,
+    gravity_: geom::Vec2,
+    size_: Option<geom::Vec2>,
+    controller: Controller,
+}
+impl<'e, Controller: EntityController> EntityTypeBuilder<'e, Controller> {
+    pub fn spritesheet(mut self, img: frenderer::wgpu::Texture, cell_size: geom::IVec2) -> Self {
+        self.spritesheet_ = Some((img, cell_size));
+        self
+    }
+    pub fn sprite_size(mut self, sz: geom::IVec2) -> Self {
+        self.sprite_size_ = Some(sz);
+        self
+    }
+    pub fn animations(mut self, anims: impl Into<Vec<(Range<usize>, f32)>>) -> Self {
+        self.animations_ = anims.into();
+        self
+    }
+    pub fn size(mut self, sz: geom::Vec2) -> Self {
+        self.size_ = Some(sz);
+        self
+    }
+    pub fn collision(mut self, flags: CollisionFlags) -> Self {
+        self.collision_ = flags;
+        self
+    }
+    pub fn gravity(mut self, grav: geom::Vec2) -> Self {
+        self.gravity_ = grav;
+        self
+    }
+    pub fn build(mut self) -> EntityTypeID<Controller> {
+        // register type in engine
+        // with metadata necessary for downcasting to any I guess
+        //
+        todo!();
     }
 }

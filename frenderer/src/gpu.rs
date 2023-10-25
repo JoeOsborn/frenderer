@@ -10,11 +10,11 @@ use crate::USE_STORAGE;
 #[allow(dead_code)]
 pub struct WGPU {
     instance: wgpu::Instance,
-    pub(crate) surface: wgpu::Surface,
+    pub surface: wgpu::Surface,
     adapter: wgpu::Adapter,
-    pub(crate) device: wgpu::Device,
-    pub(crate) queue: wgpu::Queue,
-    pub(crate) config: wgpu::SurfaceConfiguration,
+    pub device: wgpu::Device,
+    pub queue: wgpu::Queue,
+    pub config: wgpu::SurfaceConfiguration,
 }
 
 impl WGPU {
@@ -43,7 +43,7 @@ impl WGPU {
         });
         self.queue.write_texture(
             texture.as_image_copy(),
-            &image,
+            image,
             wgpu::ImageDataLayout {
                 offset: 0,
                 bytes_per_row: Some(4 * width),
