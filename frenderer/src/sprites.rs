@@ -8,7 +8,7 @@ use bytemuck::{Pod, Zeroable};
 
 /// A Region is a rectangle.
 #[repr(C)]
-#[derive(Clone, Copy, Zeroable, Pod)]
+#[derive(Clone, Copy, Zeroable, Pod, Debug)]
 pub struct Region {
     pub x: f32,
     pub y: f32,
@@ -18,7 +18,7 @@ pub struct Region {
 
 /// A Transform describes a location, an extent, and a rotation (about its center) in 2D space.  Width and height are crammed into 4 bytes meaning the maximum width and height are 2^16 and fractional widths and heights are not supported.  The location (x,y) is interpreted as the center of the sprite.  Rotations are in radians, counterclockwise.
 #[repr(C)]
-#[derive(Clone, Copy, Zeroable, Pod)]
+#[derive(Clone, Copy, Zeroable, Pod, Debug)]
 pub struct Transform {
     pub w: u16,
     pub h: u16,
@@ -30,7 +30,7 @@ pub struct Transform {
 /// GPUCamera is a transform for a sprite layer, defining a scale
 /// followed by a translation.
 #[repr(C)]
-#[derive(Clone, Copy, Zeroable, Pod)]
+#[derive(Clone, Copy, Zeroable, Pod, Debug)]
 pub struct GPUCamera {
     pub screen_pos: [f32; 2],
     pub screen_size: [f32; 2],
@@ -349,6 +349,9 @@ impl SpriteRenderer {
     pub fn resize_sprite_group(&mut self, gpu: &WGPU, which: usize, len: usize) -> usize {
         let group = &mut self.groups[which];
         let old_len = group.world_transforms.len();
+        if old_len == len {
+            return old_len;
+        }
         assert_eq!(old_len, group.sheet_regions.len());
         // shrink or grow sprite vecs
         group.world_transforms.resize(len, Transform::zeroed());

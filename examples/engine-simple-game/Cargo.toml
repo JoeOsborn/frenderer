@@ -1,18 +1,17 @@
 [package]
-name = "test2d"
+name = "engine-simple-game"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-frenderer = {path="../frenderer"}
-async-trait = "0.1.73"
-winit = "0.28.6"
-rand = "0.8.5"
+engine-simple = {path="../engine-simple"}
+winit = "0.28"
+rand = "0.8"
 image = {version="0.24.7", features=["png"]}
 
 [features]
 default = []
-webgl = ["frenderer/webgl"]
+webgl = ["engine-simple/webgl"]
 

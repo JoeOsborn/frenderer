@@ -42,7 +42,7 @@ fn sprite_to_vert(trf:vec4<f32>, uvs:vec4<f32>, norm_vert:vec2<f32>) -> VertexOu
                      scaled.x*sinrot+scaled.y*cosrot
                      );
   // now translate by trf (center, size):
-  let world_pos = (center+size*0.5) + rotated;
+  let world_pos = (center) + rotated;
   let camera_pos = world_pos - camera.screen_pos;
   let box_pos = camera_pos / (camera.screen_size*0.5);
   let ndc_pos = vec4(box_pos.xy, 0.0, 1.0) - vec4(1.0, 1.0, 0.0, 0.0);

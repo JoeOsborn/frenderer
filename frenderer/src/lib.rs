@@ -67,3 +67,5 @@ pub use frenderer::*;
 pub type Frenderer = Renderer<PollsterRuntime>;
 #[cfg(target_arch = "wasm32")]
 pub type Frenderer = Renderer<WebRuntime>;
+pub mod bitfont;
+pub use bitfont::BitFont;
