@@ -1,6 +1,7 @@
 use engine_immediate as engine;
 use engine_immediate::{geom::*, Camera, Engine};
 use rand::Rng;
+
 const W: f32 = 320.0;
 const H: f32 = 240.0;
 const GUY_SPEED: f32 = 4.0;
@@ -8,6 +9,7 @@ const GUY_SIZE: Vec2 = Vec2 { x: 16.0, y: 16.0 };
 const APPLE_SIZE: Vec2 = Vec2 { x: 16.0, y: 16.0 };
 const CATCH_DISTANCE: f32 = 16.0;
 const COLLISION_STEPS: usize = 3;
+
 struct Guy {
     pos: Vec2,
 }

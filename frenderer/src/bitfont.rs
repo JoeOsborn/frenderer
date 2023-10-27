@@ -2,6 +2,7 @@ use std::ops::RangeBounds;
 
 use crate::{Region, SpriteRenderer, Transform};
 
+#[derive(Clone, Copy, Debug)]
 pub struct BitFont<B: RangeBounds<char> = std::ops::RangeInclusive<char>> {
     region: Region,
     chars_per_row: u32,
