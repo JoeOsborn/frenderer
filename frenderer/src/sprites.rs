@@ -342,6 +342,9 @@ impl SpriteRenderer {
     pub fn remove_sprite_group(&mut self, which: usize) {
         self.groups.remove(which);
     }
+    pub fn sprite_group_size(&self, which: usize) -> usize {
+        self.groups[which].world_transforms.len()
+    }
     /// Resizes a sprite group.  If the new size is smaller, this is
     /// very cheap; if it's larger, it might involve reallocating the
     /// [`Vec<GPUSprite>`] or the GPU buffer used to draw sprites, so

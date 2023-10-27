@@ -1,13 +1,11 @@
-// TODO: use AABB instead of Rect for centered box, so collision checking doesn't have to offset by half size
-
-use engine_simple as engine;
-use engine_simple::wgpu;
-use engine_simple::{geom::*, Camera, Engine, Region, Transform, Zeroable};
+use engine_immediate as engine;
+use engine_immediate::{geom::*, Camera, Engine};
 use rand::Rng;
 const W: f32 = 320.0;
 const H: f32 = 240.0;
 const GUY_SPEED: f32 = 4.0;
-const SPRITE_MAX: usize = 16;
+const GUY_SIZE: Vec2 = Vec2 { x: 16.0, y: 16.0 };
+const APPLE_SIZE: Vec2 = Vec2 { x: 16.0, y: 16.0 };
 const CATCH_DISTANCE: f32 = 16.0;
 const COLLISION_STEPS: usize = 3;
 struct Guy {
@@ -20,21 +18,21 @@ struct Apple {
 }
 
 struct Game {
-    camera: engine::Camera,
     walls: Vec<AABB>,
     guy: Guy,
     apples: Vec<Apple>,
     apple_timer: u32,
     score: u32,
-    font: BitFont,
+    font: engine::BitFont,
+    spritesheet: engine::Spritesheet,
 }
 
 impl engine::Game for Game {
     fn new(engine: &mut Engine) -> Self {
-        let camera = Camera {
+        engine.set_camera(Camera {
             screen_pos: [0.0, 0.0],
             screen_size: [W, H],
-        };
+        });
         #[cfg(target_arch = "wasm32")]
         let sprite_img = {
             let img_bytes = include_bytes!("content/demo.png");
@@ -45,19 +43,7 @@ impl engine::Game for Game {
         };
         #[cfg(not(target_arch = "wasm32"))]
         let sprite_img = image::open("content/demo.png").unwrap().into_rgba8();
-        let sprite_tex = engine.renderer.gpu.create_texture(
-            &sprite_img,
-            wgpu::TextureFormat::Rgba8UnormSrgb,
-            sprite_img.dimensions(),
-            Some("spr-demo.png"),
-        );
-        engine.renderer.sprites.add_sprite_group(
-            &engine.renderer.gpu,
-            sprite_tex,
-            vec![Transform::zeroed(); SPRITE_MAX], //bg, three walls, guy, a few apples
-            vec![Region::zeroed(); SPRITE_MAX],
-            camera,
-        );
+        let spritesheet = engine.add_spritesheet(sprite_img, Some("demo spritesheet"));
         let guy = Guy {
             pos: Vec2 {
                 x: W / 2.0,
@@ -79,7 +65,6 @@ impl engine::Game for Game {
             },
             size: Vec2 { x: 16.0, y: H },
         };
-
         let font = engine::BitFont::with_sheet_region(
             '0'..='9',
             Rect {
@@ -96,8 +81,8 @@ impl engine::Game for Game {
             10,
         );
         Game {
-            camera,
             guy,
+            spritesheet,
             walls: vec![left_wall, right_wall, floor],
             apples: Vec::with_capacity(16),
             apple_timer: 0,
@@ -113,7 +98,7 @@ impl engine::Game for Game {
         for _iter in 0..COLLISION_STEPS {
             let guy_aabb = AABB {
                 center: self.guy.pos,
-                size: Vec2 { x: 16.0, y: 16.0 },
+                size: GUY_SIZE,
             };
             contacts.clear();
             // TODO: to generalize to multiple guys, need to iterate over guys first and have guy_index, rect_index, displacement in a contact tuple
@@ -136,7 +121,7 @@ impl engine::Game for Game {
                 // TODO: for multiple guys should access self.guys[guy_idx].
                 let guy_aabb = AABB {
                     center: self.guy.pos,
-                    size: Vec2 { x: 16.0, y: 16.0 },
+                    size: GUY_SIZE,
                 };
                 let wall = self.walls[*wall_idx];
                 let mut disp = wall.displacement(guy_aabb).unwrap_or(Vec2::ZERO);
@@ -192,114 +177,89 @@ impl engine::Game for Game {
     }
     fn render(&mut self, engine: &mut Engine) {
         // set bg image
-        let (trfs, uvs) = engine.renderer.sprites.get_sprites_mut(0);
-        trfs[0] = AABB {
-            center: Vec2 {
-                x: W / 2.0,
-                y: H / 2.0,
+        engine.draw_sprite(
+            self.spritesheet,
+            AABB {
+                center: Vec2 {
+                    x: W / 2.0,
+                    y: H / 2.0,
+                },
+                size: Vec2 { x: W, y: H },
             },
-            size: Vec2 { x: W, y: H },
-        }
-        .into();
-        uvs[0] = Rect {
-            corner: Vec2 { x: 0.0, y: 0.0 },
-            size: Vec2 {
-                x: 640.0 / 1024.0,
-                y: 480.0 / 1024.0,
-            },
-        }
-        .into();
-        // set walls
-        const WALL_START: usize = 1;
-        let guy_idx = WALL_START + self.walls.len();
-        for (wall, (trf, uv)) in self.walls.iter().zip(
-            trfs[WALL_START..guy_idx]
-                .iter_mut()
-                .zip(uvs[WALL_START..guy_idx].iter_mut()),
-        ) {
-            *trf = (*wall).into();
-            *uv = Rect {
-                corner: Vec2 {
-                    x: 0.0,
+            Rect {
+                corner: Vec2 { x: 0.0, y: 0.0 },
+                size: Vec2 {
+                    x: 640.0 / 1024.0,
                     y: 480.0 / 1024.0,
                 },
-                size: Vec2 {
-                    x: 8.0 / 1024.0,
-                    y: 8.0 / 1024.0,
+            },
+        );
+        // set walls
+        for wall in self.walls.iter() {
+            engine.draw_sprite(
+                self.spritesheet,
+                *wall,
+                Rect {
+                    corner: Vec2 {
+                        x: 0.0,
+                        y: 480.0 / 1024.0,
+                    },
+                    size: Vec2 {
+                        x: 8.0 / 1024.0,
+                        y: 8.0 / 1024.0,
+                    },
                 },
-            }
-            .into();
+            );
         }
         // set guy
-        trfs[guy_idx] = AABB {
-            center: self.guy.pos,
-            size: Vec2 { x: 16.0, y: 16.0 },
-        }
-        .into();
-        // TODO animation frame
-        uvs[guy_idx] = Rect {
-            corner: Vec2 {
-                x: 16.0 / 1024.0,
-                y: 480.0 / 1024.0,
+        engine.draw_sprite(
+            self.spritesheet,
+            AABB {
+                center: self.guy.pos,
+                size: GUY_SIZE,
             },
-            size: Vec2 {
-                x: 16.0 / 1024.0,
-                y: 16.0 / 1024.0,
-            },
-        }
-        .into();
-        // set apple
-        let apple_start = guy_idx + 1;
-        for (apple, (trf, uv)) in self.apples.iter().zip(
-            trfs[apple_start..]
-                .iter_mut()
-                .zip(uvs[apple_start..].iter_mut()),
-        ) {
-            *trf = AABB {
-                center: apple.pos,
-                size: Vec2 { x: 16.0, y: 16.0 },
-            }
-            .into();
-            *uv = Rect {
+            Rect {
                 corner: Vec2 {
-                    x: 0.0,
-                    y: 496.0 / 1024.0,
+                    x: 16.0 / 1024.0,
+                    y: 480.0 / 1024.0,
                 },
                 size: Vec2 {
                     x: 16.0 / 1024.0,
                     y: 16.0 / 1024.0,
                 },
-            }
-            .into();
-        }
-        let sprite_count = apple_start + self.apples.len();
-        let score_str = self.score.to_string();
-        let text_len = score_str.len();
-        engine.renderer.sprites.resize_sprite_group(
-            &engine.renderer.gpu,
-            0,
-            sprite_count + text_len,
+            },
         );
-        self.font.draw_text(
-            &mut engine.renderer.sprites,
-            0,
-            sprite_count,
-            &score_str,
+        // TODO animation frame
+        // set apple
+        for apple in self.apples.iter() {
+            engine.draw_sprite(
+                self.spritesheet,
+                AABB {
+                    center: apple.pos,
+                    size: APPLE_SIZE,
+                },
+                Rect {
+                    corner: Vec2 {
+                        x: 0.0,
+                        y: 496.0 / 1024.0,
+                    },
+                    size: Vec2 {
+                        x: 16.0 / 1024.0,
+                        y: 16.0 / 1024.0,
+                    },
+                },
+            );
+        }
+        engine.draw_string(
+            self.spritesheet,
+            &self.font,
+            &self.score.to_string(),
             Vec2 {
                 x: 16.0,
                 y: H - 16.0,
-            }
-            .into(),
+            },
             16.0,
         );
-        engine
-            .renderer
-            .sprites
-            .upload_sprites(&engine.renderer.gpu, 0, 0..sprite_count + text_len);
-        engine
-            .renderer
-            .sprites
-            .set_camera_all(&engine.renderer.gpu, self.camera);
     }
 }
 fn main() {

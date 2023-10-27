@@ -53,6 +53,7 @@ fn main() {
         ],
         camera,
     );
+
     const DT: f32 = 1.0 / 60.0;
     const DT_FUDGE_AMOUNT: f32 = 0.0002;
     const DT_MAX: f32 = DT * 5.0;
