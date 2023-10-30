@@ -3,30 +3,15 @@ pub use frenderer::{
     input::{Input, Key},
     wgpu, Frenderer, GPUCamera as Camera, Region, Transform,
 };
-pub struct BitFont<B: std::ops::RangeBounds<char> = std::ops::RangeInclusive<char>> {
-    _spritesheet: Spritesheet,
-    font: frenderer::BitFont<B>,
-}
-pub trait Game: Sized + 'static {
-    type Tag: TagType;
-    fn new(engine: &mut Engine<Self>) -> Self;
-    fn update(&mut self, engine: &mut Engine<Self>);
-    fn handle_collisions(
-        &mut self,
-        engine: &mut Engine<Self>,
-        contacts: impl Iterator<Item = Contact<Self::Tag>>,
-    );
-    fn handle_triggers(
-        &mut self,
-        engine: &mut Engine<Self>,
-        contacts: impl Iterator<Item = Contact<Self::Tag>>,
-    );
-    fn render(&mut self, engine: &mut Engine<Self>);
-}
+mod gfx;
+pub use gfx::{BitFont, Spritesheet};
+
+mod game;
+pub use game::{Game, TagType};
+mod collision;
+pub use collision::{Collision, Contact};
 
 const COLLISION_STEPS: usize = 3;
-
-pub trait TagType: Copy + Eq + Ord {}
 
 pub struct Chara<Tag: TagType> {
     aabb_: geom::AABB,
@@ -66,11 +51,9 @@ pub struct Engine<G: Game> {
     window: winit::window::Window,
     charas_nocollide: Vec<Chara<G::Tag>>,
     charas_trigger: Vec<Chara<G::Tag>>,
-    charas_physical: Vec<(Chara<G::Tag>, u8 /* col flags */)>,
+    charas_physical: Vec<(Chara<G::Tag>, collision::CollisionFlags)>,
     texts: (usize, Vec<TextDraw>),
 }
-
-pub struct Contact<T: TagType>(pub CharaID, pub T, pub CharaID, pub T, pub geom::Vec2);
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct CharaID(u8 /* group */, u32 /* index within group */);
@@ -103,11 +86,7 @@ impl<G: Game> Engine<G> {
         const DT_FUDGE_AMOUNT: f32 = 0.0002;
         const DT_MAX: f32 = DT * 5.0;
         const TIME_SNAPS: [f32; 5] = [15.0, 30.0, 60.0, 120.0, 144.0];
-        let mut contacts = Contacts {
-            triggers: Vec::with_capacity(32),
-            displacements: Vec::with_capacity(32),
-            contacts: Vec::with_capacity(32),
-        };
+        let mut contacts = collision::Contacts::new();
         let mut acc = 0.0;
         let mut now = std::time::Instant::now();
         self.event_loop
@@ -154,11 +133,11 @@ impl<G: Game> Engine<G> {
                                 chara.aabb_.center += chara.vel_;
                             }
                             for _iter in 0..COLLISION_STEPS {
-                                Self::do_collisions(&mut self.charas_physical, &mut contacts);
+                                collision::do_collisions(&mut self.charas_physical, &mut contacts);
                                 game.handle_collisions(&mut self, contacts.displacements.drain(..));
                                 contacts.clear();
                             }
-                            Self::gather_triggers(
+                            collision::gather_triggers(
                                 &mut self.charas_trigger,
                                 &mut self.charas_physical,
                                 &mut contacts,
@@ -228,160 +207,6 @@ impl<G: Game> Engine<G> {
                     }
                 }
             });
-    }
-    fn do_collisions(charas: &mut [(Chara<G::Tag>, u8)], contacts: &mut Contacts<G::Tag>) {
-        for (ci, (chara_i, _flags)) in charas.iter().enumerate() {
-            let id_i = CharaID(2, ci as u32);
-            if chara_i.tag_.is_none() {
-                continue;
-            }
-            let tag_i = chara_i.tag_.unwrap();
-            for (cj, (chara_j, _flags)) in charas.iter().enumerate().skip(ci + 1) {
-                if chara_j.tag_.is_none() {
-                    continue;
-                }
-                let tag_j = chara_j.tag_.unwrap();
-                let id_j = CharaID(2, cj as u32);
-                if let Some(disp) = chara_i.aabb_.displacement(chara_j.aabb_) {
-                    contacts.push(id_i, tag_i, id_j, tag_j, disp);
-                }
-            }
-        }
-        // now do restitution for movable vs movable, movable vs solid, solid vs movable
-        contacts.sort();
-        let displacements = &mut contacts.displacements;
-        for (ci, cj, _contact_disp) in contacts.contacts.drain(..) {
-            let (char_i, flags_i) = &charas[ci.1 as usize];
-            let tag_i = char_i.tag_.unwrap();
-            let flags_i = Collision::Colliding(*flags_i);
-            let (char_j, flags_j) = &charas[cj.1 as usize];
-            let flags_j = Collision::Colliding(*flags_j);
-            let tag_j = char_j.tag_.unwrap();
-            // if neither is solid, continue (no actual occlusion)
-            // TODO: group solid and movable and solid+movable into three groups?  or movable, solid+movable?
-            if !flags_i.is_solid() && !flags_j.is_solid() {
-                continue;
-            }
-            // if both are immovable, continue (nothing to do)
-            if !flags_i.is_movable() && !flags_j.is_movable() {
-                continue;
-            }
-            let disp = char_j
-                .aabb_
-                .displacement(char_i.aabb_)
-                .unwrap_or(geom::Vec2::ZERO);
-            if disp.x.abs() < std::f32::EPSILON || disp.y.abs() < std::f32::EPSILON {
-                continue;
-            }
-            let (disp_i, disp_j) = Self::compute_disp(char_i, flags_i, char_j, flags_j, disp);
-            Self::displace(
-                ci,
-                cj,
-                &mut charas[ci.1 as usize].0,
-                tag_j,
-                disp_i,
-                displacements,
-            );
-            Self::displace(
-                cj,
-                ci,
-                &mut charas[cj.1 as usize].0,
-                tag_i,
-                disp_j,
-                displacements,
-            );
-        }
-    }
-    fn displace(
-        char_id: CharaID,
-        char_other: CharaID,
-        chara: &mut Chara<G::Tag>,
-        other_tag: G::Tag,
-        amt: geom::Vec2,
-        displacements: &mut Vec<Contact<G::Tag>>,
-    ) {
-        if amt.x.abs() < amt.y.abs() {
-            chara.aabb_.center.x += amt.x;
-            displacements.push(Contact(
-                char_id,
-                chara.tag_.unwrap(),
-                char_other,
-                other_tag,
-                geom::Vec2 { x: amt.x, y: 0.0 },
-            ));
-        } else if amt.y.abs() <= amt.x.abs() {
-            chara.aabb_.center.y += amt.y;
-            displacements.push(Contact(
-                char_id,
-                chara.tag_.unwrap(),
-                char_other,
-                other_tag,
-                geom::Vec2 { y: amt.y, x: 0.0 },
-            ));
-        }
-    }
-    fn compute_disp(
-        ci: &Chara<G::Tag>,
-        flags_i: Collision,
-        cj: &Chara<G::Tag>,
-        flags_j: Collision,
-        mut disp: geom::Vec2,
-    ) -> (geom::Vec2, geom::Vec2) {
-        // Preconditions: at least one is movable
-        assert!(flags_i.is_movable() || flags_j.is_movable());
-        // Preconditions: at least one is solid
-        assert!(flags_i.is_solid() || flags_j.is_solid());
-        // Guy is left of wall, push left
-        if ci.aabb_.center.x < cj.aabb_.center.x {
-            disp.x *= -1.0;
-        }
-        // Guy is below wall, push down
-        if ci.aabb_.center.y < cj.aabb_.center.y {
-            disp.y *= -1.0;
-        }
-        // both are movable and solid, split disp
-        if flags_i.is_movable_solid() && flags_j.is_movable_solid() {
-            (disp / 2.0, -disp / 2.0)
-        } else if !flags_i.is_movable() && flags_j.is_movable() {
-            // cj is movable and ci is not movable, so can't move ci whether or not ci/cj is solid
-            (geom::Vec2::ZERO, -disp)
-        } else {
-            // ci is movable and cj is not movable, so can't move cj whether or not ci/cj is solid
-            (disp, geom::Vec2::ZERO)
-        }
-    }
-    fn gather_triggers(
-        triggers: &mut [Chara<G::Tag>],
-        solids: &mut [(Chara<G::Tag>, u8)],
-        contacts: &mut Contacts<G::Tag>,
-    ) {
-        for (ci, chara_i) in triggers.iter().enumerate() {
-            let id_i = CharaID(1, ci as u32);
-            if chara_i.tag_.is_none() {
-                continue;
-            }
-            let tag_i = chara_i.tag_.unwrap();
-            for (cj, chara_j) in triggers.iter().enumerate().skip(ci + 1) {
-                if chara_j.tag_.is_none() {
-                    continue;
-                }
-                let tag_j = chara_j.tag_.unwrap();
-                let id_j = CharaID(1, cj as u32);
-                if let Some(disp) = chara_i.aabb_.displacement(chara_j.aabb_) {
-                    contacts.push_trigger(id_i, tag_i, id_j, tag_j, disp);
-                }
-            }
-            for (cj, (chara_j, _flags)) in solids.iter().enumerate() {
-                if chara_j.tag_.is_none() {
-                    continue;
-                }
-                let tag_j = chara_j.tag_.unwrap();
-                let id_j = CharaID(2, cj as u32);
-                if let Some(disp) = chara_i.aabb_.displacement(chara_j.aabb_) {
-                    contacts.push_trigger(id_i, tag_i, id_j, tag_j, disp);
-                }
-            }
-        }
     }
     pub fn make_chara(
         &mut self,
@@ -608,98 +433,3 @@ impl<G: Game> Engine<G> {
 }
 
 pub mod geom;
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct Spritesheet(usize);
-
-#[repr(u8)]
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Collision {
-    None = 0,
-    Trigger,
-    Colliding(u8),
-}
-impl Collision {
-    pub const MOVABLE: u8 = 0b01;
-    pub const SOLID: u8 = 0b10;
-    fn check(self) {
-        match self {
-            Self::Colliding(0) => panic!("Can't be colliding but neither solid nor movable"),
-            Self::Colliding(n) if n > 3 => panic!("Invalid colliding mask"),
-            _ => (),
-        }
-    }
-    pub fn solid() -> Self {
-        Self::Colliding(Self::SOLID)
-    }
-    pub fn movable() -> Self {
-        Self::Colliding(Self::MOVABLE)
-    }
-    pub fn movable_solid() -> Self {
-        Self::Colliding(Self::MOVABLE | Self::SOLID)
-    }
-    pub fn none() -> Self {
-        Self::None
-    }
-    pub fn trigger() -> Self {
-        Self::Trigger
-    }
-    pub fn is_solid(&self) -> bool {
-        matches!(self, Self::Colliding(flags) if (flags & Self::SOLID) == Self::SOLID)
-    }
-    pub fn is_movable(&self) -> bool {
-        matches!(self, Self::Colliding(flags) if (flags & Self::MOVABLE) == Self::MOVABLE)
-    }
-    pub fn is_movable_solid(&self) -> bool {
-        matches!(self, Self::Colliding(flags)
-                if (flags & (Self::MOVABLE | Self::SOLID)) == (Self::MOVABLE | Self::SOLID))
-    }
-    pub fn is_none(&self) -> bool {
-        matches!(self, Self::None)
-    }
-    pub fn is_trigger(&self) -> bool {
-        matches!(self, Self::Trigger)
-    }
-}
-pub struct Contacts<T: TagType> {
-    triggers: Vec<Contact<T>>,
-    displacements: Vec<Contact<T>>,
-    contacts: Vec<(CharaID, CharaID, geom::Vec2)>,
-}
-impl<T: TagType> Contacts<T> {
-    fn clear(&mut self) {
-        self.contacts.clear();
-        self.triggers.clear();
-        self.displacements.clear();
-    }
-    fn sort(&mut self) {
-        self.contacts.sort_by(|c1, c2| {
-            c2.2.length_squared()
-                .partial_cmp(&c1.2.length_squared())
-                .unwrap()
-        })
-    }
-    fn push_trigger(
-        &mut self,
-        char_id: CharaID,
-        tag: T,
-        char_other: CharaID,
-        tag_other: T,
-        amt: geom::Vec2,
-    ) {
-        if tag > tag_other {
-            self.triggers
-                .push(Contact(char_other, tag_other, char_id, tag, amt));
-        } else {
-            self.triggers
-                .push(Contact(char_id, tag, char_other, tag_other, amt));
-        }
-    }
-    fn push(&mut self, ci: CharaID, tag_i: T, cj: CharaID, tag_j: T, disp: geom::Vec2) {
-        if tag_i > tag_j {
-            self.contacts.push((ci, cj, disp));
-        } else {
-            self.contacts.push((cj, ci, disp));
-        }
-    }
-}
