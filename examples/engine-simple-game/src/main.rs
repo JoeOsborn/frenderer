@@ -26,7 +26,7 @@ struct Game {
     apples: Vec<Apple>,
     apple_timer: u32,
     score: u32,
-    font: BitFont,
+    font: engine_simple::BitFont,
 }
 
 impl engine::Game for Game {

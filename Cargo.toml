@@ -1,6 +1,6 @@
 [workspace]
 members = ["frenderer", "examples/*"]
-exclude = ["target", "content"]
+exclude = ["target", "content", "examples/engine-fancy", "examples/engine-fancy-game"]
 resolver = "2"
 
 [profile.dev.package.'*']

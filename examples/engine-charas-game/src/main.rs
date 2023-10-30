@@ -72,7 +72,7 @@ impl engine::Game for Game {
                     y: 480.0 / 1024.0,
                 },
             },
-            engine::CollisionFlags::empty(),
+            engine::Collision::none(),
         );
         let guy = engine.make_chara(
             spritesheet,
@@ -94,7 +94,7 @@ impl engine::Game for Game {
                     y: 16.0 / 1024.0,
                 },
             },
-            engine::CollisionFlags::MOVABLE,
+            engine::Collision::movable(),
         );
         // floor
         engine.make_chara(
@@ -105,7 +105,7 @@ impl engine::Game for Game {
                 size: Vec2 { x: W, y: 16.0 },
             },
             WALL_UVS,
-            engine::CollisionFlags::SOLID,
+            engine::Collision::solid(),
         );
         // left wall
         engine.make_chara(
@@ -116,7 +116,7 @@ impl engine::Game for Game {
                 size: Vec2 { x: 16.0, y: H },
             },
             WALL_UVS,
-            engine::CollisionFlags::SOLID,
+            engine::Collision::solid(),
         );
         // right wall
         engine.make_chara(
@@ -130,7 +130,7 @@ impl engine::Game for Game {
                 size: Vec2 { x: 16.0, y: H },
             },
             WALL_UVS,
-            engine::CollisionFlags::SOLID,
+            engine::Collision::solid(),
         );
         let font = engine.make_font(
             spritesheet,
@@ -164,11 +164,7 @@ impl engine::Game for Game {
         let mut rng = rand::thread_rng();
         if self.apple_timer > 0 {
             self.apple_timer -= 1;
-        } else if engine
-            .charas_by_tag(self.spritesheet, CharaTag::Apple)
-            .count()
-            < 8
-        {
+        } else if engine.charas_by_tag(CharaTag::Apple).count() < 8 {
             let apple = engine.recycle_chara(
                 self.spritesheet,
                 CharaTag::Apple,
@@ -189,7 +185,7 @@ impl engine::Game for Game {
                         y: 16.0 / 1024.0,
                     },
                 },
-                engine::CollisionFlags::TRIGGER,
+                engine::Collision::trigger(),
             );
             engine.chara_mut(apple).set_vel(Vec2 {
                 x: 0.0,
@@ -198,18 +194,33 @@ impl engine::Game for Game {
             self.apple_timer = rng.gen_range(30..90);
         }
         let mut to_kill = vec![];
-        for (id, chara) in engine.charas_by_tag_mut(self.spritesheet, CharaTag::Apple) {
+        for (id, chara) in engine.charas_by_tag_mut(CharaTag::Apple) {
             if chara.pos().y < -8.0 {
                 to_kill.push(id);
             }
         }
         to_kill.into_iter().for_each(|k| engine.kill_chara(k));
     }
-    fn handle_collisions(&mut self, engine: &mut Engine, contacts: &engine::Contacts<Self::Tag>) {
-        if let Some(contacts) = contacts.query(CharaTag::Guy, CharaTag::Apple) {
-            for engine::Contact(_guy, apple, _) in contacts {
-                engine.kill_chara(*apple);
-                self.score += 1;
+    fn handle_collisions(
+        &mut self,
+        _engine: &mut Engine,
+        _contacts: impl Iterator<Item = engine::Contact<CharaTag>>,
+    ) {
+        // do nothing
+    }
+    fn handle_triggers(
+        &mut self,
+        engine: &mut Engine,
+        triggers: impl Iterator<Item = engine::Contact<CharaTag>>,
+    ) {
+        for engine::Contact(thing_a, tag_a, thing_b, tag_b, amt) in triggers {
+            match (tag_a, tag_b) {
+                (CharaTag::Guy, CharaTag::Apple) => {
+                    engine.kill_chara(thing_b);
+                    self.score += 1;
+                }
+                // Apple, Guy will never happen because of the ordering of Guy and Apple in the enum
+                _ => (),
             }
         }
     }
