@@ -648,32 +648,17 @@ impl Collision {
         matches!(self, Self::Colliding(flags) if (flags & Self::SOLID) == Self::SOLID)
     }
     pub fn is_movable(&self) -> bool {
-        match self {
-            Self::Colliding(flags) if (flags & Self::MOVABLE) == Self::MOVABLE => true,
-            _ => false,
-        }
+        matches!(self, Self::Colliding(flags) if (flags & Self::MOVABLE) == Self::MOVABLE)
     }
     pub fn is_movable_solid(&self) -> bool {
-        match self {
-            Self::Colliding(flags)
-                if (flags & (Self::MOVABLE | Self::SOLID)) == (Self::MOVABLE | Self::SOLID) =>
-            {
-                true
-            }
-            _ => false,
-        }
+        matches!(self, Self::Colliding(flags)
+                if (flags & (Self::MOVABLE | Self::SOLID)) == (Self::MOVABLE | Self::SOLID))
     }
     pub fn is_none(&self) -> bool {
-        match self {
-            Self::None => true,
-            _ => false,
-        }
+        matches!(self, Self::None)
     }
     pub fn is_trigger(&self) -> bool {
-        match self {
-            Self::Trigger => true,
-            _ => false,
-        }
+        matches!(self, Self::Trigger)
     }
 }
 pub struct Contacts<T: TagType> {

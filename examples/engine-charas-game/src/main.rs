@@ -213,14 +213,11 @@ impl engine::Game for Game {
         engine: &mut Engine,
         triggers: impl Iterator<Item = engine::Contact<CharaTag>>,
     ) {
-        for engine::Contact(thing_a, tag_a, thing_b, tag_b, amt) in triggers {
-            match (tag_a, tag_b) {
-                (CharaTag::Guy, CharaTag::Apple) => {
-                    engine.kill_chara(thing_b);
-                    self.score += 1;
-                }
-                // Apple, Guy will never happen because of the ordering of Guy and Apple in the enum
-                _ => (),
+        for engine::Contact(_thing_a, tag_a, thing_b, tag_b, _amt) in triggers {
+            // Apple, Guy will never happen because of the ordering of Guy and Apple in the enum
+            if let (CharaTag::Guy, CharaTag::Apple) = (tag_a, tag_b) {
+                engine.kill_chara(thing_b);
+                self.score += 1;
             }
         }
     }
