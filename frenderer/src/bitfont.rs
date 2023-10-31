@@ -74,8 +74,8 @@ impl<B: RangeBounds<char>> BitFont<B> {
             let which_col = chara % self.chars_per_row as u32;
             *uv = SheetRegion::new(
                 self.region.sheet,
-                self.region.x + which_col as u16,
-                self.region.y + which_row as u16,
+                self.region.x + (which_col as u16) * char_uv_sz,
+                self.region.y + (which_row as u16) * char_uv_sz,
                 char_uv_sz,
                 char_uv_sz,
             );
