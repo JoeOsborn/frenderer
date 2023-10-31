@@ -403,13 +403,18 @@ impl<G: Game> Engine<G> {
     pub fn set_camera(&mut self, camera: Camera) {
         self.camera = camera;
     }
-    pub fn add_spritesheet(&mut self, img: image::RgbaImage, label: Option<&str>) -> Spritesheet {
+    pub fn add_spritesheet(
+        &mut self,
+        imgs: &[&image::RgbaImage],
+        label: Option<&str>,
+    ) -> Spritesheet {
+        let img_bytes: Vec<_> = imgs.iter().map(|img| img.as_raw().as_slice()).collect();
         let idx = self.renderer.sprites.add_sprite_group(
             &self.renderer.gpu,
-            &self.renderer.gpu.create_texture(
-                &img,
+            &self.renderer.gpu.create_array_texture(
+                &img_bytes,
                 wgpu::TextureFormat::Rgba8UnormSrgb,
-                img.dimensions(),
+                imgs[0].dimensions(),
                 label,
             ),
             vec![Transform::zeroed(); 1024],

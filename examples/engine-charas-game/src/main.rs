@@ -45,7 +45,7 @@ impl engine::Game for Game {
         };
         #[cfg(not(target_arch = "wasm32"))]
         let sprite_img = image::open("content/demo.png").unwrap().into_rgba8();
-        let spritesheet = engine.add_spritesheet(sprite_img, Some("demo spritesheet"));
+        let spritesheet = engine.add_spritesheet(&[&sprite_img], Some("demo spritesheet"));
         engine.make_chara(
             spritesheet,
             CharaTag::Deco,
