@@ -1,5 +1,5 @@
 use engine_charas as engine;
-use engine_charas::{geom::*, Camera};
+use engine_charas::{geom::*, Camera, SheetRegion};
 use rand::Rng;
 type Engine = engine::Engine<Game>;
 
@@ -9,16 +9,7 @@ const GUY_SPEED: f32 = 4.0;
 const GUY_SIZE: Vec2 = Vec2 { x: 16.0, y: 16.0 };
 const APPLE_SIZE: Vec2 = Vec2 { x: 16.0, y: 16.0 };
 
-const WALL_UVS: Rect = Rect {
-    corner: Vec2 {
-        x: 0.0,
-        y: 480.0 / 1024.0,
-    },
-    size: Vec2 {
-        x: 8.0 / 1024.0,
-        y: 8.0 / 1024.0,
-    },
-};
+const WALL_UVS: SheetRegion = SheetRegion::new(0, 0, 480, 8, 8);
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 enum CharaTag {
     Wall,
@@ -65,13 +56,7 @@ impl engine::Game for Game {
                 },
                 size: Vec2 { x: W, y: H },
             },
-            Rect {
-                corner: Vec2 { x: 0.0, y: 0.0 },
-                size: Vec2 {
-                    x: 640.0 / 1024.0,
-                    y: 480.0 / 1024.0,
-                },
-            },
+            SheetRegion::new(0, 0, 0, 640, 480),
             engine::Collision::none(),
         );
         let guy = engine.make_chara(
@@ -84,16 +69,7 @@ impl engine::Game for Game {
                 },
                 size: GUY_SIZE,
             },
-            Rect {
-                corner: Vec2 {
-                    x: 16.0 / 1024.0,
-                    y: 480.0 / 1024.0,
-                },
-                size: Vec2 {
-                    x: 16.0 / 1024.0,
-                    y: 16.0 / 1024.0,
-                },
-            },
+            SheetRegion::new(0, 16, 480, 16, 16),
             engine::Collision::pushable(),
         );
         // floor
@@ -135,16 +111,7 @@ impl engine::Game for Game {
         let font = engine.make_font(
             spritesheet,
             '0'..='9',
-            Rect {
-                corner: Vec2 {
-                    x: 0.0,
-                    y: 512.0 / 1024.0,
-                },
-                size: Vec2 {
-                    x: 80.0 / 1024.0,
-                    y: 8.0 / 1024.0,
-                },
-            },
+            SheetRegion::new(0, 0, 512, 80, 8),
             10,
         );
         Game {
@@ -175,16 +142,7 @@ impl engine::Game for Game {
                     },
                     size: APPLE_SIZE,
                 },
-                Rect {
-                    corner: Vec2 {
-                        x: 0.0,
-                        y: 496.0 / 1024.0,
-                    },
-                    size: Vec2 {
-                        x: 16.0 / 1024.0,
-                        y: 16.0 / 1024.0,
-                    },
-                },
+                SheetRegion::new(0, 0, 496, 16, 16),
                 engine::Collision::trigger(),
             );
             engine[apple].set_vel(Vec2 {

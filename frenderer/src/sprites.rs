@@ -8,12 +8,30 @@ use bytemuck::{Pod, Zeroable};
 
 /// A Region is a rectangle.
 #[repr(C)]
-#[derive(Clone, Copy, Zeroable, Pod, Debug)]
-pub struct Region {
-    pub x: f32,
-    pub y: f32,
-    pub w: f32,
-    pub h: f32,
+#[derive(Clone, Copy, Zeroable, Pod, Debug, Default)]
+pub struct SheetRegion {
+    pub sheet: u16,
+    _padding_16: u16,
+    // values in pixels
+    pub x: u16,
+    pub y: u16,
+    pub w: u16,
+    pub h: u16,
+    _padding_32: u32,
+}
+
+impl SheetRegion {
+    pub const fn new(sheet: u16, x: u16, y: u16, w: u16, h: u16) -> Self {
+        Self {
+            sheet,
+            x,
+            y,
+            w,
+            h,
+            _padding_16: 0,
+            _padding_32: 0,
+        }
+    }
 }
 
 /// A Transform describes a location, an extent, and a rotation (about its center) in 2D space.  Width and height are crammed into 4 bytes meaning the maximum width and height are 2^16 and fractional widths and heights are not supported.  The location (x,y) is interpreted as the center of the sprite.  Rotations are in radians, counterclockwise.
@@ -41,7 +59,7 @@ struct SpriteGroup {
     world_buffer: wgpu::Buffer,
     sheet_buffer: wgpu::Buffer,
     world_transforms: Vec<Transform>,
-    sheet_regions: Vec<Region>,
+    sheet_regions: Vec<SheetRegion>,
     camera: GPUCamera,
     camera_buffer: wgpu::Buffer,
     tex_bind_group: wgpu::BindGroup,
@@ -78,14 +96,13 @@ impl SpriteRenderer {
                         wgpu::BindGroupLayoutEntry {
                             // This matches the binding in the shader
                             binding: 0,
-                            // Only available in the fragment shader
-                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                             // It's a texture binding
                             ty: wgpu::BindingType::Texture {
                                 // We can use it with float samplers
                                 sample_type: wgpu::TextureSampleType::Float { filterable: true },
                                 // It's being used as a 2D texture
-                                view_dimension: wgpu::TextureViewDimension::D2,
+                                view_dimension: wgpu::TextureViewDimension::D2Array,
                                 // This is not a multisampled texture
                                 multisampled: false,
                             },
@@ -203,10 +220,10 @@ impl SpriteRenderer {
                                 }],
                             },
                             wgpu::VertexBufferLayout {
-                                array_stride: std::mem::size_of::<Region>() as u64,
+                                array_stride: std::mem::size_of::<SheetRegion>() as u64,
                                 step_mode: wgpu::VertexStepMode::Instance,
                                 attributes: &[wgpu::VertexAttribute {
-                                    format: wgpu::VertexFormat::Float32x4,
+                                    format: wgpu::VertexFormat::Uint32x4,
                                     offset: 0,
                                     shader_location: 2,
                                 }],
@@ -239,10 +256,18 @@ impl SpriteRenderer {
         gpu: &WGPU,
         tex: &wgpu::Texture,
         world_transforms: Vec<Transform>,
-        sheet_regions: Vec<Region>,
+        sheet_regions: Vec<SheetRegion>,
         camera: GPUCamera,
     ) -> usize {
-        let view_sprite = tex.create_view(&wgpu::TextureViewDescriptor::default());
+        let view_sprite = tex.create_view(&wgpu::TextureViewDescriptor {
+            dimension: Some(wgpu::TextureViewDimension::D2Array),
+            base_array_layer: 0,
+            array_layer_count: match tex.depth_or_array_layers() {
+                0 => Some(1),
+                layers => Some(layers),
+            },
+            ..Default::default()
+        });
         let sampler_sprite = gpu
             .device
             .create_sampler(&wgpu::SamplerDescriptor::default());
@@ -273,7 +298,7 @@ impl SpriteRenderer {
         });
         let buffer_sheet = gpu.device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
-            size: sheet_regions.len() as u64 * std::mem::size_of::<Region>() as u64,
+            size: sheet_regions.len() as u64 * std::mem::size_of::<SheetRegion>() as u64,
             usage: if USE_STORAGE {
                 wgpu::BufferUsages::STORAGE
             } else {
@@ -356,7 +381,7 @@ impl SpriteRenderer {
         assert_eq!(old_len, group.sheet_regions.len());
         // shrink or grow sprite vecs
         group.world_transforms.resize(len, Transform::zeroed());
-        group.sheet_regions.resize(len, Region::zeroed());
+        group.sheet_regions.resize(len, SheetRegion::zeroed());
         // realloc buffer if needed, remake sprite_bind_group if using storage buffers
         let new_size = len * std::mem::size_of::<Transform>();
         if new_size > group.world_buffer.size() as usize {
@@ -450,14 +475,14 @@ impl SpriteRenderer {
         );
     }
     /// Get a read-only slice of a specified sprite group's world positions and texture regions.
-    pub fn get_sprites(&self, which: usize) -> (&[Transform], &[Region]) {
+    pub fn get_sprites(&self, which: usize) -> (&[Transform], &[SheetRegion]) {
         (
             &self.groups[which].world_transforms,
             &self.groups[which].sheet_regions,
         )
     }
     /// Get a mutable slice of a specified sprite group's world positions and texture regions.
-    pub fn get_sprites_mut(&mut self, which: usize) -> (&mut [Transform], &mut [Region]) {
+    pub fn get_sprites_mut(&mut self, which: usize) -> (&mut [Transform], &mut [SheetRegion]) {
         let group = &mut self.groups[which];
         (&mut group.world_transforms, &mut group.sheet_regions)
     }

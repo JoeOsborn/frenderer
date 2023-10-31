@@ -18,10 +18,9 @@ pub struct WGPU {
 }
 
 impl WGPU {
-    /// Load a texture from a path (or, on web, a URL).  Returns the WGPU texture and an [`image::RgbaImage`].
-    pub fn create_texture(
+    pub fn create_array_texture(
         &self,
-        image: &[u8],
+        images: &[&[u8]],
         format: wgpu::TextureFormat,
         (width, height): (u32, u32),
         label: Option<&str>,
@@ -29,7 +28,7 @@ impl WGPU {
         let size = wgpu::Extent3d {
             width,
             height,
-            depth_or_array_layers: 1,
+            depth_or_array_layers: images.len() as u32,
         };
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label,
@@ -41,17 +40,45 @@ impl WGPU {
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
-        self.queue.write_texture(
-            texture.as_image_copy(),
-            image,
-            wgpu::ImageDataLayout {
-                offset: 0,
-                bytes_per_row: Some(4 * width),
-                rows_per_image: Some(height),
-            },
-            size,
-        );
+        if images.len() == 1 {
+            self.queue.write_texture(
+                texture.as_image_copy(),
+                images[0],
+                wgpu::ImageDataLayout {
+                    offset: 0,
+                    bytes_per_row: Some(4 * width),
+                    rows_per_image: Some(height),
+                },
+                size,
+            );
+        } else {
+            let image_combined_len: usize = images.iter().map(|img| img.len()).sum();
+            let mut staging = Vec::with_capacity(image_combined_len);
+            for img in images {
+                staging.extend_from_slice(img);
+            }
+            // TODO Fixme this will also make a copy, it might be better to do multiple write_texture calls or else take an images[] slice which is already dense in memory
+            self.queue.write_texture(
+                texture.as_image_copy(),
+                &staging,
+                wgpu::ImageDataLayout {
+                    offset: 0,
+                    bytes_per_row: Some(4 * width),
+                    rows_per_image: Some(height),
+                },
+                size,
+            );
+        }
         texture
+    }
+    pub fn create_texture(
+        &self,
+        image: &[u8],
+        format: wgpu::TextureFormat,
+        (width, height): (u32, u32),
+        label: Option<&str>,
+    ) -> wgpu::Texture {
+        self.create_array_texture(&[image], format, (width, height), label)
     }
     /// Initialize [`wgpu`] with the given [`winit::window::Window`].
     pub(crate) async fn new(window: &winit::window::Window) -> Self {

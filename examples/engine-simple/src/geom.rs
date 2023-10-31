@@ -1,4 +1,4 @@
-use frenderer::{GPUCamera, Region, Transform};
+use frenderer::{GPUCamera, Transform};
 pub use glam::*;
 
 #[repr(C)]
@@ -35,17 +35,6 @@ impl From<Rect> for Transform {
             x: val.corner.x + val.size.x / 2.0,
             y: val.corner.y + val.size.y / 2.0,
             rot: 0.0,
-        }
-    }
-}
-
-impl From<Rect> for Region {
-    fn from(val: Rect) -> Self {
-        Region {
-            w: val.size.x,
-            h: val.size.y,
-            x: val.corner.x,
-            y: val.corner.y,
         }
     }
 }

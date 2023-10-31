@@ -14,24 +14,33 @@ struct Camera {
     screen_size: vec2<f32>,
 }
 
+struct UVData {
+    sheet_padding:u32,
+    xy:u32,
+    wh:u32,
+    _padding:u32
+}
+
 @group(0) @binding(0)
 var<uniform> camera: Camera;
 @group(0) @binding(1)
 var<storage, read> s_world: array<vec4<f32>>;
 @group(0) @binding(2)
-var<storage, read> s_sheet: array<vec4<f32>>;
+var<storage, read> s_sheet: array<UVData>;
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) tex_coords: vec2<f32>,
+    @location(1) @interpolate(flat) tex_index: u32,
 }
 
-fn sprite_to_vert(trf:vec4<f32>, uvs:vec4<f32>, norm_vert:vec2<f32>) -> VertexOutput {
+fn sprite_to_vert(trf:vec4<f32>, uvs:UVData, norm_vert:vec2<f32>) -> VertexOutput {
   let center:vec2<f32> = trf.yz;
   let size_bits:u32 = bitcast<u32>(trf.x);
   let size:vec2<f32> = vec2(f32(size_bits & 0x0000FFFFu),
                             f32((size_bits & 0xFFFF0000u) >> 16u)
                             );
+  let tex_size:vec2<u32> = textureDimensions(t_diffuse);
   let rot:f32 = trf.w;
   let sinrot:f32 = sin(rot);
   let cosrot:f32 = cos(rot);
@@ -46,10 +55,15 @@ fn sprite_to_vert(trf:vec4<f32>, uvs:vec4<f32>, norm_vert:vec2<f32>) -> VertexOu
   let camera_pos = world_pos - camera.screen_pos;
   let box_pos = camera_pos / (camera.screen_size*0.5);
   let ndc_pos = vec4(box_pos.xy, 0.0, 1.0) - vec4(1.0, 1.0, 0.0, 0.0);
-  let tex_corner = uvs.xy;
-  let tex_size = uvs.zw;
+  let tex_layer = uvs.sheet_padding & 0x0000FFFFu;
+  let tex_x = uvs.xy & 0x0000FFFFu;
+  let tex_y = (uvs.xy & 0xFFFF0000u) >> 16u;
+  let tex_w = uvs.wh & 0x0000FFFFu;
+  let tex_h = (uvs.wh & 0xFFFF0000u) >> 16u;
+  let tex_corner = vec2(f32(tex_x) / f32(tex_size.x), f32(tex_y) / f32(tex_size.y));
+  let tex_uv_size = vec2(f32(tex_w) / f32(tex_size.x), f32(tex_h) / f32(tex_size.y));
   let norm_uv = vec2(norm_vert.x+0.5, 1.0-(norm_vert.y+0.5));
-  return VertexOutput(ndc_pos, tex_corner + norm_uv*tex_size);
+  return VertexOutput(ndc_pos, tex_corner + norm_uv*tex_uv_size, tex_layer);
 }
 
 @vertex
@@ -70,15 +84,15 @@ fn vs_storage_noinstance_main(@builtin(vertex_index) in_vertex_index: u32) -> Ve
 }
 
 @vertex
-fn vs_vbuf_main(@builtin(vertex_index) in_vertex_index: u32, @location(0) trf:vec4<f32>, @location(1) sheet_region:vec4<f32>) -> VertexOutput {
-    return sprite_to_vert(trf, sheet_region, VERTICES[in_vertex_index]);
+fn vs_vbuf_main(@builtin(vertex_index) in_vertex_index: u32, @location(0) trf:vec4<f32>, @location(1) sheet_region:vec4<u32>) -> VertexOutput {
+  return sprite_to_vert(trf, UVData(sheet_region.x, sheet_region.y, sheet_region.z, sheet_region.w), VERTICES[in_vertex_index]);
 }
 
 
 // Now our fragment shader needs two "global" inputs to be bound:
 // A texture...
 @group(1) @binding(0)
-var t_diffuse: texture_2d<f32>;
+var t_diffuse: texture_2d_array<f32>;
 // And a sampler.
 @group(1) @binding(1)
 var s_diffuse: sampler;
@@ -88,7 +102,7 @@ var s_diffuse: sampler;
 @fragment
 fn fs_main(in:VertexOutput) -> @location(0) vec4<f32> {
     // And we use the tex coords from the vertex output to sample from the texture.
-    let color:vec4<f32> = textureSample(t_diffuse, s_diffuse, in.tex_coords);
+    let color:vec4<f32> = textureSample(t_diffuse, s_diffuse, in.tex_coords, in.tex_index);
     if color.w < 0.2 { discard; }
     return color;
 }

@@ -1,7 +1,7 @@
 pub use bytemuck::Zeroable;
 pub use frenderer::{
     input::{Input, Key},
-    wgpu, BitFont, Frenderer, GPUCamera as Camera, Region, Transform,
+    wgpu, BitFont, Frenderer, GPUCamera as Camera, SheetRegion, Transform,
 };
 pub trait Game: Sized + 'static {
     fn new(engine: &mut Engine) -> Self;
@@ -135,7 +135,7 @@ impl Engine {
                 label,
             ),
             vec![Transform::zeroed(); 1024],
-            vec![Region::zeroed(); 1024],
+            vec![SheetRegion::zeroed(); 1024],
             self.camera,
         ))
     }
@@ -166,12 +166,12 @@ impl Engine {
         &mut self,
         spritesheet: Spritesheet,
         trf: impl Into<Transform>,
-        uv: geom::Rect,
+        uv: SheetRegion,
     ) {
         self.ensure_spritegroup_size(spritesheet.0, self.sprite_counts[spritesheet.0] + 1);
         let (trfs, uvs) = self.renderer.sprites.get_sprites_mut(spritesheet.0);
         trfs[self.sprite_counts[spritesheet.0]] = trf.into();
-        uvs[self.sprite_counts[spritesheet.0]] = uv.into();
+        uvs[self.sprite_counts[spritesheet.0]] = uv;
         self.sprite_counts[spritesheet.0] += 1;
     }
 }

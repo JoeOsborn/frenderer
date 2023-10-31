@@ -1,4 +1,4 @@
-use frenderer::{input, wgpu, GPUCamera, Region, Transform};
+use frenderer::{input, wgpu, GPUCamera, SheetRegion, Transform};
 use rand::Rng;
 
 fn main() {
@@ -17,8 +17,20 @@ fn main() {
     };
     #[cfg(not(target_arch = "wasm32"))]
     let sprite_img = image::open("content/king.png").unwrap().into_rgba8();
-    let sprite_tex = frend.gpu.create_texture(
-        &sprite_img,
+
+    #[cfg(target_arch = "wasm32")]
+    let sprite_invert_img = {
+        let img_bytes = include_bytes!("content/king_invert.png");
+        image::load_from_memory_with_format(&img_bytes, image::ImageFormat::Png)
+            .map_err(|e| e.to_string())
+            .unwrap()
+            .into_rgba8()
+    };
+    #[cfg(not(target_arch = "wasm32"))]
+    let sprite_invert_img = image::open("content/king_invert.png").unwrap().into_rgba8();
+
+    let sprite_tex = frend.gpu.create_array_texture(
+        &[&sprite_img, &sprite_invert_img],
         wgpu::TextureFormat::Rgba8UnormSrgb,
         sprite_img.dimensions(),
         Some("spr-king.png"),
@@ -42,15 +54,9 @@ fn main() {
                 rot: rng.gen_range(0.0..(std::f32::consts::TAU)),
             })
             .collect(),
-        vec![
-            Region {
-                x: 0.0,
-                y: 0.5,
-                w: (11.0 / 32.0),
-                h: 0.5
-            };
-            COUNT
-        ],
+        (0..COUNT)
+            .map(|_n| SheetRegion::new(rng.gen_range(0..=1), 0, 16, 11, 16))
+            .collect(),
         camera,
     );
 

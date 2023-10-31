@@ -1,17 +1,17 @@
 use std::ops::RangeBounds;
 
-use crate::{Region, SpriteRenderer, Transform};
+use crate::{SheetRegion, SpriteRenderer, Transform};
 
 #[derive(Clone, Copy, Debug)]
 pub struct BitFont<B: RangeBounds<char> = std::ops::RangeInclusive<char>> {
-    region: Region,
-    chars_per_row: u32,
+    region: SheetRegion,
+    chars_per_row: u16,
     chars: B,
 }
 
 impl<B: RangeBounds<char>> BitFont<B> {
     /// Creates a bitfont data structure; the bounds used must not be open on either end.
-    pub fn with_sheet_region(chars: B, uvs: Region, chars_per_row: u32) -> Self {
+    pub fn with_sheet_region(chars: B, uvs: SheetRegion, chars_per_row: u16) -> Self {
         if let std::ops::Bound::Unbounded = chars.start_bound() {
             panic!("Can't use unbounded lower bound on bitfont chars");
         }
@@ -37,7 +37,7 @@ impl<B: RangeBounds<char>> BitFont<B> {
         mut screen_pos: [f32; 2],
         char_sz: f32,
     ) -> (usize, [f32; 2]) {
-        let char_uv_sz = self.region.w / (self.chars_per_row as f32);
+        let char_uv_sz = self.region.w / self.chars_per_row;
         let end_char: u32 = match self.chars.end_bound() {
             std::ops::Bound::Included(&c) => u32::from(c) + 1,
             std::ops::Bound::Excluded(&c) => u32::from(c),
@@ -49,9 +49,9 @@ impl<B: RangeBounds<char>> BitFont<B> {
             _ => unreachable!(),
         };
         let char_count = end_char - start_char;
-        let rows = char_count / self.chars_per_row;
-        assert!(self.region.w >= self.chars_per_row as f32 * char_uv_sz);
-        assert!(self.region.h >= rows as f32 * char_uv_sz);
+        let rows = (char_count / self.chars_per_row as u32) as u16;
+        assert!(self.region.w >= self.chars_per_row * char_uv_sz);
+        assert!(self.region.h >= rows * char_uv_sz);
         let (trfs, uvs) = sprites.get_sprites_mut(group);
         screen_pos[0] += char_sz / 2.0;
         screen_pos[1] -= char_sz / 2.0;
@@ -70,14 +70,15 @@ impl<B: RangeBounds<char>> BitFont<B> {
                 rot: 0.0,
             };
             let chara = u32::from(chara) - start_char;
-            let which_row = chara / self.chars_per_row;
-            let which_col = chara % self.chars_per_row;
-            *uv = Region {
-                x: self.region.x + which_col as f32 * char_uv_sz,
-                y: self.region.y + which_row as f32 * char_uv_sz,
-                w: char_uv_sz,
-                h: char_uv_sz,
-            };
+            let which_row = chara / self.chars_per_row as u32;
+            let which_col = chara % self.chars_per_row as u32;
+            *uv = SheetRegion::new(
+                self.region.sheet,
+                self.region.x + which_col as u16,
+                self.region.y + which_row as u16,
+                char_uv_sz,
+                char_uv_sz,
+            );
             screen_pos[0] += char_sz;
         }
         (

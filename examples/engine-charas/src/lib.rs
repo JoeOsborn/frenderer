@@ -1,7 +1,7 @@
 pub use bytemuck::Zeroable;
 pub use frenderer::{
     input::{Input, Key},
-    wgpu, Frenderer, GPUCamera as Camera, Region, Transform,
+    wgpu, Frenderer, GPUCamera as Camera, SheetRegion, Transform,
 };
 mod gfx;
 pub use gfx::{BitFont, Spritesheet};
@@ -147,7 +147,7 @@ impl<G: Game> Engine<G> {
                         .zip(trfs.iter_mut().zip(uvs.iter_mut()))
                         {
                             *trf = chara.aabb_.into();
-                            *uv = chara.uv_.into();
+                            *uv = chara.uv_;
                         }
                         // iterate through texts and draw each one
                         let mut sprite_idx = chara_len;
@@ -192,7 +192,7 @@ impl<G: Game> Engine<G> {
         spritesheet: Spritesheet,
         tag: G::Tag,
         aabb: geom::AABB,
-        uv: geom::Rect,
+        uv: frenderer::SheetRegion,
         col: Collision,
     ) -> CharaID {
         col.check();
@@ -230,7 +230,7 @@ impl<G: Game> Engine<G> {
         spritesheet: Spritesheet,
         tag: G::Tag,
         aabb: geom::AABB,
-        uv: geom::Rect,
+        uv: frenderer::SheetRegion,
         col: Collision,
     ) -> CharaID {
         col.check();
@@ -287,11 +287,11 @@ impl<G: Game> Engine<G> {
         &mut self,
         spritesheet: Spritesheet,
         range: B,
-        uv: geom::Rect,
-        chars_per_row: u32,
+        uv: SheetRegion,
+        chars_per_row: u16,
     ) -> BitFont<B> {
         BitFont {
-            font: frenderer::BitFont::with_sheet_region(range, uv.into(), chars_per_row),
+            font: frenderer::BitFont::with_sheet_region(range, uv, chars_per_row),
             _spritesheet: spritesheet,
         }
     }
@@ -389,7 +389,7 @@ impl<G: Game> Engine<G> {
         };
         ch.tag_ = None;
         ch.aabb_ = geom::AABB::zeroed();
-        ch.uv_ = geom::Rect::zeroed();
+        ch.uv_ = SheetRegion::zeroed();
     }
     fn ensure_spritegroup_size(&mut self, group: usize, count: usize) {
         if count > self.renderer.sprites.sprite_group_size(group) {
@@ -413,7 +413,7 @@ impl<G: Game> Engine<G> {
                 label,
             ),
             vec![Transform::zeroed(); 1024],
-            vec![Region::zeroed(); 1024],
+            vec![SheetRegion::zeroed(); 1024],
             self.camera,
         );
         // Consider: texture arrays to support more than one, would need a frenderer change

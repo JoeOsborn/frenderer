@@ -2,7 +2,7 @@
 
 use engine_simple as engine;
 use engine_simple::wgpu;
-use engine_simple::{geom::*, Camera, Engine, Region, Transform, Zeroable};
+use engine_simple::{geom::*, Camera, Engine, SheetRegion, Transform, Zeroable};
 use rand::Rng;
 const W: f32 = 320.0;
 const H: f32 = 240.0;
@@ -55,7 +55,7 @@ impl engine::Game for Game {
             &engine.renderer.gpu,
             &sprite_tex,
             vec![Transform::zeroed(); SPRITE_MAX], //bg, three walls, guy, a few apples
-            vec![Region::zeroed(); SPRITE_MAX],
+            vec![SheetRegion::zeroed(); SPRITE_MAX],
             camera,
         );
         let guy = Guy {
@@ -80,21 +80,8 @@ impl engine::Game for Game {
             size: Vec2 { x: 16.0, y: H },
         };
 
-        let font = engine::BitFont::with_sheet_region(
-            '0'..='9',
-            Rect {
-                corner: Vec2 {
-                    x: 0.0,
-                    y: 512.0 / 1024.0,
-                },
-                size: Vec2 {
-                    x: 80.0 / 1024.0,
-                    y: 8.0 / 1024.0,
-                },
-            }
-            .into(),
-            10,
-        );
+        let font =
+            engine::BitFont::with_sheet_region('0'..='9', SheetRegion::new(0, 0, 512, 80, 8), 10);
         Game {
             camera,
             guy,
@@ -201,14 +188,7 @@ impl engine::Game for Game {
             size: Vec2 { x: W, y: H },
         }
         .into();
-        uvs[0] = Rect {
-            corner: Vec2 { x: 0.0, y: 0.0 },
-            size: Vec2 {
-                x: 640.0 / 1024.0,
-                y: 480.0 / 1024.0,
-            },
-        }
-        .into();
+        uvs[0] = SheetRegion::new(0, 0, 0, 640, 480);
         // set walls
         const WALL_START: usize = 1;
         let guy_idx = WALL_START + self.walls.len();
@@ -218,17 +198,7 @@ impl engine::Game for Game {
                 .zip(uvs[WALL_START..guy_idx].iter_mut()),
         ) {
             *trf = (*wall).into();
-            *uv = Rect {
-                corner: Vec2 {
-                    x: 0.0,
-                    y: 480.0 / 1024.0,
-                },
-                size: Vec2 {
-                    x: 8.0 / 1024.0,
-                    y: 8.0 / 1024.0,
-                },
-            }
-            .into();
+            *uv = SheetRegion::new(0, 0, 480, 8, 8);
         }
         // set guy
         trfs[guy_idx] = AABB {
@@ -237,17 +207,7 @@ impl engine::Game for Game {
         }
         .into();
         // TODO animation frame
-        uvs[guy_idx] = Rect {
-            corner: Vec2 {
-                x: 16.0 / 1024.0,
-                y: 480.0 / 1024.0,
-            },
-            size: Vec2 {
-                x: 16.0 / 1024.0,
-                y: 16.0 / 1024.0,
-            },
-        }
-        .into();
+        uvs[guy_idx] = SheetRegion::new(0, 16, 480, 16, 16);
         // set apple
         let apple_start = guy_idx + 1;
         for (apple, (trf, uv)) in self.apples.iter().zip(
@@ -260,17 +220,7 @@ impl engine::Game for Game {
                 size: Vec2 { x: 16.0, y: 16.0 },
             }
             .into();
-            *uv = Rect {
-                corner: Vec2 {
-                    x: 0.0,
-                    y: 496.0 / 1024.0,
-                },
-                size: Vec2 {
-                    x: 16.0 / 1024.0,
-                    y: 16.0 / 1024.0,
-                },
-            }
-            .into();
+            *uv = SheetRegion::new(0, 0, 496, 16, 16);
         }
         let sprite_count = apple_start + self.apples.len();
         let score_str = self.score.to_string();

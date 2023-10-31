@@ -1,11 +1,11 @@
 use crate::geom;
 use crate::TagType;
-
+use frenderer::SheetRegion;
 pub struct Chara<Tag: TagType> {
     pub(crate) aabb_: geom::AABB, // Consider: Transform; but then you'd need to handle rotation in collision
     pub(crate) vel_: geom::Vec2,
     // consider: CollisionShape?  Might want to have subgroups within the three engine collision groups for that.
-    pub(crate) uv_: geom::Rect, // consider: AnimationState
+    pub(crate) uv_: SheetRegion, // consider: AnimationState
     // Consider: "depth" and use that in the renderer to get right ordering of charas across groups
     pub(crate) tag_: Option<Tag>,
 }

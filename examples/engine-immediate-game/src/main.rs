@@ -1,5 +1,5 @@
 use engine_immediate as engine;
-use engine_immediate::{geom::*, Camera, Engine};
+use engine_immediate::{geom::*, Camera, Engine, SheetRegion};
 use rand::Rng;
 
 const W: f32 = 320.0;
@@ -67,21 +67,8 @@ impl engine::Game for Game {
             },
             size: Vec2 { x: 16.0, y: H },
         };
-        let font = engine::BitFont::with_sheet_region(
-            '0'..='9',
-            Rect {
-                corner: Vec2 {
-                    x: 0.0,
-                    y: 512.0 / 1024.0,
-                },
-                size: Vec2 {
-                    x: 80.0 / 1024.0,
-                    y: 8.0 / 1024.0,
-                },
-            }
-            .into(),
-            10,
-        );
+        let font =
+            engine::BitFont::with_sheet_region('0'..='9', SheetRegion::new(0, 0, 512, 80, 8), 10);
         Game {
             guy,
             spritesheet,
@@ -188,30 +175,11 @@ impl engine::Game for Game {
                 },
                 size: Vec2 { x: W, y: H },
             },
-            Rect {
-                corner: Vec2 { x: 0.0, y: 0.0 },
-                size: Vec2 {
-                    x: 640.0 / 1024.0,
-                    y: 480.0 / 1024.0,
-                },
-            },
+            SheetRegion::new(0, 0, 0, 640, 480),
         );
         // set walls
         for wall in self.walls.iter() {
-            engine.draw_sprite(
-                self.spritesheet,
-                *wall,
-                Rect {
-                    corner: Vec2 {
-                        x: 0.0,
-                        y: 480.0 / 1024.0,
-                    },
-                    size: Vec2 {
-                        x: 8.0 / 1024.0,
-                        y: 8.0 / 1024.0,
-                    },
-                },
-            );
+            engine.draw_sprite(self.spritesheet, *wall, SheetRegion::new(0, 0, 480, 8, 8));
         }
         // set guy
         engine.draw_sprite(
@@ -220,16 +188,7 @@ impl engine::Game for Game {
                 center: self.guy.pos,
                 size: GUY_SIZE,
             },
-            Rect {
-                corner: Vec2 {
-                    x: 16.0 / 1024.0,
-                    y: 480.0 / 1024.0,
-                },
-                size: Vec2 {
-                    x: 16.0 / 1024.0,
-                    y: 16.0 / 1024.0,
-                },
-            },
+            SheetRegion::new(0, 16, 480, 16, 16),
         );
         // TODO animation frame
         // set apple
@@ -240,16 +199,7 @@ impl engine::Game for Game {
                     center: apple.pos,
                     size: APPLE_SIZE,
                 },
-                Rect {
-                    corner: Vec2 {
-                        x: 0.0,
-                        y: 496.0 / 1024.0,
-                    },
-                    size: Vec2 {
-                        x: 16.0 / 1024.0,
-                        y: 16.0 / 1024.0,
-                    },
-                },
+                SheetRegion::new(0, 0, 496, 16, 16),
             );
         }
         engine.draw_string(
