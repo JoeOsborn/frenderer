@@ -53,7 +53,7 @@ impl engine::Game for Game {
         );
         engine.renderer.sprites.add_sprite_group(
             &engine.renderer.gpu,
-            sprite_tex,
+            &sprite_tex,
             vec![Transform::zeroed(); SPRITE_MAX], //bg, three walls, guy, a few apples
             vec![Region::zeroed(); SPRITE_MAX],
             camera,

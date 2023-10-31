@@ -32,7 +32,7 @@ fn main() {
     const COUNT: usize = 100_000;
     frend.sprites.add_sprite_group(
         &frend.gpu,
-        sprite_tex,
+        &sprite_tex,
         (0..COUNT)
             .map(|_n| Transform {
                 x: rng.gen_range(0.0..(camera.screen_size[0] - 16.0)),

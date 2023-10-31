@@ -128,7 +128,7 @@ impl Engine {
         self.sprite_counts.push(0);
         Spritesheet(self.renderer.sprites.add_sprite_group(
             &self.renderer.gpu,
-            self.renderer.gpu.create_texture(
+            &self.renderer.gpu.create_texture(
                 &img,
                 wgpu::TextureFormat::Rgba8UnormSrgb,
                 img.dimensions(),
