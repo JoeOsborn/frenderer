@@ -94,7 +94,7 @@ impl engine::Game for Game {
                     y: 16.0 / 1024.0,
                 },
             },
-            engine::Collision::movable(),
+            engine::Collision::pushable(),
         );
         // floor
         engine.make_chara(
@@ -157,7 +157,7 @@ impl engine::Game for Game {
     }
     fn update(&mut self, engine: &mut Engine) {
         let dir = engine.input.key_axis(engine::Key::Left, engine::Key::Right);
-        engine.chara_mut(self.guy).set_vel(Vec2 {
+        engine[self.guy].set_vel(Vec2 {
             x: dir * GUY_SPEED,
             y: 0.0,
         });
@@ -187,7 +187,7 @@ impl engine::Game for Game {
                 },
                 engine::Collision::trigger(),
             );
-            engine.chara_mut(apple).set_vel(Vec2 {
+            engine[apple].set_vel(Vec2 {
                 x: 0.0,
                 y: rng.gen_range((-4.0)..(-1.0)),
             });

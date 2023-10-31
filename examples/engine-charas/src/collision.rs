@@ -16,12 +16,12 @@ pub enum Collision {
     Colliding(CollisionFlags),
 }
 impl Collision {
-    const MOVABLE: u8 = 0b01;
+    const PUSHABLEE u8 = 0b01;
     const SOLID: u8 = 0b10;
     pub(crate) fn check(self) {
         match self {
             Self::Colliding(CollisionFlags(0)) => {
-                panic!("Can't be colliding but neither solid nor movable")
+                panic!("Can't be colliding but neither solid nor pushable")
             }
             Self::Colliding(n) if n.0 > 3 => panic!("Invalid colliding mask"),
             _ => (),
@@ -30,11 +30,11 @@ impl Collision {
     pub fn solid() -> Self {
         Self::Colliding(CollisionFlags(Self::SOLID))
     }
-    pub fn movable() -> Self {
-        Self::Colliding(CollisionFlags(Self::MOVABLE))
+    pub fn pushable() -> Self {
+        Self::Colliding(CollisionFlags(Self::PUSHABLEE)
     }
-    pub fn movable_solid() -> Self {
-        Self::Colliding(CollisionFlags(Self::MOVABLE | Self::SOLID))
+    pub fn pushable_solid() -> Self {
+        Self::Colliding(CollisionFlags(Self::PUSHABLEE| Self::SOLID))
     }
     pub fn none() -> Self {
         Self::None
@@ -45,12 +45,12 @@ impl Collision {
     pub fn is_solid(&self) -> bool {
         matches!(self, Self::Colliding(flags) if (flags.0 & Self::SOLID) == Self::SOLID)
     }
-    pub fn is_movable(&self) -> bool {
-        matches!(self, Self::Colliding(flags) if (flags.0 & Self::MOVABLE) == Self::MOVABLE)
+    pub fn is_pushable(&self) -> bool {
+        matches!(self, Self::Colliding(flags) if (flags.0 & Self::PUSHABLEE == Self::PUSHABLEE
     }
-    pub fn is_movable_solid(&self) -> bool {
+    pub fn is_pushable_solid(&self) -> bool {
         matches!(self, Self::Colliding(flags)
-                if (flags.0 & (Self::MOVABLE | Self::SOLID)) == (Self::MOVABLE | Self::SOLID))
+                if (flags.0 & (Self::PUSHABLEE| Self::SOLID)) == (Self::PUSHABLEE| Self::SOLID))
     }
     pub fn is_none(&self) -> bool {
         matches!(self, Self::None)
@@ -130,7 +130,7 @@ pub(crate) fn do_collisions<Tag: TagType>(
             }
         }
     }
-    // now do restitution for movable vs movable, movable vs solid, solid vs movable
+    // now do restitution for pushable vs pushable, pushable vs solid, solid vs pushable
     contacts.sort();
     let displacements = &mut contacts.displacements;
     for (ci, cj, _contact_disp) in contacts.contacts.drain(..) {
@@ -141,12 +141,12 @@ pub(crate) fn do_collisions<Tag: TagType>(
         let flags_j = Collision::Colliding(*flags_j);
         let tag_j = char_j.tag_.unwrap();
         // if neither is solid, continue (no actual occlusion)
-        // TODO: group solid and movable and solid+movable into three groups?  or movable, solid+movable?
+        // TODO: group solid and pushable and solid+pushable into three groups?  or pushable, solid+pushable?
         if !flags_i.is_solid() && !flags_j.is_solid() {
             continue;
         }
-        // if both are immovable, continue (nothing to do)
-        if !flags_i.is_movable() && !flags_j.is_movable() {
+        // if both are impushable, continue (nothing to do)
+        if !flags_i.is_pushable() && !flags_j.is_pushable() {
             continue;
         }
         let disp = char_j
@@ -210,8 +210,8 @@ fn compute_disp<Tag: TagType>(
     flags_j: Collision,
     mut disp: geom::Vec2,
 ) -> (geom::Vec2, geom::Vec2) {
-    // Preconditions: at least one is movable
-    assert!(flags_i.is_movable() || flags_j.is_movable());
+    // Preconditions: at least one is pushable
+    assert!(flags_i.is_pushable() || flags_j.is_pushable());
     // Preconditions: at least one is solid
     assert!(flags_i.is_solid() || flags_j.is_solid());
     // Guy is left of wall, push left
@@ -222,14 +222,14 @@ fn compute_disp<Tag: TagType>(
     if ci.aabb_.center.y < cj.aabb_.center.y {
         disp.y *= -1.0;
     }
-    // both are movable and solid, split disp
-    if flags_i.is_movable_solid() && flags_j.is_movable_solid() {
+    // both are pushable and solid, split disp
+    if flags_i.is_pushable_solid() && flags_j.is_pushable_solid() {
         (disp / 2.0, -disp / 2.0)
-    } else if !flags_i.is_movable() && flags_j.is_movable() {
-        // cj is movable and ci is not movable, so can't move ci whether or not ci/cj is solid
+    } else if !flags_i.is_pushable() && flags_j.is_pushable() {
+        // cj is pushable and ci is not pushable, so can't move ci whether or not ci/cj is solid
         (geom::Vec2::ZERO, -disp)
     } else {
-        // ci is movable and cj is not movable, so can't move cj whether or not ci/cj is solid
+        // ci is pushable and cj is not pushable, so can't move cj whether or not ci/cj is solid
         (disp, geom::Vec2::ZERO)
     }
 }

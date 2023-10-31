@@ -12,36 +12,11 @@ mod collision;
 pub use collision::{Collision, Contact};
 
 const COLLISION_STEPS: usize = 3;
+mod chara;
+pub use chara::Chara;
+use gfx::TextDraw;
 
-pub struct Chara<Tag: TagType> {
-    aabb_: geom::AABB,
-    vel_: geom::Vec2,
-    uv_: geom::Rect,
-    tag_: Option<Tag>,
-}
-
-impl<Tag: TagType> Chara<Tag> {
-    pub fn pos(&self) -> geom::Vec2 {
-        self.aabb_.center
-    }
-    pub fn set_pos(&mut self, p: geom::Vec2) {
-        self.aabb_.center = p;
-    }
-    pub fn aabb(&self) -> geom::AABB {
-        self.aabb_
-    }
-    pub fn set_aabb(&mut self, b: geom::AABB) {
-        self.aabb_ = b;
-    }
-    pub fn vel(&self) -> geom::Vec2 {
-        self.vel_
-    }
-    pub fn set_vel(&mut self, v: geom::Vec2) {
-        self.vel_ = v;
-    }
-}
-
-struct TextDraw(frenderer::BitFont, String, geom::Vec2, f32);
+pub mod geom;
 
 pub struct Engine<G: Game> {
     pub renderer: Frenderer,
@@ -49,16 +24,27 @@ pub struct Engine<G: Game> {
     camera: Camera,
     event_loop: Option<winit::event_loop::EventLoop<()>>,
     window: winit::window::Window,
+    // We could pull these three out into a "World" or "CollisionWorld",
+    // but note that the collision system only needs AABBs and tags, not vel or uv.
     charas_nocollide: Vec<Chara<G::Tag>>,
     charas_trigger: Vec<Chara<G::Tag>>,
     charas_physical: Vec<(Chara<G::Tag>, collision::CollisionFlags)>,
-    texts: (usize, Vec<TextDraw>),
+    // Text drawing
+    texts: Vec<TextDraw>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct CharaID(u8 /* group */, u32 /* index within group */);
+pub struct CharaID(
+    u8, /* group */
+    /* consider: generation, and matching generation on chara */
+    u32, /* index within group */
+);
 
 impl<G: Game> Engine<G> {
+    const C_NC: u8 = 0;
+    const C_TR: u8 = 1;
+    const C_PH: u8 = 2;
+
     pub fn new(builder: winit::window::WindowBuilder) -> Self {
         let event_loop = winit::event_loop::EventLoop::new();
         let window = builder.build(&event_loop).unwrap();
@@ -77,7 +63,7 @@ impl<G: Game> Engine<G> {
             charas_nocollide: vec![],
             charas_trigger: vec![],
             charas_physical: vec![],
-            texts: (0, Vec::with_capacity(128)),
+            texts: Vec::with_capacity(128),
         }
     }
     pub fn run(mut self) {
@@ -124,12 +110,8 @@ impl<G: Game> Engine<G> {
                             // simulate a frame
                             acc -= DT;
                             game.update(&mut self);
-                            for chara in self
-                                .charas_nocollide
-                                .iter_mut()
-                                .chain(self.charas_trigger.iter_mut())
-                                .chain(self.charas_physical.iter_mut().map(|(c, _f)| c))
-                            {
+                            for (_id, chara) in self.charas_mut() {
+                                // This will update dead charas too but it won't cause any harm
                                 chara.aabb_.center += chara.vel_;
                             }
                             for _iter in 0..COLLISION_STEPS {
@@ -147,10 +129,8 @@ impl<G: Game> Engine<G> {
                             self.input.next_frame();
                         }
                         game.render(&mut self);
-                        let chara_len = self.charas_nocollide.len()
-                            + self.charas_trigger.len()
-                            + self.charas_physical.len();
-                        let (text_len, texts) = &self.texts;
+                        let chara_len = self.charas().count();
+                        let text_len: usize = self.texts.iter().map(|t| t.1.len()).sum();
                         self.renderer.sprites.resize_sprite_group(
                             &self.renderer.gpu,
                             0,
@@ -158,20 +138,20 @@ impl<G: Game> Engine<G> {
                         );
                         let (trfs, uvs) = self.renderer.sprites.get_sprites_mut(0);
                         // iterate through charas and update trf,uv
-                        // TODO: this could be more efficient by only updating charas which changed
-                        for (chara, (trf, uv)) in self
-                            .charas_nocollide
-                            .iter()
-                            .chain(self.charas_trigger.iter())
-                            .chain(self.charas_physical.iter().map(|(c, _f)| c))
-                            .zip(trfs.iter_mut().zip(uvs.iter_mut()))
+                        // TODO: this could be more efficient by only updating charas which changed, or could be done during integration?
+                        for ((_id, chara), (trf, uv)) in Self::charas_internal(
+                            &self.charas_nocollide,
+                            &self.charas_trigger,
+                            &self.charas_physical,
+                        )
+                        .zip(trfs.iter_mut().zip(uvs.iter_mut()))
                         {
                             *trf = chara.aabb_.into();
                             *uv = chara.uv_.into();
                         }
                         // iterate through texts and draw each one
                         let mut sprite_idx = chara_len;
-                        for TextDraw(font, text, pos, sz) in texts.iter() {
+                        for TextDraw(font, text, pos, sz) in self.texts.iter() {
                             let (count, _) = font.draw_text(
                                 &mut self.renderer.sprites,
                                 0,
@@ -195,8 +175,7 @@ impl<G: Game> Engine<G> {
                             .sprites
                             .set_camera_all(&self.renderer.gpu, self.camera);
                         self.renderer.render();
-                        self.texts.0 = 0;
-                        self.texts.1.clear();
+                        self.texts.clear();
                         self.window.request_redraw();
                     }
                     event => {
@@ -233,15 +212,15 @@ impl<G: Game> Engine<G> {
         let (grp, len) = match col {
             Collision::None => {
                 self.charas_nocollide.push(chara);
-                (0, self.charas_nocollide.len())
+                (Self::C_NC, self.charas_nocollide.len())
             }
             Collision::Trigger => {
                 self.charas_trigger.push(chara);
-                (1, self.charas_trigger.len())
+                (Self::C_TR, self.charas_trigger.len())
             }
             Collision::Colliding(flags) => {
                 self.charas_physical.push((chara, flags));
-                (2, self.charas_physical.len())
+                (Self::C_PH, self.charas_physical.len())
             }
         };
         CharaID(grp, len as u32 - 1)
@@ -264,7 +243,7 @@ impl<G: Game> Engine<G> {
                         vel_: geom::Vec2::ZERO,
                         tag_: Some(tag),
                     };
-                    CharaID(0, idx as u32)
+                    CharaID(Self::C_NC, idx as u32)
                 } else {
                     self.make_chara(spritesheet, tag, aabb, uv, col)
                 }
@@ -277,7 +256,7 @@ impl<G: Game> Engine<G> {
                         vel_: geom::Vec2::ZERO,
                         tag_: Some(tag),
                     };
-                    CharaID(1, idx as u32)
+                    CharaID(Self::C_TR, idx as u32)
                 } else {
                     self.make_chara(spritesheet, tag, aabb, uv, col)
                 }
@@ -297,7 +276,7 @@ impl<G: Game> Engine<G> {
                         },
                         flags,
                     );
-                    CharaID(2, idx as u32)
+                    CharaID(Self::C_PH, idx as u32)
                 } else {
                     self.make_chara(spritesheet, tag, aabb, uv, col)
                 }
@@ -320,80 +299,98 @@ impl<G: Game> Engine<G> {
         &mut self,
         tag: G::Tag,
     ) -> impl Iterator<Item = (CharaID, &mut Chara<G::Tag>)> {
-        self.charas_nocollide
-            .iter_mut()
-            .enumerate()
-            .filter(move |(_ci, c)| c.tag_ == Some(tag))
-            .map(move |(ci, c)| (CharaID(0, ci as u32), c))
-            .chain(
-                self.charas_trigger
-                    .iter_mut()
-                    .enumerate()
-                    .filter(move |(_ci, c)| c.tag_ == Some(tag))
-                    .map(move |(ci, c)| (CharaID(1, ci as u32), c)),
-            )
-            .chain(
-                self.charas_physical
-                    .iter_mut()
-                    .enumerate()
-                    .filter(move |(_ci, (c, _flags))| c.tag_ == Some(tag))
-                    .map(move |(ci, (c, _flags))| (CharaID(2, ci as u32), c)),
-            )
+        self.charas_mut()
+            .filter(move |(_id, c)| c.tag_ == Some(tag))
     }
     pub fn charas_by_tag(
         &mut self,
         tag: G::Tag,
     ) -> impl Iterator<Item = (CharaID, &Chara<G::Tag>)> {
-        self.charas_nocollide
-            .iter()
+        self.charas().filter(move |(_id, c)| c.tag_ == Some(tag))
+    }
+    pub fn chara_mut(&mut self, id: CharaID) -> Option<&mut Chara<G::Tag>> {
+        match id.0 {
+            Self::C_NC if self.charas_nocollide[id.1 as usize].tag_.is_some() => {
+                Some(&mut self.charas_nocollide[id.1 as usize])
+            }
+            Self::C_TR if self.charas_trigger[id.1 as usize].tag_.is_some() => {
+                Some(&mut self.charas_trigger[id.1 as usize])
+            }
+            Self::C_PH if self.charas_physical[id.1 as usize].0.tag_.is_some() => {
+                Some(&mut self.charas_physical[id.1 as usize].0)
+            }
+            _ => None,
+        }
+    }
+    pub fn chara(&self, id: CharaID) -> Option<&Chara<G::Tag>> {
+        match id.0 {
+            Self::C_NC if self.charas_nocollide[id.1 as usize].tag_.is_some() => {
+                Some(&self.charas_nocollide[id.1 as usize])
+            }
+            Self::C_TR if self.charas_trigger[id.1 as usize].tag_.is_some() => {
+                Some(&self.charas_trigger[id.1 as usize])
+            }
+            Self::C_PH if self.charas_physical[id.1 as usize].0.tag_.is_some() => {
+                Some(&self.charas_physical[id.1 as usize].0)
+            }
+            _ => None,
+        }
+    }
+    fn charas_internal<'s>(
+        nc: &'s [Chara<G::Tag>],
+        tr: &'s [Chara<G::Tag>],
+        ph: &'s [(Chara<G::Tag>, collision::CollisionFlags)],
+    ) -> impl Iterator<Item = (CharaID, &'s Chara<G::Tag>)> {
+        nc.iter()
             .enumerate()
-            .filter(move |(_ci, c)| c.tag_ == Some(tag))
-            .map(move |(ci, c)| (CharaID(0, ci as u32), c))
+            .map(move |(ci, c)| (CharaID(Self::C_NC, ci as u32), c))
+            .chain(
+                tr.iter()
+                    .enumerate()
+                    .map(move |(ci, c)| (CharaID(Self::C_TR, ci as u32), c)),
+            )
+            .chain(
+                ph.iter()
+                    .enumerate()
+                    .map(move |(ci, (c, _flags))| (CharaID(Self::C_PH, ci as u32), c)),
+            )
+    }
+    fn charas(&self) -> impl Iterator<Item = (CharaID, &Chara<G::Tag>)> {
+        Self::charas_internal(
+            &self.charas_nocollide,
+            &self.charas_trigger,
+            &self.charas_physical,
+        )
+    }
+    fn charas_mut(&mut self) -> impl Iterator<Item = (CharaID, &mut Chara<G::Tag>)> {
+        self.charas_nocollide
+            .iter_mut()
+            .enumerate()
+            .map(move |(ci, c)| (CharaID(Self::C_NC, ci as u32), c))
             .chain(
                 self.charas_trigger
-                    .iter()
+                    .iter_mut()
                     .enumerate()
-                    .filter(move |(_ci, c)| c.tag_ == Some(tag))
-                    .map(move |(ci, c)| (CharaID(1, ci as u32), c)),
+                    .map(move |(ci, c)| (CharaID(Self::C_TR, ci as u32), c)),
             )
             .chain(
                 self.charas_physical
-                    .iter()
+                    .iter_mut()
                     .enumerate()
-                    .filter(move |(_ci, (c, _flags))| c.tag_ == Some(tag))
-                    .map(move |(ci, (c, _flags))| (CharaID(2, ci as u32), c)),
+                    .map(move |(ci, (c, _flags))| (CharaID(Self::C_PH, ci as u32), c)),
             )
-    }
-    pub fn chara_mut(&mut self, id: CharaID) -> &mut Chara<G::Tag> {
-        match id.0 {
-            0 => &mut self.charas_nocollide[id.1 as usize],
-            1 => &mut self.charas_trigger[id.1 as usize],
-            2 => &mut self.charas_physical[id.1 as usize].0,
-            _ => panic!("invalid chara grouping"),
-        }
-    }
-    pub fn chara(&self, id: CharaID) -> &Chara<G::Tag> {
-        match id.0 {
-            0 => &self.charas_nocollide[id.1 as usize],
-            1 => &self.charas_trigger[id.1 as usize],
-            2 => &self.charas_physical[id.1 as usize].0,
-            _ => panic!("invalid chara grouping"),
-        }
     }
     pub fn kill_chara(&mut self, id: CharaID) {
         let ch = match id.0 {
-            0 => &mut self.charas_nocollide[id.1 as usize],
-            1 => &mut self.charas_trigger[id.1 as usize],
-            2 => &mut self.charas_physical[id.1 as usize].0,
+            Self::C_NC => &mut self.charas_nocollide[id.1 as usize],
+            Self::C_TR => &mut self.charas_trigger[id.1 as usize],
+            Self::C_PH => &mut self.charas_physical[id.1 as usize].0,
             _ => panic!("invalid chara grouping"),
         };
         ch.tag_ = None;
         ch.aabb_ = geom::AABB::zeroed();
         ch.uv_ = geom::Rect::zeroed();
     }
-}
-
-impl<G: Game> Engine<G> {
     fn ensure_spritegroup_size(&mut self, group: usize, count: usize) {
         if count > self.renderer.sprites.sprite_group_size(group) {
             self.renderer.sprites.resize_sprite_group(
@@ -407,8 +404,6 @@ impl<G: Game> Engine<G> {
         self.camera = camera;
     }
     pub fn add_spritesheet(&mut self, img: image::RgbaImage, label: Option<&str>) -> Spritesheet {
-        //self.charas.push(Vec::with_capacity(1024));
-        //self.texts.push((0, vec![]));
         let idx = self.renderer.sprites.add_sprite_group(
             &self.renderer.gpu,
             self.renderer.gpu.create_texture(
@@ -421,15 +416,26 @@ impl<G: Game> Engine<G> {
             vec![Region::zeroed(); 1024],
             self.camera,
         );
+        // Consider: texture arrays to support more than one, would need a frenderer change
         assert!(idx == 0, "We only support one spritesheet for now");
         Spritesheet(idx)
     }
     pub fn draw_string(&mut self, font: &BitFont, text: String, pos: geom::Vec2, char_sz: f32) {
-        self.texts.0 += text.len();
         self.texts
-            .1
             .push(TextDraw(font.font.clone(), text, pos, char_sz));
     }
 }
 
-pub mod geom;
+impl<G: Game> std::ops::Index<CharaID> for Engine<G> {
+    type Output = Chara<G::Tag>;
+
+    fn index(&self, index: CharaID) -> &Self::Output {
+        self.chara(index).unwrap()
+    }
+}
+
+impl<G: Game> std::ops::IndexMut<CharaID> for Engine<G> {
+    fn index_mut(&mut self, index: CharaID) -> &mut Self::Output {
+        self.chara_mut(index).unwrap()
+    }
+}
