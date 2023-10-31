@@ -421,7 +421,6 @@ impl<G: Game> Engine<G> {
             vec![SheetRegion::zeroed(); 1024],
             self.camera,
         );
-        // Consider: texture arrays to support more than one, would need a frenderer change
         assert!(idx == 0, "We only support one spritesheet for now");
         Spritesheet(idx)
     }
