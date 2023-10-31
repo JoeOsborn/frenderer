@@ -16,7 +16,7 @@ pub enum Collision {
     Colliding(CollisionFlags),
 }
 impl Collision {
-    const PUSHABLEE u8 = 0b01;
+    const PUSHABLE:u8 = 0b01;
     const SOLID: u8 = 0b10;
     pub(crate) fn check(self) {
         match self {
@@ -31,10 +31,10 @@ impl Collision {
         Self::Colliding(CollisionFlags(Self::SOLID))
     }
     pub fn pushable() -> Self {
-        Self::Colliding(CollisionFlags(Self::PUSHABLEE)
+        Self::Colliding(CollisionFlags(Self::PUSHABLE))
     }
     pub fn pushable_solid() -> Self {
-        Self::Colliding(CollisionFlags(Self::PUSHABLEE| Self::SOLID))
+        Self::Colliding(CollisionFlags(Self::PUSHABLE | Self::SOLID))
     }
     pub fn none() -> Self {
         Self::None
@@ -46,11 +46,11 @@ impl Collision {
         matches!(self, Self::Colliding(flags) if (flags.0 & Self::SOLID) == Self::SOLID)
     }
     pub fn is_pushable(&self) -> bool {
-        matches!(self, Self::Colliding(flags) if (flags.0 & Self::PUSHABLEE == Self::PUSHABLEE
+        matches!(self, Self::Colliding(flags) if (flags.0 & Self::PUSHABLE) == Self::PUSHABLE)
     }
     pub fn is_pushable_solid(&self) -> bool {
         matches!(self, Self::Colliding(flags)
-                if (flags.0 & (Self::PUSHABLEE| Self::SOLID)) == (Self::PUSHABLEE| Self::SOLID))
+                if (flags.0 & (Self::PUSHABLE| Self::SOLID)) == (Self::PUSHABLE| Self::SOLID))
     }
     pub fn is_none(&self) -> bool {
         matches!(self, Self::None)

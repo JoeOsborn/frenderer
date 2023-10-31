@@ -6,6 +6,7 @@ pub struct Chara<Tag: TagType> {
     pub(crate) vel_: geom::Vec2,
     // consider: CollisionShape?  Might want to have subgroups within the three engine collision groups for that.
     pub(crate) uv_: geom::Rect, // consider: AnimationState
+    // Consider: "depth" and use that in the renderer to get right ordering of charas across groups
     pub(crate) tag_: Option<Tag>,
 }
 

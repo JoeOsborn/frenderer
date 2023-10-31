@@ -38,7 +38,6 @@ pub struct GPUCamera {
 
 #[allow(dead_code)]
 struct SpriteGroup {
-    tex: wgpu::Texture,
     world_buffer: wgpu::Buffer,
     sheet_buffer: wgpu::Buffer,
     world_transforms: Vec<Transform>,
@@ -238,7 +237,7 @@ impl SpriteRenderer {
     pub fn add_sprite_group(
         &mut self,
         gpu: &WGPU,
-        tex: wgpu::Texture,
+        tex: &wgpu::Texture,
         world_transforms: Vec<Transform>,
         sheet_regions: Vec<Region>,
         camera: GPUCamera,
@@ -324,7 +323,6 @@ impl SpriteRenderer {
         gpu.queue
             .write_buffer(&camera_buffer, 0, bytemuck::bytes_of(&camera));
         self.groups.push(SpriteGroup {
-            tex,
             world_buffer: buffer_world,
             sheet_buffer: buffer_sheet,
             world_transforms,

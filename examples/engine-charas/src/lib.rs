@@ -406,7 +406,7 @@ impl<G: Game> Engine<G> {
     pub fn add_spritesheet(&mut self, img: image::RgbaImage, label: Option<&str>) -> Spritesheet {
         let idx = self.renderer.sprites.add_sprite_group(
             &self.renderer.gpu,
-            self.renderer.gpu.create_texture(
+            &self.renderer.gpu.create_texture(
                 &img,
                 wgpu::TextureFormat::Rgba8UnormSrgb,
                 img.dimensions(),
