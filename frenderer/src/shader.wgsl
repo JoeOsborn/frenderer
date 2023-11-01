@@ -15,7 +15,7 @@ struct Camera {
 }
 
 struct UVData {
-    sheet_padding:u32,
+    sheet_depth:u32,
     xy:u32,
     wh:u32,
     _padding:u32
@@ -40,6 +40,8 @@ fn sprite_to_vert(trf:vec4<f32>, uvs:UVData, norm_vert:vec2<f32>) -> VertexOutpu
   let size:vec2<f32> = vec2(f32(size_bits & 0x0000FFFFu),
                             f32((size_bits & 0xFFFF0000u) >> 16u)
                             );
+  let tex_layer = uvs.sheet_depth & 0x0000FFFFu;
+  let tex_depth = (uvs.sheet_depth & 0xFFFF0000u) >> 16u;
   let tex_size:vec2<u32> = textureDimensions(t_diffuse);
   let rot:f32 = trf.w;
   let sinrot:f32 = sin(rot);
@@ -55,7 +57,6 @@ fn sprite_to_vert(trf:vec4<f32>, uvs:UVData, norm_vert:vec2<f32>) -> VertexOutpu
   let camera_pos = world_pos - camera.screen_pos;
   let box_pos = camera_pos / (camera.screen_size*0.5);
   let ndc_pos = vec4(box_pos.xy, 0.0, 1.0) - vec4(1.0, 1.0, 0.0, 0.0);
-  let tex_layer = uvs.sheet_padding & 0x0000FFFFu;
   let tex_x = uvs.xy & 0x0000FFFFu;
   let tex_y = (uvs.xy & 0xFFFF0000u) >> 16u;
   let tex_w = uvs.wh & 0x0000FFFFu;
@@ -63,7 +64,8 @@ fn sprite_to_vert(trf:vec4<f32>, uvs:UVData, norm_vert:vec2<f32>) -> VertexOutpu
   let tex_corner = vec2(f32(tex_x) / f32(tex_size.x), f32(tex_y) / f32(tex_size.y));
   let tex_uv_size = vec2(f32(tex_w) / f32(tex_size.x), f32(tex_h) / f32(tex_size.y));
   let norm_uv = vec2(norm_vert.x+0.5, 1.0-(norm_vert.y+0.5));
-  return VertexOutput(ndc_pos, tex_corner + norm_uv*tex_uv_size, tex_layer);
+  // Larger y = smaller depth = closer to screen
+  return VertexOutput(ndc_pos+vec4(0.0, 0.0, f32(tex_depth)/65535.0, 0.0), tex_corner + norm_uv*tex_uv_size, tex_layer);
 }
 
 @vertex

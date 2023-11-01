@@ -11,7 +11,7 @@ use bytemuck::{Pod, Zeroable};
 #[derive(Clone, Copy, Zeroable, Pod, Debug, Default)]
 pub struct SheetRegion {
     pub sheet: u16,
-    _padding_16: u16,
+    pub depth: u16,
     // values in pixels
     pub x: u16,
     pub y: u16,
@@ -21,14 +21,14 @@ pub struct SheetRegion {
 }
 
 impl SheetRegion {
-    pub const fn new(sheet: u16, x: u16, y: u16, w: u16, h: u16) -> Self {
+    pub const fn new(sheet: u16, x: u16, y: u16, depth: u16, w: u16, h: u16) -> Self {
         Self {
             sheet,
             x,
             y,
             w,
             h,
-            _padding_16: 0,
+            depth,
             _padding_32: 0,
         }
     }
@@ -237,7 +237,13 @@ impl SpriteRenderer {
                     targets: &[Some(gpu.config.format.into())],
                 }),
                 primitive: wgpu::PrimitiveState::default(),
-                depth_stencil: None,
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: wgpu::TextureFormat::Depth32Float,
+                    depth_write_enabled: true,
+                    depth_compare: wgpu::CompareFunction::Less,
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState::default(),
+                }),
                 multisample: wgpu::MultisampleState::default(),
                 multiview: None,
             });

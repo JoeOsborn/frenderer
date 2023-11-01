@@ -55,7 +55,7 @@ fn main() {
             })
             .collect(),
         (0..COUNT)
-            .map(|_n| SheetRegion::new(rng.gen_range(0..=1), 0, 16, 11, 16))
+            .map(|_n| SheetRegion::new(rng.gen_range(0..=1), 0, 16, 0, 11, 16))
             .collect(),
         camera,
     );
@@ -122,7 +122,14 @@ fn main() {
                                 store: true,
                             },
                         })],
-                        depth_stencil_attachment: None,
+                        depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                            view: &frend.gpu.depth_texture_view,
+                            depth_ops: Some(wgpu::Operations {
+                                load: wgpu::LoadOp::Clear(1.0),
+                                store: true,
+                            }),
+                            stencil_ops: None,
+                        }),
                     });
                     // frend has render_into to do the actual rendering
                     frend.render_into(&mut rpass);

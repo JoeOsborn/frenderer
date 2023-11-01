@@ -76,6 +76,7 @@ impl<B: RangeBounds<char>> BitFont<B> {
                 self.region.sheet,
                 self.region.x + (which_col as u16) * char_uv_sz,
                 self.region.y + (which_row as u16) * char_uv_sz,
+                0,
                 char_uv_sz,
                 char_uv_sz,
             );

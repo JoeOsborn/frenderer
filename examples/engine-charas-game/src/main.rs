@@ -9,7 +9,7 @@ const GUY_SPEED: f32 = 4.0;
 const GUY_SIZE: Vec2 = Vec2 { x: 16.0, y: 16.0 };
 const APPLE_SIZE: Vec2 = Vec2 { x: 16.0, y: 16.0 };
 
-const WALL_UVS: SheetRegion = SheetRegion::new(0, 0, 480, 8, 8);
+const WALL_UVS: SheetRegion = SheetRegion::new(0, 0, 480, 12, 8, 8);
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 enum CharaTag {
     Wall,
@@ -56,7 +56,7 @@ impl engine::Game for Game {
                 },
                 size: Vec2 { x: W, y: H },
             },
-            SheetRegion::new(0, 0, 0, 640, 480),
+            SheetRegion::new(0, 0, 0, 16, 640, 480),
             engine::Collision::none(),
         );
         let guy = engine.make_chara(
@@ -69,7 +69,7 @@ impl engine::Game for Game {
                 },
                 size: GUY_SIZE,
             },
-            SheetRegion::new(0, 16, 480, 16, 16),
+            SheetRegion::new(0, 16, 480, 8, 16, 16),
             engine::Collision::pushable(),
         );
         // floor
@@ -111,7 +111,7 @@ impl engine::Game for Game {
         let font = engine.make_font(
             spritesheet,
             '0'..='9',
-            SheetRegion::new(0, 0, 512, 80, 8),
+            SheetRegion::new(0, 0, 512, 0, 80, 8),
             10,
         );
         Game {
@@ -142,7 +142,7 @@ impl engine::Game for Game {
                     },
                     size: APPLE_SIZE,
                 },
-                SheetRegion::new(0, 0, 496, 16, 16),
+                SheetRegion::new(0, 0, 496, 4, 16, 16),
                 engine::Collision::trigger(),
             );
             engine[apple].set_vel(Vec2 {
