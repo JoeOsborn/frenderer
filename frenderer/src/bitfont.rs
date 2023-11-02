@@ -24,7 +24,7 @@ impl<B: RangeBounds<char>> BitFont<B> {
             region: uvs,
         }
     }
-    /// Draws the given [`text`] as a single line of characters of size [`char_sz`].
+    /// Draws the given `text` as a single line of characters of size `char_sz`.
     /// The given position is the top-left corner of the rendered string.
     /// Panics if any character in text is not within the font's character range.
     /// Returns the bottom right corner of the rendered string.

@@ -38,7 +38,7 @@ impl SheetRegion {
             _padding_32: 0,
         }
     }
-    /// Create a simple [`SheetRegion`] with just the rectangle coordinates ([`sheet`] and [`depth`] will be set to 0).
+    /// Create a simple [`SheetRegion`] with just the rectangle coordinates ([`SheetRegion::sheet`] and [`SheetRegion::depth`] will be set to 0).
     pub const fn rect(x: u16, y: u16, w: u16, h: u16) -> Self {
         Self::new(0, x, y, 0, w, h)
     }

@@ -13,11 +13,11 @@
 //! usage will call [`frenderer::with_default_runtime()`] to install
 //! frenderer inside a [`winit::window::Window`], call
 //! [`sprites::SpriteRenderer::add_sprite_group()`] on the resulting
-//! [`frenderer::Frenderer`] value, and eventually call
-//! [`frenderer::Frenderer::process_window_event()`],
+//! [`frenderer::Renderer`] value, and eventually call
+//! [`frenderer::Renderer::process_window_event()`],
 //! [`sprites::SpriteRenderer::upload_sprites()`], and
-//! [`frenderer::Frenderer::render`] or
-//! [`frenderer::Frenderer::render_into`] to draw.
+//! [`frenderer::Renderer::render`] or
+//! [`frenderer::Renderer::render_into`] to draw.
 //!
 //! In the future, more types of renderers including 3D renderers will
 //! also be provided.
