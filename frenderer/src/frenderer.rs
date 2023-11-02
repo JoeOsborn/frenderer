@@ -104,7 +104,7 @@ impl<RT: super::Runtime> Renderer<RT> {
     where
         's: 'pass,
     {
-        self.sprites.render(rpass);
+        self.sprites.render(rpass, ..);
     }
     /// Convenience method for acquiring a surface texture, view, and
     /// command encoder

@@ -6,21 +6,27 @@ use std::{borrow::Cow, ops::Range};
 use crate::{USE_STORAGE, WGPU};
 use bytemuck::{Pod, Zeroable};
 
-/// A Region is a rectangle.
+/// A SheetRegion defines the visual appearance of a sprite: which spritesheet (of an array of spritesheets), its pixel region within the spritesheet, and its visual depth (larger meaning further away).
 #[repr(C)]
 #[derive(Clone, Copy, Zeroable, Pod, Debug, Default)]
 pub struct SheetRegion {
+    /// Which array texture layer to use
     pub sheet: u16,
+    /// How deep into the Z axis this sprite should be drawn; the range `0..u16::MAX` will be mapped onto `0.0..1.0`.
     pub depth: u16,
-    // values in pixels
+    /// The x coordinate in pixels of the top left corner of this sprite within the spritesheet texture.
     pub x: u16,
+    /// The y coordinate in pixels of the top left corner of this sprite within the spritesheet texture.
     pub y: u16,
+    /// The width in pixels of this sprite within the spritesheet texture.
     pub w: u16,
+    /// The height in pixels of this sprite within the spritesheet texture.
     pub h: u16,
     _padding_32: u32,
 }
 
 impl SheetRegion {
+    /// Create a new [`SheetRegion`] with the given parameters.
     pub const fn new(sheet: u16, x: u16, y: u16, depth: u16, w: u16, h: u16) -> Self {
         Self {
             sheet,
@@ -32,16 +38,41 @@ impl SheetRegion {
             _padding_32: 0,
         }
     }
+    /// Create a simple [`SheetRegion`] with just the rectangle coordinates ([`sheet`] and [`depth`] will be set to 0).
+    pub const fn rect(x: u16, y: u16, w: u16, h: u16) -> Self {
+        Self::new(0, x, y, 0, w, h)
+    }
+    /// Produce a new [`SheetRegion`] on a different spritesheet layer.
+    pub const fn sheet(self, which: u16) -> Self {
+        Self {
+            sheet: which,
+            ..self
+        }
+    }
+    /// Produce a new [`SheetRegion`] drawn at a different depth level.
+    pub const fn depth(self, depth: u16) -> Self {
+        Self { depth, ..self }
+    }
 }
 
-/// A Transform describes a location, an extent, and a rotation (about its center) in 2D space.  Width and height are crammed into 4 bytes meaning the maximum width and height are 2^16 and fractional widths and heights are not supported.  The location (x,y) is interpreted as the center of the sprite.  Rotations are in radians, counterclockwise.
+/// A Transform describes a location, an extent, and a rotation in 2D
+/// space.  Width and height are crammed into 4 bytes meaning the
+/// maximum width and height are [`u16::MAX`] and fractional widths
+/// and heights are not supported.  The location `(x,y)` is typically
+/// interpreted as the center of the object after translation.
+/// Rotations are in radians, counterclockwise about the center point.
 #[repr(C)]
 #[derive(Clone, Copy, Zeroable, Pod, Debug)]
 pub struct Transform {
+    /// The horizontal scale of the transform
     pub w: u16,
+    /// The vertical scale of the transform
     pub h: u16,
+    /// The x coordinate of the translation
     pub x: f32,
+    /// The y coordinate of the translation
     pub y: f32,
+    /// A rotation in radians counterclockwise about the center
     pub rot: f32,
 }
 
@@ -50,11 +81,12 @@ pub struct Transform {
 #[repr(C)]
 #[derive(Clone, Copy, Zeroable, Pod, Debug)]
 pub struct GPUCamera {
+    /// The position of the camera in world space
     pub screen_pos: [f32; 2],
+    /// The size of the camera viewport in world space pixels
     pub screen_size: [f32; 2],
 }
 
-#[allow(dead_code)]
 struct SpriteGroup {
     world_buffer: wgpu::Buffer,
     sheet_buffer: wgpu::Buffer,
@@ -66,9 +98,11 @@ struct SpriteGroup {
     sprite_bind_group: wgpu::BindGroup,
 }
 
-/// SpriteRenderer hosts a number of sprite layers (called groups).
-/// Each layer has a specified spritesheet texture, a vector of
-/// [`GPUSprite`], and a [`GPUCamera`] to define its transform.
+/// SpriteRenderer hosts a number of sprite groups.  Each group has a
+/// specified spritesheet texture array, parallel vectors of
+/// [`Transform`]s and [`SheetRegion`]s, and a [`GPUCamera`] to define
+/// its transform.  Currently, all groups render into the same depth
+/// buffer so their outputs are interleaved.
 pub struct SpriteRenderer {
     pipeline: wgpu::RenderPipeline,
     sprite_bind_group_layout: wgpu::BindGroupLayout,
@@ -188,6 +222,7 @@ impl SpriteRenderer {
             });
 
         assert_eq!(std::mem::size_of::<Transform>(), 4 * 4);
+        assert_eq!(std::mem::size_of::<SheetRegion>(), 4 * 4);
         let pipeline = gpu
             .device
             .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -256,7 +291,7 @@ impl SpriteRenderer {
         }
     }
     /// Create a new sprite group sized to fit `sprites`.  Returns a
-    /// sprite group handle (for now, a usize).
+    /// sprite group identifier (for now, a usize).
     pub fn add_sprite_group(
         &mut self,
         gpu: &WGPU,
@@ -365,19 +400,25 @@ impl SpriteRenderer {
         });
         self.groups.len() - 1
     }
+    /// Returns the number of sprite groups
+    pub fn sprite_group_count(&self) -> usize {
+        self.groups.len()
+    }
     /// Deletes a sprite group.  Note that this currently invalidates
     /// all the old handles, which is not great.  Only use it on the
     /// last sprite group if that matters to you.
     pub fn remove_sprite_group(&mut self, which: usize) {
         self.groups.remove(which);
     }
+    /// Reports the size of the given sprite group.
     pub fn sprite_group_size(&self, which: usize) -> usize {
         self.groups[which].world_transforms.len()
     }
     /// Resizes a sprite group.  If the new size is smaller, this is
-    /// very cheap; if it's larger, it might involve reallocating the
-    /// [`Vec<GPUSprite>`] or the GPU buffer used to draw sprites, so
-    /// it could be expensive.
+    /// very cheap; if it's larger than it's ever been before, it
+    /// might involve reallocating the [`Vec<Transform>`],
+    /// [`Vec<SheetRegion>`], or the GPU buffer used to draw sprites,
+    /// so it could be expensive.
     pub fn resize_sprite_group(&mut self, gpu: &WGPU, which: usize, len: usize) -> usize {
         let group = &mut self.groups[which];
         let old_len = group.world_transforms.len();
@@ -472,7 +513,7 @@ impl SpriteRenderer {
             bytemuck::cast_slice(&self.groups[which].world_transforms[range]),
         );
     }
-    /// Upload only animation changes to the GPU
+    /// Upload only visual changes to the GPU
     pub fn upload_sheet_regions(&mut self, gpu: &WGPU, which: usize, range: Range<usize>) {
         gpu.queue.write_buffer(
             &self.groups[which].sheet_buffer,
@@ -480,25 +521,38 @@ impl SpriteRenderer {
             bytemuck::cast_slice(&self.groups[which].sheet_regions[range]),
         );
     }
-    /// Get a read-only slice of a specified sprite group's world positions and texture regions.
+    /// Get a read-only slice of a specified sprite group's world transforms and texture regions.
     pub fn get_sprites(&self, which: usize) -> (&[Transform], &[SheetRegion]) {
         (
             &self.groups[which].world_transforms,
             &self.groups[which].sheet_regions,
         )
     }
-    /// Get a mutable slice of a specified sprite group's world positions and texture regions.
+    /// Get a mutable slice of a specified sprite group's world transforms and texture regions.
     pub fn get_sprites_mut(&mut self, which: usize) -> (&mut [Transform], &mut [SheetRegion]) {
         let group = &mut self.groups[which];
         (&mut group.world_transforms, &mut group.sheet_regions)
     }
-    /// Render all sprite groups into the given pass.
-    pub fn render<'s, 'pass>(&'s self, rpass: &mut wgpu::RenderPass<'pass>)
-    where
+    /// Render the given range of sprite groups into the given pass.
+    pub fn render<'s, 'pass>(
+        &'s self,
+        rpass: &mut wgpu::RenderPass<'pass>,
+        which: impl std::ops::RangeBounds<usize>,
+    ) where
         's: 'pass,
     {
         rpass.set_pipeline(&self.pipeline);
-        for group in self.groups.iter() {
+        let low = match which.start_bound() {
+            std::ops::Bound::Included(&x) => x,
+            std::ops::Bound::Excluded(&x) => x + 1,
+            std::ops::Bound::Unbounded => 0,
+        };
+        let high = match which.end_bound() {
+            std::ops::Bound::Included(&x) => x + 1,
+            std::ops::Bound::Excluded(&x) => x,
+            std::ops::Bound::Unbounded => self.groups.len(),
+        };
+        for group in self.groups[low..high].iter() {
             if !USE_STORAGE {
                 rpass.set_vertex_buffer(0, group.world_buffer.slice(..));
                 rpass.set_vertex_buffer(0, group.sheet_buffer.slice(..));
@@ -511,7 +565,6 @@ impl SpriteRenderer {
             // to figure out which sprite we're drawing.
             assert_eq!(group.world_transforms.len(), group.sheet_regions.len());
             rpass.draw(0..6, 0..group.world_transforms.len() as u32);
-            //rpass.draw(0..(6 * group.sprites.len() as u32), 0..1);
         }
     }
 }
