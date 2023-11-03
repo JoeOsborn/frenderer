@@ -76,6 +76,12 @@ pub struct Transform {
     pub rot: f32,
 }
 
+impl Transform {
+    pub fn translation(&self) -> [f32; 2] {
+        [self.x, self.y]
+    }
+}
+
 /// GPUCamera is a transform for a sprite layer, defining a scale
 /// followed by a translation.
 #[repr(C)]

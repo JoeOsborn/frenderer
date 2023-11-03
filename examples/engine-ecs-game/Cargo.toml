@@ -1,0 +1,18 @@
+[package]
+name = "engine-ecs-game"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+engine-ecs = {path="../engine-ecs"}
+winit = "0.28"
+rand = "0.8"
+image = {version="0.24.7", features=["png"]}
+hecs = {version="0.10.3", features=["macros"]}
+
+[features]
+default = []
+webgl = ["engine-ecs/webgl"]
+
