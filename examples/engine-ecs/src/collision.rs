@@ -9,11 +9,113 @@ pub struct BoxCollision(pub AABB);
 
 pub struct Contact(pub Entity, pub Entity, pub Vec2);
 
+const COARSE_DIM: usize = 128;
+const FINE_DIM: usize = 32;
+
+trait Cell {
+    type Element: Copy;
+    fn inserted(
+        &mut self,
+        first: u32,
+        elt: Self::Element,
+        idx: u32,
+        storage: &CellRowStorage<Self::Element>,
+    );
+    fn removed(
+        &mut self,
+        first: Option<NonZeroU32>,
+        elt: Self::Element,
+        storage: &CellRowStorage<Self::Element>,
+    );
+}
+
+struct EltStorage<Elt: Copy> {
+    elt: Elt,
+    next: Option<NonZeroU32>,
+}
+
+struct CellRowStorage<Elt: Copy> {
+    values: Vec<EltStorage<Elt>>,
+    first_free: Option<NonZeroU32>,
+}
+
+struct CellColumn<C: Cell> {
+    cell: C,
+    first_trigger: Option<NonZeroU32>,
+    first_solid: Option<NonZeroU32>,
+    first_pushable: Option<NonZeroU32>,
+    first_solid_pushable: Option<NonZeroU32>,
+}
+
+struct CellRow<C: Cell> {
+    storage: CellRowStorage<C::Element>,
+    cells: Vec<CellColumn<C>>,
+}
+
+struct Grid<C: Cell> {
+    rows: Vec<Option<CellRow<C>>>,
+    dim: usize,
+    width: usize,
+    height: usize,
+}
+
+impl<C: Cell> Grid<C> {
+    fn new(dim: usize, width: usize, height: usize) -> Self {
+        Self {
+            rows: vec![None; width * height],
+            dim,
+            width,
+            height,
+        }
+    }
+}
+
+struct CoarseCell {}
+impl Cell for CoarseCell {
+    type Element = u32;
+    fn inserted(
+        &mut self,
+        _first: u32,
+        _elt: Self::Element,
+        _idx: u32,
+        _storage: &CellRowStorage<Self::Element>,
+    ) {
+    }
+    fn removed(
+        &mut self,
+        _first: Option<NonZeroU32>,
+        _elt: Self::Element,
+        _storage: &CellRowStorage<Self::Element>,
+    ) {
+    }
+}
+struct FineCell {
+    aabb: AABB,
+}
+impl Cell for FineCell {
+    type Element = (Entity, AABB);
+    fn inserted(
+        &mut self,
+        _first: u32,
+        elt: Self::Element,
+        _idx: u32,
+        _storage: &CellRowStorage<Self::Element>,
+    ) {
+        // expand aabb
+    }
+    fn removed(
+        &mut self,
+        _first: Option<NonZeroU32>,
+        _elt: Self::Element,
+        _storage: &CellRowStorage<Self::Element>,
+    ) {
+        // recompute aabb
+    }
+}
+
 pub(crate) struct Contacts {
-    e_triggers: Vec<(Entity, AABB)>,
-    e_solid_pushable: Vec<(Entity, AABB)>,
-    e_solid: Vec<(Entity, AABB)>,
-    e_pushable: Vec<(Entity, AABB)>,
+    coarse_grid: Grid<CoarseCell>,
+    fine_grid: Grid<FineCell>,
 
     pub(crate) triggers: Vec<Contact>,
     pub(crate) displacements: Vec<Contact>,
@@ -21,27 +123,27 @@ pub(crate) struct Contacts {
 }
 impl Contacts {
     pub(crate) fn new() -> Self {
+        const W: usize = 65536;
+        const H: usize = 65536;
         Self {
             triggers: Vec::with_capacity(32),
             displacements: Vec::with_capacity(32),
             contacts: Vec::with_capacity(32),
-            e_triggers: vec![],
-            e_solid_pushable: vec![],
-            e_solid: vec![],
-            e_pushable: vec![],
+            coarse_grid: Grid::new(COARSE_DIM, W / COARSE_DIM, H / COARSE_DIM),
+            fine_grid: Grid::new(FINE_DIM, W / FINE_DIM, H / FINE_DIM),
         }
     }
     pub(crate) fn remake_index(&mut self, world: &mut World) {
         self.contacts.clear();
         self.triggers.clear();
         self.displacements.clear();
-        self.e_triggers.clear();
-        self.e_solid_pushable.clear();
-        self.e_solid.clear();
-        self.e_pushable.clear();
+
         for (e, (trf, cbox, _trigger)) in world.query_mut::<(&Transform, &BoxCollision, &Trigger)>()
         {
-            self.e_triggers.push((e, cbox.0 + trf.translation()))
+            let aabb = cbox.0 + trf.translation();
+            // add aabb to fine cell at center
+            // get all fine cells covering aabb
+            // add all fine cells to coarse grid
         }
         for (e, (trf, cbox, _solid)) in world.query_mut::<(&Transform, &BoxCollision, &Solid)>() {
             self.e_solid.push((e, cbox.0 + trf.translation()))

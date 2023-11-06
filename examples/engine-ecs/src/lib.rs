@@ -118,6 +118,7 @@ impl<G: Game> Engine<G> {
                                 trf.x += phys.vel.x;
                                 trf.y += phys.vel.y;
                             }
+                            // If we had visibility into all trf, collision shape updates, and entity insertion/deletion we could avoid the need for this
                             contacts.remake_index(&mut self.world);
                             for _iter in 0..COLLISION_STEPS {
                                 contacts.do_collisions(&mut self.world);
