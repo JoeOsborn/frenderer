@@ -118,14 +118,17 @@ impl<G: Game> Engine<G> {
                                 trf.x += phys.vel.x;
                                 trf.y += phys.vel.y;
                             }
+                            contacts.remake_index(&mut self.world);
                             for _iter in 0..COLLISION_STEPS {
-                                contacts.remake_index(&mut self.world);
                                 contacts.do_collisions(&mut self.world);
                                 game.handle_collisions(&mut self, contacts.displacements.drain(..));
+                                contacts.update_index(&mut self.world);
                             }
                             // we can reuse the last index for gathering triggers
                             contacts.gather_triggers();
                             game.handle_triggers(&mut self, contacts.triggers.drain(..));
+                            // Remove empty quadtree branches/grid cell chunks or rows
+                            contacts.shrink_index(&mut self.world);
                             self.input.next_frame();
                         }
                         game.render(&mut self);

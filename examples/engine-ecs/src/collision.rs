@@ -57,6 +57,8 @@ impl Contacts {
             self.e_solid_pushable.push((e, cbox.0 + trf.translation()))
         }
     }
+    pub(crate) fn update_index(&mut self, _world: &mut World) {}
+    pub(crate) fn shrink_index(&mut self, _world: &mut World) {}
     fn sort(&mut self) {
         self.contacts.sort_by(|c1, c2| {
             c2.3.length_squared()
@@ -121,6 +123,9 @@ impl Contacts {
         gather_triggers_across(&self.e_triggers, &self.e_solid, &mut self.triggers);
         gather_triggers_across(&self.e_triggers, &self.e_pushable, &mut self.triggers);
         gather_triggers_across(&self.e_triggers, &self.e_solid_pushable, &mut self.triggers);
+        // pushables are implicitly triggers too, but can't exist within a solid or solid pushable any longer.
+        // same for solid_pushable, which can't exist within any other solid pushable.
+        gather_triggers_within(&self.e_pushable, &mut self.triggers);
     }
 }
 
@@ -152,18 +157,38 @@ fn displace(
     }
 }
 
+fn gather_within(grp: &[(Entity, AABB)], mut f: impl FnMut(Entity, Entity, Vec2)) {
+    for (ci, (ent_i, aabb_i)) in grp.iter().enumerate() {
+        for (ent_j, aabb_j) in grp[(ci + 1)..].iter() {
+            if let Some(disp) = aabb_i.displacement(*aabb_j) {
+                f(*ent_i, *ent_j, disp);
+            }
+        }
+    }
+}
+
+fn gather_across(
+    grp_a: &[(Entity, AABB)],
+    grp_b: &[(Entity, AABB)],
+    mut f: impl FnMut(Entity, Entity, Vec2),
+) {
+    for (ent_i, aabb_i) in grp_a.iter() {
+        for (ent_j, aabb_j) in grp_b.iter() {
+            if let Some(disp) = aabb_i.displacement(*aabb_j) {
+                f(*ent_i, *ent_j, disp);
+            }
+        }
+    }
+}
+
 fn gather_contacts_within(
     grp: &[(Entity, AABB)],
     weights: (f32, f32),
     contacts: &mut Vec<(Entity, Entity, (f32, f32), Vec2)>,
 ) {
-    for (ci, (ent_i, aabb_i)) in grp.iter().enumerate() {
-        for (ent_j, aabb_j) in grp[(ci + 1)..].iter() {
-            if let Some(disp) = aabb_i.displacement(*aabb_j) {
-                contacts.push((*ent_i, *ent_j, weights, disp));
-            }
-        }
-    }
+    gather_within(grp, |ent_i, ent_j, disp| {
+        contacts.push((ent_i, ent_j, weights, disp))
+    });
 }
 fn gather_contacts_across(
     grp_a: &[(Entity, AABB)],
@@ -171,33 +196,21 @@ fn gather_contacts_across(
     weights: (f32, f32),
     contacts: &mut Vec<(Entity, Entity, (f32, f32), Vec2)>,
 ) {
-    for (ent_i, aabb_i) in grp_a.iter() {
-        for (ent_j, aabb_j) in grp_b.iter() {
-            if let Some(disp) = aabb_i.displacement(*aabb_j) {
-                contacts.push((*ent_i, *ent_j, weights, disp));
-            }
-        }
-    }
+    gather_across(grp_a, grp_b, |ent_i, ent_j, disp| {
+        contacts.push((ent_i, ent_j, weights, disp))
+    });
 }
 fn gather_triggers_within(grp: &[(Entity, AABB)], triggers: &mut Vec<Contact>) {
-    for (ci, (ent_i, aabb_i)) in grp.iter().enumerate() {
-        for (ent_j, aabb_j) in grp[(ci + 1)..].iter() {
-            if let Some(disp) = aabb_i.displacement(*aabb_j) {
-                triggers.push(Contact(*ent_i, *ent_j, disp));
-            }
-        }
-    }
+    gather_within(grp, |ent_i, ent_j, disp| {
+        triggers.push(Contact(ent_i, ent_j, disp))
+    });
 }
 fn gather_triggers_across(
     grp_a: &[(Entity, AABB)],
     grp_b: &[(Entity, AABB)],
     triggers: &mut Vec<Contact>,
 ) {
-    for (ent_i, aabb_i) in grp_a.iter() {
-        for (ent_j, aabb_j) in grp_b.iter() {
-            if let Some(disp) = aabb_i.displacement(*aabb_j) {
-                triggers.push(Contact(*ent_i, *ent_j, disp));
-            }
-        }
-    }
+    gather_across(grp_a, grp_b, |ent_i, ent_j, disp| {
+        triggers.push(Contact(ent_i, ent_j, disp))
+    });
 }
