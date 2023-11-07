@@ -109,7 +109,7 @@ impl engine::Game for Game {
         }
     }
     fn update(&mut self, engine: &mut Engine) {
-        if engine.frame_number() % 1200 == 0 {
+        if engine.frame_number() % 600 == 0 {
             println!(
                 "{:.6} : {:.6} --- {:.6} : {:.6} --- {:.6} : {:.6} --- {:.6}",
                 engine.avg_sim_time(),
