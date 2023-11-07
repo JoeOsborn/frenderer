@@ -27,13 +27,13 @@ struct DecoBundle(Sprite, Transform);
 
 const W: f32 = 320.0;
 const H: f32 = 240.0;
-const GUY_SPEED: f32 = 1.33;
+const GUY_SPEED: f32 = 2.0;
 const GUY_SIZE: Vec2 = Vec2 { x: 16.0, y: 16.0 };
 const APPLE_SIZE: Vec2 = Vec2 { x: 16.0, y: 16.0 };
-const APPLE_MAX: usize = 32;
+const APPLE_MAX: usize = 128;
 const APPLE_INTERVAL: std::ops::Range<u32> = 1..10;
 const WALL_UVS: SheetRegion = SheetRegion::new(0, 0, 480, 12, 8, 8);
-const APPLE_SPEED_RANGE: std::ops::Range<f32> = (-1.33)..(-0.3);
+const APPLE_SPEED_RANGE: std::ops::Range<f32> = (-2.0)..(-0.5);
 
 struct Game {
     apple_timer: u32,
@@ -44,7 +44,7 @@ struct Game {
 }
 
 impl engine::Game for Game {
-    const DT: f32 = 1.0 / 180.0;
+    const DT: f32 = 1.0 / 120.0;
     fn new(engine: &mut Engine) -> Self {
         engine.set_camera(Camera {
             screen_pos: [0.0, 0.0],
@@ -109,6 +109,18 @@ impl engine::Game for Game {
         }
     }
     fn update(&mut self, engine: &mut Engine) {
+        if engine.frame_number() % 1200 == 0 {
+            println!(
+                "{:.6} : {:.6} --- {:.6} : {:.6} --- {:.6} : {:.6} --- {:.6}",
+                engine.avg_sim_time(),
+                engine.max_sim_time(),
+                engine.avg_render_time(),
+                engine.max_render_time(),
+                engine.avg_net_time(),
+                engine.max_net_time(),
+                Self::DT
+            );
+        }
         let dir = engine.input.key_axis(engine::Key::Left, engine::Key::Right);
         engine
             .world()

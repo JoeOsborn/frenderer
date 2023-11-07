@@ -12,7 +12,7 @@ pub use game::Game;
 mod collision;
 pub use collision::Contact;
 
-const COLLISION_STEPS: usize = 6;
+const COLLISION_STEPS: usize = 5;
 use gfx::TextDraw;
 
 pub mod geom;
@@ -36,6 +36,10 @@ pub struct Engine<G: Game> {
     window: winit::window::Window,
     // Text drawing
     texts: Vec<TextDraw>,
+    sim_times: std::collections::VecDeque<f32>,
+    render_times: std::collections::VecDeque<f32>,
+    net_times: std::collections::VecDeque<f32>,
+    sim_frame: usize,
     _game: std::marker::PhantomData<G>,
 }
 
@@ -64,9 +68,13 @@ impl<G: Game> Engine<G> {
             contacts,
             window,
             world_: world,
+            sim_times: std::collections::VecDeque::new(),
+            net_times: std::collections::VecDeque::new(),
+            render_times: std::collections::VecDeque::new(),
             event_loop: Some(event_loop),
             camera,
             texts: Vec::with_capacity(128),
+            sim_frame: 0,
             _game: std::marker::PhantomData,
         }
     }
@@ -109,6 +117,10 @@ impl<G: Game> Engine<G> {
                     Event::MainEventsCleared => {
                         // compute elapsed time since last frame
                         let mut elapsed = now.elapsed().as_secs_f32();
+                        while self.net_times.len() > 10 {
+                            self.net_times.pop_front();
+                        }
+                        self.net_times.push_back(elapsed);
                         // println!("{elapsed}");
                         // snap time to nearby vsync framerate
                         TIME_SNAPS.iter().for_each(|s| {
@@ -125,6 +137,7 @@ impl<G: Game> Engine<G> {
                         now = std::time::Instant::now();
                         // While we have time to spend
                         while acc >= G::DT {
+                            let sim_time = std::time::Instant::now();
                             // simulate a frame
                             acc -= G::DT;
                             game.update(&mut self);
@@ -157,7 +170,13 @@ impl<G: Game> Engine<G> {
                             // Remove empty quadtree branches/grid cell chunks or rows
                             self.contacts.optimize_index(&mut self.world_);
                             self.input.next_frame();
+                            while self.sim_times.len() > 10 {
+                                self.sim_times.pop_front();
+                            }
+                            self.sim_times.push_back(sim_time.elapsed().as_secs_f32());
+                            self.sim_frame += 1;
                         }
+                        let render_now = std::time::Instant::now();
                         game.render(&mut self);
                         let chara_len = self
                             .world_
@@ -210,6 +229,11 @@ impl<G: Game> Engine<G> {
                         );
                         self.renderer.render();
                         self.texts.clear();
+                        while self.render_times.len() > 10 {
+                            self.render_times.pop_front();
+                        }
+                        self.render_times
+                            .push_back(render_now.elapsed().as_secs_f32());
                         self.window.request_redraw();
                     }
                     event => {
@@ -220,6 +244,30 @@ impl<G: Game> Engine<G> {
                     }
                 }
             });
+    }
+    pub fn avg_render_time(&self) -> f32 {
+        self.render_times.iter().sum::<f32>() / (self.render_times.len() as f32)
+    }
+    pub fn avg_net_time(&self) -> f32 {
+        self.net_times.iter().sum::<f32>() / (self.net_times.len() as f32)
+    }
+    pub fn avg_sim_time(&self) -> f32 {
+        self.sim_times.iter().sum::<f32>() / (self.sim_times.len() as f32)
+    }
+    pub fn max_render_time(&self) -> f32 {
+        self.render_times
+            .iter()
+            .fold(0.0_f32, |seed, t| if seed < *t { *t } else { seed })
+    }
+    pub fn max_sim_time(&self) -> f32 {
+        self.sim_times
+            .iter()
+            .fold(0.0_f32, |seed, t| if seed < *t { *t } else { seed })
+    }
+    pub fn max_net_time(&self) -> f32 {
+        self.net_times
+            .iter()
+            .fold(0.0_f32, |seed, t| if seed < *t { *t } else { seed })
     }
     pub fn make_font<B: std::ops::RangeBounds<char>>(
         &mut self,
@@ -244,6 +292,9 @@ impl<G: Game> Engine<G> {
     }
     pub fn set_camera(&mut self, camera: Camera) {
         self.camera = camera;
+    }
+    pub fn frame_number(&self) -> usize {
+        self.sim_frame
     }
     pub fn add_spritesheet(
         &mut self,
