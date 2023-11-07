@@ -12,14 +12,14 @@ pub use game::Game;
 mod collision;
 pub use collision::Contact;
 
-const COLLISION_STEPS: usize = 3;
+const COLLISION_STEPS: usize = 6;
 use gfx::TextDraw;
 
 pub mod geom;
 
 pub mod components {
+    pub use super::Transform;
     pub use crate::collision::{BoxCollision, Pushable, Solid, SolidPushable, Trigger};
-    pub use frenderer::Transform;
     pub struct Physics {
         pub vel: crate::geom::Vec2,
     }
@@ -28,9 +28,10 @@ pub mod components {
 
 pub struct Engine<G: Game> {
     pub renderer: Frenderer,
-    pub world: hecs::World,
+    world_: hecs::World,
     pub input: Input,
     camera: Camera,
+    contacts: collision::Contacts,
     event_loop: Option<winit::event_loop::EventLoop<()>>,
     window: winit::window::Window,
     // Text drawing
@@ -55,27 +56,43 @@ impl<G: Game> Engine<G> {
             screen_pos: [0.0, 0.0],
             screen_size: window.inner_size().into(),
         };
+        let contacts = collision::Contacts::new();
         let world = hecs::World::new();
         Self {
             renderer,
             input,
+            contacts,
             window,
-            world,
+            world_: world,
             event_loop: Some(event_loop),
             camera,
             texts: Vec::with_capacity(128),
             _game: std::marker::PhantomData,
         }
     }
+    pub fn world(&self) -> &hecs::World {
+        &self.world_
+    }
+    pub fn spawn<B: hecs::DynamicBundle>(&mut self, b: B) -> hecs::Entity {
+        let ent = self.world_.spawn(b);
+        // maybe add entity to collision world
+        self.contacts.insert_entity(ent, &mut self.world_);
+        ent
+    }
+    pub fn despawn(&mut self, entity: hecs::Entity) -> Result<(), hecs::NoSuchEntity> {
+        // remove entity from collision world
+        self.contacts.remove_entity(entity, &mut self.world_);
+        self.world_.despawn(entity)
+    }
     pub fn run(mut self) {
         let mut game = G::new(&mut self);
-        const DT: f32 = 1.0 / 60.0;
         const DT_FUDGE_AMOUNT: f32 = 0.0002;
-        const DT_MAX: f32 = DT * 5.0;
+        let dt_max: f32 = G::DT * 5.0;
         const TIME_SNAPS: [f32; 5] = [15.0, 30.0, 60.0, 120.0, 144.0];
-        let mut contacts = collision::Contacts::new();
         let mut acc = 0.0;
         let mut now = std::time::Instant::now();
+        let mut displacements: Vec<Contact> = Vec::with_capacity(128);
+        let mut triggers: Vec<Contact> = Vec::with_capacity(128);
         self.event_loop
             .take()
             .unwrap()
@@ -100,40 +117,50 @@ impl<G: Game> Engine<G> {
                             }
                         });
                         // Death spiral prevention
-                        if elapsed > DT_MAX {
+                        if elapsed > dt_max {
                             acc = 0.0;
-                            elapsed = DT;
+                            elapsed = G::DT;
                         }
                         acc += elapsed;
                         now = std::time::Instant::now();
                         // While we have time to spend
-                        while acc >= DT {
+                        while acc >= G::DT {
                             // simulate a frame
-                            acc -= DT;
+                            acc -= G::DT;
                             game.update(&mut self);
                             for (_e, (trf, phys)) in self
-                                .world
+                                .world_
                                 .query_mut::<(&mut Transform, &components::Physics)>()
                             {
                                 trf.x += phys.vel.x;
                                 trf.y += phys.vel.y;
+                                // TODO could we call contacts.update_entity here?
                             }
-                            contacts.remake_index(&mut self.world);
+                            self.contacts.frame_update_index(&mut self.world_);
                             for _iter in 0..COLLISION_STEPS {
-                                contacts.do_collisions(&mut self.world);
-                                game.handle_collisions(&mut self, contacts.displacements.drain(..));
-                                contacts.update_index(&mut self.world);
+                                self.contacts.do_collisions(&mut self.world_);
+                                self.contacts.step_update_index(&mut self.world_);
                             }
-                            // we can reuse the last index for gathering triggers
-                            contacts.gather_triggers();
-                            game.handle_triggers(&mut self, contacts.triggers.drain(..));
+                            self.contacts.gather_triggers();
+                            // we can response to collision displacements and triggers of the frame all at once
+                            displacements.append(&mut self.contacts.displacements);
+                            triggers.append(&mut self.contacts.triggers);
+                            game.handle_collisions(
+                                &mut self,
+                                displacements.drain(..),
+                                triggers.drain(..),
+                            );
+                            displacements.clear();
+                            triggers.clear();
+                            // the handle_* functions might have moved things around, but we need accurate info for ad hoc queries during game::update next trip through the loop
+                            self.contacts.step_update_index(&mut self.world_);
                             // Remove empty quadtree branches/grid cell chunks or rows
-                            contacts.shrink_index(&mut self.world);
+                            self.contacts.optimize_index(&mut self.world_);
                             self.input.next_frame();
                         }
                         game.render(&mut self);
                         let chara_len = self
-                            .world
+                            .world_
                             .query_mut::<(&Transform, &components::Sprite)>()
                             .into_iter()
                             .len();
@@ -143,7 +170,7 @@ impl<G: Game> Engine<G> {
                         let (trfs, uvs) = self.renderer.sprites.get_sprites_mut(0);
 
                         for ((_e, (trf, spr)), (out_trf, out_uv)) in self
-                            .world
+                            .world_
                             .query_mut::<(&Transform, &mut components::Sprite)>()
                             .into_iter()
                             .zip(trfs.iter_mut().zip(uvs.iter_mut()))

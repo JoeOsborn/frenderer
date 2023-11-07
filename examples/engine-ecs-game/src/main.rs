@@ -14,17 +14,26 @@ struct WallBundle(Sprite, Transform, Solid, BoxCollision);
 #[derive(hecs::Bundle)]
 struct GuyBundle(Sprite, Transform, Pushable, BoxCollision, Physics, Guy);
 #[derive(hecs::Bundle)]
-struct AppleBundle(Sprite, Transform, Trigger, BoxCollision, Physics, Apple);
+struct AppleBundle(
+    Sprite,
+    Transform,
+    SolidPushable,
+    BoxCollision,
+    Physics,
+    Apple,
+);
 #[derive(hecs::Bundle)]
 struct DecoBundle(Sprite, Transform);
 
 const W: f32 = 320.0;
 const H: f32 = 240.0;
-const GUY_SPEED: f32 = 4.0;
+const GUY_SPEED: f32 = 1.33;
 const GUY_SIZE: Vec2 = Vec2 { x: 16.0, y: 16.0 };
 const APPLE_SIZE: Vec2 = Vec2 { x: 16.0, y: 16.0 };
-
+const APPLE_MAX: usize = 32;
+const APPLE_INTERVAL: std::ops::Range<u32> = 1..10;
 const WALL_UVS: SheetRegion = SheetRegion::new(0, 0, 480, 12, 8, 8);
+const APPLE_SPEED_RANGE: std::ops::Range<f32> = (-1.33)..(-0.3);
 
 struct Game {
     apple_timer: u32,
@@ -35,6 +44,7 @@ struct Game {
 }
 
 impl engine::Game for Game {
+    const DT: f32 = 1.0 / 180.0;
     fn new(engine: &mut Engine) -> Self {
         engine.set_camera(Camera {
             screen_pos: [0.0, 0.0],
@@ -51,7 +61,7 @@ impl engine::Game for Game {
         #[cfg(not(target_arch = "wasm32"))]
         let sprite_img = image::open("content/demo.png").unwrap().into_rgba8();
         let spritesheet = engine.add_spritesheet(&[&sprite_img], Some("demo spritesheet"));
-        engine.world.spawn(DecoBundle(
+        engine.spawn(DecoBundle(
             Sprite(spritesheet, SheetRegion::new(0, 0, 0, 16, 640, 480)),
             Transform {
                 x: W / 2.0,
@@ -61,7 +71,7 @@ impl engine::Game for Game {
                 rot: 0.0,
             },
         ));
-        let guy = engine.world.spawn(GuyBundle(
+        let guy = engine.spawn(GuyBundle(
             Sprite(spritesheet, SheetRegion::new(0, 16, 480, 8, 16, 16)),
             Transform {
                 x: W / 2.0,
@@ -70,7 +80,7 @@ impl engine::Game for Game {
                 h: GUY_SIZE.y as u16,
                 rot: 0.0,
             },
-            Pushable(),
+            Pushable::default(),
             BoxCollision(AABB {
                 center: Vec2::ZERO,
                 size: GUY_SIZE,
@@ -101,8 +111,10 @@ impl engine::Game for Game {
     fn update(&mut self, engine: &mut Engine) {
         let dir = engine.input.key_axis(engine::Key::Left, engine::Key::Right);
         engine
-            .world
-            .query_one_mut::<&mut Physics>(self.guy)
+            .world()
+            .query_one::<&mut Physics>(self.guy)
+            .unwrap()
+            .get()
             .unwrap()
             .vel = Vec2 {
             x: dir * GUY_SPEED,
@@ -111,7 +123,7 @@ impl engine::Game for Game {
         let mut rng = rand::thread_rng();
         let mut apple_count = 0;
         let mut to_remove = vec![];
-        for (apple, (_, trf)) in engine.world.query::<(&Apple, &Transform)>().iter() {
+        for (apple, (_, trf)) in engine.world().query::<(&Apple, &Transform)>().iter() {
             if trf.y < -8.0 {
                 to_remove.push(apple);
             } else {
@@ -119,12 +131,12 @@ impl engine::Game for Game {
             }
         }
         for apple in to_remove {
-            engine.world.despawn(apple).unwrap();
+            engine.despawn(apple).unwrap();
         }
         if self.apple_timer > 0 {
             self.apple_timer -= 1;
-        } else if apple_count < 8 {
-            let _apple = engine.world.spawn(AppleBundle(
+        } else if apple_count < APPLE_MAX {
+            let _apple = engine.spawn(AppleBundle(
                 Sprite(self.spritesheet, SheetRegion::new(0, 0, 496, 4, 16, 16)),
                 Transform {
                     x: rng.gen_range(8.0..(W - 8.0)),
@@ -133,7 +145,7 @@ impl engine::Game for Game {
                     h: APPLE_SIZE.y as u16,
                     rot: 0.0,
                 },
-                Trigger(),
+                SolidPushable::default(),
                 BoxCollision(AABB {
                     center: Vec2::ZERO,
                     size: APPLE_SIZE,
@@ -141,31 +153,25 @@ impl engine::Game for Game {
                 Physics {
                     vel: Vec2 {
                         x: 0.0,
-                        y: rng.gen_range((-4.0)..(-1.0)),
+                        y: rng.gen_range(APPLE_SPEED_RANGE),
                     },
                 },
                 Apple(),
             ));
-            self.apple_timer = rng.gen_range(30..90);
+            self.apple_timer = rng.gen_range(APPLE_INTERVAL);
         }
     }
     fn handle_collisions(
         &mut self,
-        _engine: &mut Engine,
-        _contacts: impl Iterator<Item = engine::Contact>,
-    ) {
-        // do nothing
-    }
-    fn handle_triggers(
-        &mut self,
         engine: &mut Engine,
+        _contacts: impl Iterator<Item = engine::Contact>,
         triggers: impl Iterator<Item = engine::Contact>,
     ) {
         for engine::Contact(thing_a, thing_b, _amt) in triggers {
-            let ent_a = engine.world.entity(thing_a).unwrap();
-            let ent_b = engine.world.entity(thing_b).unwrap();
+            let ent_a = engine.world().entity(thing_a).unwrap();
+            let ent_b = engine.world().entity(thing_b).unwrap();
             if ent_a.has::<Apple>() && ent_b.has::<Guy>() {
-                engine.world.despawn(thing_a).unwrap();
+                engine.despawn(thing_a).unwrap();
                 self.score += 1;
             }
         }
@@ -194,7 +200,7 @@ fn make_wall(
     w: f32,
     h: f32,
 ) -> Entity {
-    engine.world.spawn(WallBundle(
+    engine.spawn(WallBundle(
         Sprite(spritesheet, WALL_UVS),
         Transform {
             x,
@@ -203,7 +209,7 @@ fn make_wall(
             h: h as u16,
             rot: 0.0,
         },
-        Solid(),
+        Solid::default(),
         BoxCollision(AABB {
             center: Vec2::ZERO,
             size: Vec2 { x: w, y: h },

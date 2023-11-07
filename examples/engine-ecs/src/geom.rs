@@ -1,7 +1,7 @@
-use std::ops::Add;
-
+pub use bytemuck::Zeroable;
 use frenderer::{GPUCamera, Transform};
 pub use glam::*;
+use std::ops::Add;
 
 #[repr(C)]
 #[derive(Clone, Copy, PartialEq, bytemuck::Zeroable, bytemuck::Pod, Debug)]
