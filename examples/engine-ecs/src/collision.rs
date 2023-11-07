@@ -1,3 +1,5 @@
+use std::{num::NonZeroU32, usize};
+
 use crate::geom::*;
 use crate::hecs::{Entity, World};
 use crate::Transform;
@@ -13,7 +15,7 @@ const COARSE_DIM: usize = 128;
 const FINE_DIM: usize = 32;
 
 trait Cell {
-    type Element: Copy;
+    type Element: PartialEq;
     fn inserted(
         &mut self,
         first: u32,
@@ -21,58 +23,113 @@ trait Cell {
         idx: u32,
         storage: &CellRowStorage<Self::Element>,
     );
-    fn removed(
-        &mut self,
-        first: Option<NonZeroU32>,
-        elt: Self::Element,
-        storage: &CellRowStorage<Self::Element>,
-    );
 }
 
-struct EltStorage<Elt: Copy> {
+struct EltStorage<Elt> {
     elt: Elt,
     next: Option<NonZeroU32>,
 }
 
-struct CellRowStorage<Elt: Copy> {
+struct EltIterator<'elts, Elt: PartialEq> {
+    elts: &'elts [EltStorage<Elt>],
+    cur: Option<NonZeroU32>,
+}
+impl<'elts, Elt: 'elts + PartialEq> Iterator for EltIterator<'elts, Elt> {
+    type Item = &'elts Elt;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.cur.map(|num| {
+            let elt_node = &self.elts[num.get() as usize - 1];
+            self.cur = elt_node.next;
+            &elt_node.elt
+        })
+    }
+}
+
+struct CellRowStorage<Elt: PartialEq> {
     values: Vec<EltStorage<Elt>>,
     first_free: Option<NonZeroU32>,
 }
 
-struct CellColumn<C: Cell> {
-    cell: C,
-    first_trigger: Option<NonZeroU32>,
-    first_solid: Option<NonZeroU32>,
-    first_pushable: Option<NonZeroU32>,
-    first_solid_pushable: Option<NonZeroU32>,
+impl<Elt: PartialEq> CellRowStorage<Elt> {
+    fn elements<'s>(&'s self, first: Option<NonZeroU32>) -> EltIterator<'s, Elt> {
+        EltIterator {
+            elts: self.values.as_slice(),
+            cur: first,
+        }
+    }
+    fn new() -> Self {
+        Self {
+            values: Vec::with_capacity(128),
+            first_free: None,
+        }
+    }
 }
 
-struct CellRow<C: Cell> {
+#[derive(Default)]
+struct CellColumn<C: Cell + Default> {
+    cell: C,
+    first: Option<NonZeroU32>,
+}
+
+impl<Elt: PartialEq> CellRowStorage<Elt> {
+    fn push(&mut self, elt: Elt, col_first: &mut Option<NonZeroU32>) -> NonZeroU32 {
+        // iterate through, avoid duplicating
+    }
+}
+
+struct CellRow<C: Cell + Default> {
     storage: CellRowStorage<C::Element>,
     cells: Vec<CellColumn<C>>,
 }
+impl<C: Cell + Default> CellRow<C> {
+    fn new(width: usize) -> Self {
+        let mut cells = Vec::with_capacity(width);
+        cells.resize_with(width, CellColumn::default);
+        Self {
+            storage: CellRowStorage::new(),
+            cells,
+        }
+    }
+    fn push(&mut self, pos: u32, elt: C::Element) {
+        let mut col = self.cells[pos as usize];
+        let elt_idx = self.storage.push(elt, &mut col.first);
+        col.cell
+            .inserted(col.first.unwrap().get() - 1, elt, elt_idx, &self.storage);
+    }
+}
 
-struct Grid<C: Cell> {
+struct Grid<C: Cell + Default> {
     rows: Vec<Option<CellRow<C>>>,
     dim: usize,
     width: usize,
     height: usize,
 }
 
-impl<C: Cell> Grid<C> {
+impl<C: Cell + Default> Grid<C> {
     fn new(dim: usize, width: usize, height: usize) -> Self {
         Self {
-            rows: vec![None; width * height],
+            rows: (0..height).map(|_| None).collect(),
             dim,
             width,
             height,
         }
     }
+    fn push(&mut self, pos: IVec2, elt: C::Element) {
+        let pos: IVec2 = pos / self.dim as i32;
+        assert!(pos.x >= 0);
+        assert!(pos.y >= 0);
+        if self.rows[pos.y as usize].is_none() {
+            self.rows[pos.y as usize] = Some(CellRow::new(self.width));
+        }
+        let row = self.rows[pos.y as usize].as_mut().unwrap();
+        row.push(pos.x as u32, elt);
+    }
 }
-
+#[derive(Default)]
 struct CoarseCell {}
 impl Cell for CoarseCell {
-    type Element = u32;
+    type Element = (u32, u32);
     fn inserted(
         &mut self,
         _first: u32,
@@ -81,35 +138,44 @@ impl Cell for CoarseCell {
         _storage: &CellRowStorage<Self::Element>,
     ) {
     }
-    fn removed(
-        &mut self,
-        _first: Option<NonZeroU32>,
-        _elt: Self::Element,
-        _storage: &CellRowStorage<Self::Element>,
-    ) {
-    }
 }
+#[derive(Default)]
 struct FineCell {
     aabb: AABB,
 }
+// The u8 is collision flags:
+const COL_TRIG: u8 = 0b0000_0001;
+const COL_SOL: u8 = 0b0000_0010;
+const COL_PUSH: u8 = 0b0000_0100;
 impl Cell for FineCell {
-    type Element = (Entity, AABB);
+    type Element = (Entity, AABB, u8);
     fn inserted(
         &mut self,
         _first: u32,
-        elt: Self::Element,
+        (_ent, aabb, _flags): Self::Element,
         _idx: u32,
         _storage: &CellRowStorage<Self::Element>,
     ) {
         // expand aabb
+        self.aabb = self.aabb.union(aabb);
     }
-    fn removed(
+}
+
+impl FineCell {
+    fn recompute_aabb(
         &mut self,
-        _first: Option<NonZeroU32>,
-        _elt: Self::Element,
-        _storage: &CellRowStorage<Self::Element>,
+        first: Option<NonZeroU32>,
+        storage: &CellRowStorage<<Self as Cell>::Element>,
     ) {
         // recompute aabb
+        // let mut aabb = AABB {
+        // center: self.aabb.center,
+        // size: Vec2 { x: 1.0, y: 1.0 },
+        // };
+        let mut aabb = AABB::zeroed();
+        for (_, aabb_i, _) in storage.elements(first) {
+            aabb = aabb.union(*aabb_i);
+        }
     }
 }
 
@@ -138,29 +204,41 @@ impl Contacts {
         self.triggers.clear();
         self.displacements.clear();
 
+        // clear all the coarse cells (set their first ptr to None, clear their storage vec, set their first free to None)
+        // clear all the fine cells (set their first ptr to None, clear their storage vec, set their first free to None)
+
         for (e, (trf, cbox, _trigger)) in world.query_mut::<(&Transform, &BoxCollision, &Trigger)>()
         {
             let aabb = cbox.0 + trf.translation();
             // add aabb to fine cell at center
-            // get all fine cells covering aabb
-            // add all fine cells to coarse grid
+            self.fine_grid
+                .push(aabb.center.as_ivec2(), (e, aabb, COL_TRIG));
         }
-        for (e, (trf, cbox, _solid)) in world.query_mut::<(&Transform, &BoxCollision, &Solid)>() {
-            self.e_solid.push((e, cbox.0 + trf.translation()))
-        }
-        for (e, (trf, cbox, _pushable)) in
-            world.query_mut::<(&Transform, &BoxCollision, &Pushable)>()
-        {
-            self.e_pushable.push((e, cbox.0 + trf.translation()))
-        }
-        for (e, (trf, cbox, _solid_pushable)) in
-            world.query_mut::<(&Transform, &BoxCollision, &SolidPushable)>()
-        {
-            self.e_solid_pushable.push((e, cbox.0 + trf.translation()))
-        }
+        // for (e, (trf, cbox, _solid)) in world.query_mut::<(&Transform, &BoxCollision, &Solid)>() {
+        //     self.e_solid.push((e, cbox.0 + trf.translation()))
+        // }
+        // for (e, (trf, cbox, _pushable)) in
+        //     world.query_mut::<(&Transform, &BoxCollision, &Pushable)>()
+        // {
+        //     self.e_pushable.push((e, cbox.0 + trf.translation()))
+        // }
+        // for (e, (trf, cbox, _solid_pushable)) in
+        //     world.query_mut::<(&Transform, &BoxCollision, &SolidPushable)>()
+        // {
+        //     self.e_solid_pushable.push((e, cbox.0 + trf.translation()))
+        // }
+        // add each fine cell to the coarse cells it occupies
     }
-    pub(crate) fn update_index(&mut self, _world: &mut World) {}
-    pub(crate) fn shrink_index(&mut self, _world: &mut World) {}
+    pub(crate) fn update_index(&mut self, _world: &mut World) {
+        // add each fine cell to the coarse cells it now occupies
+    }
+    pub(crate) fn shrink_index(&mut self, _world: &mut World) {
+        // reorder each fine cell row's storage so that each cell's elements are stored contiguously
+
+        // clear all the coarse cells (set their first ptr to None, clear their storage vec)
+
+        // for every fine cell, recompute its aabb and insert into the coarse cells it occupies
+    }
     fn sort(&mut self) {
         self.contacts.sort_by(|c1, c2| {
             c2.3.length_squared()
@@ -172,30 +250,30 @@ impl Contacts {
         // no need to check solid-solid
         // gather_contacts_within(&self.e_solid, &mut self.contacts);
         // solid->pushable has a restitution
-        gather_contacts_across(
-            &self.e_solid,
-            &self.e_pushable,
-            (0.0, 1.0),
-            &mut self.contacts,
-        );
-        // solid->solid_pushable has a restitution
-        gather_contacts_across(
-            &self.e_solid,
-            &self.e_solid_pushable,
-            (0.0, 1.0),
-            &mut self.contacts,
-        );
-        // pushable->pushable has no restitution
-        //gather_contacts_within(&self.e_pushable, &mut self.contacts);
-        // solid_pushable->pushable has a restitution
-        gather_contacts_across(
-            &self.e_solid_pushable,
-            &self.e_pushable,
-            (0.5, 0.5),
-            &mut self.contacts,
-        );
-        // solid_pushable->solid_pushable has a restitution
-        gather_contacts_within(&self.e_solid_pushable, (0.5, 0.5), &mut self.contacts);
+        // gather_contacts_across(
+        //     &self.e_solid,
+        //     &self.e_pushable,
+        //     (0.0, 1.0),
+        //     &mut self.contacts,
+        // );
+        // // solid->solid_pushable has a restitution
+        // gather_contacts_across(
+        //     &self.e_solid,
+        //     &self.e_solid_pushable,
+        //     (0.0, 1.0),
+        //     &mut self.contacts,
+        // );
+        // // pushable->pushable has no restitution
+        // //gather_contacts_within(&self.e_pushable, &mut self.contacts);
+        // // solid_pushable->pushable has a restitution
+        // gather_contacts_across(
+        //     &self.e_solid_pushable,
+        //     &self.e_pushable,
+        //     (0.5, 0.5),
+        //     &mut self.contacts,
+        // );
+        // // solid_pushable->solid_pushable has a restitution
+        // gather_contacts_within(&self.e_solid_pushable, (0.5, 0.5), &mut self.contacts);
         self.sort();
         let displacements = &mut self.displacements;
         for (ci, cj, weights, _contact_disp) in self.contacts.drain(..) {
@@ -221,13 +299,13 @@ impl Contacts {
         }
     }
     pub(crate) fn gather_triggers(&mut self) {
-        gather_triggers_within(&self.e_triggers, &mut self.triggers);
-        gather_triggers_across(&self.e_triggers, &self.e_solid, &mut self.triggers);
-        gather_triggers_across(&self.e_triggers, &self.e_pushable, &mut self.triggers);
-        gather_triggers_across(&self.e_triggers, &self.e_solid_pushable, &mut self.triggers);
+        // gather_triggers_within(&self.e_triggers, &mut self.triggers);
+        // gather_triggers_across(&self.e_triggers, &self.e_solid, &mut self.triggers);
+        // gather_triggers_across(&self.e_triggers, &self.e_pushable, &mut self.triggers);
+        // gather_triggers_across(&self.e_triggers, &self.e_solid_pushable, &mut self.triggers);
         // pushables are implicitly triggers too, but can't exist within a solid or solid pushable any longer.
         // same for solid_pushable, which can't exist within any other solid pushable.
-        gather_triggers_within(&self.e_pushable, &mut self.triggers);
+        // gather_triggers_within(&self.e_pushable, &mut self.triggers);
     }
 }
 

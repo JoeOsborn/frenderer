@@ -1,8 +1,8 @@
 use std::ops::Add;
 
+pub use bytemuck::Zeroable;
 use frenderer::{GPUCamera, Transform};
 pub use glam::*;
-
 #[repr(C)]
 #[derive(Clone, Copy, PartialEq, bytemuck::Zeroable, bytemuck::Pod, Debug)]
 pub struct Rect {
@@ -11,7 +11,7 @@ pub struct Rect {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, PartialEq, bytemuck::Zeroable, bytemuck::Pod, Debug)]
+#[derive(Clone, Copy, PartialEq, bytemuck::Zeroable, bytemuck::Pod, Debug, Default)]
 pub struct AABB {
     pub center: Vec2,
     pub size: Vec2,
@@ -117,5 +117,46 @@ impl Rect {
 impl AABB {
     pub fn displacement(&self, other: AABB) -> Option<Vec2> {
         Rect::from(*self).displacement(Rect::from(other))
+    }
+    pub fn union(&self, other: AABB) -> Self {
+        if self.size.length() < std::f32::EPSILON {
+            return other;
+        }
+        if other.size.length() < std::f32::EPSILON {
+            return *self;
+        }
+        let (bl, tr) = self.corners();
+        let (blo, tro) = other.corners();
+        let left = bl.x.min(blo.x);
+        let right = tr.x.max(tro.x);
+        let bot = bl.y.min(blo.y);
+        let top = tr.y.max(tro.y);
+        let w = right - left;
+        let h = top - bot;
+        AABB {
+            center: Vec2 {
+                x: left + w / 2.0,
+                y: bot + h / 2.0,
+            },
+            size: Vec2 { x: w, y: h },
+        }
+    }
+    pub fn corners(&self) -> (Vec2, Vec2) {
+        (self.center - self.size / 2.0, self.center + self.size / 2.0)
+    }
+    // grow to fit other without changing center
+    pub fn dilate(&self, other: AABB) -> Self {
+        let (blo, tro) = other.corners();
+        let blo_xdist = self.center.x - blo.x;
+        let blo_ydist = self.center.y - blo.y;
+        let tro_xdist = tro.x - self.center.x;
+        let tro_ydist = tro.y - self.center.y;
+        Self {
+            center: self.center,
+            size: Vec2 {
+                x: (blo_xdist * 2.0).max(tro_xdist * 2.0).max(self.size.x),
+                y: (blo_ydist * 2.0).max(tro_ydist * 2.0).max(self.size.y),
+            },
+        }
     }
 }
