@@ -24,7 +24,7 @@
 
 pub mod input;
 
-/// Whether storage buffers should be used (currently only WebGL uses instanced drawing instead)
+/// Whether storage buffers should be used (currently only WebGL uses instance buffers instead)
 #[cfg(not(feature = "webgl"))]
 pub(crate) const USE_STORAGE: bool = true;
 #[cfg(feature = "webgl")]

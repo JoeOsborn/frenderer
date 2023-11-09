@@ -79,10 +79,10 @@ fn vs_storage_main(@builtin(vertex_index) in_vertex_index: u32, @builtin(instanc
 @vertex
 fn vs_storage_noinstance_main(@builtin(vertex_index) in_vertex_index: u32) -> VertexOutput {
     let sprite_index:u32 = in_vertex_index / u32(6);
-    let vertex_index:u32 = in_vertex_index - (sprite_index * u32(6));
+    let vertex_index:u32 = in_vertex_index % u32(6);
     let trf = s_world[sprite_index];
     let uvs = s_sheet[sprite_index];
-    return sprite_to_vert(trf, uvs, VERTICES[in_vertex_index]);
+    return sprite_to_vert(trf, uvs, VERTICES[vertex_index]);
 }
 
 @vertex

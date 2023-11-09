@@ -266,7 +266,7 @@ impl SpriteRenderer {
                                 attributes: &[wgpu::VertexAttribute {
                                     format: wgpu::VertexFormat::Uint32x4,
                                     offset: 0,
-                                    shader_location: 2,
+                                    shader_location: 1,
                                 }],
                             },
                         ]
@@ -561,7 +561,7 @@ impl SpriteRenderer {
         for group in self.groups[low..high].iter() {
             if !USE_STORAGE {
                 rpass.set_vertex_buffer(0, group.world_buffer.slice(..));
-                rpass.set_vertex_buffer(0, group.sheet_buffer.slice(..));
+                rpass.set_vertex_buffer(1, group.sheet_buffer.slice(..));
             }
             rpass.set_bind_group(0, &group.sprite_bind_group, &[]);
             rpass.set_bind_group(1, &group.tex_bind_group, &[]);
