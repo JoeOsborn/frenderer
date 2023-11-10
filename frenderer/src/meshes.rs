@@ -350,15 +350,13 @@ impl MeshRenderer {
         let old_group_len = group.instance_data.len();
         if old_len == len {
             return old_len;
-        } else if len < old_len {
-            // just decrease the instance data range
-            group.meshes[mesh_idx].instances.end = new_end;
         } else
         /* len > old_len */
-        if match next_mesh {
-            Some(nm) => new_end < group.meshes[nm].instances.start,
-            None => old_group_len > new_end as usize,
-        }
+        if len < old_len
+            || match next_mesh {
+                Some(nm) => new_end < group.meshes[nm].instances.start,
+                None => old_group_len > new_end as usize,
+            }
         // if there is a next mesh and we fit before it, or this is the last mesh and we still have room in the vec...
         {
             // just increase the instance data range

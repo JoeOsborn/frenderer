@@ -55,9 +55,9 @@ fn main() {
         .read_positions()
         .unwrap()
         .zip(reader.read_tex_coords(0).unwrap().into_f32())
-        .map(|(pos, tex)| frenderer::meshes::Vertex {
-            position: pos.into(),
-            uv: tex.into(),
+        .map(|(position, uv)| frenderer::meshes::Vertex {
+            position,
+            uv,
             which: 0,
         })
         .collect();
