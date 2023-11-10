@@ -1,4 +1,4 @@
-use frenderer::{GPUCamera, Transform};
+use frenderer::{Camera2D, Transform};
 pub use glam::*;
 
 #[repr(C)]
@@ -39,18 +39,18 @@ impl From<Rect> for Transform {
     }
 }
 
-impl From<Rect> for GPUCamera {
+impl From<Rect> for Camera2D {
     fn from(val: Rect) -> Self {
-        GPUCamera {
+        Camera2D {
             screen_pos: val.corner.into(),
             screen_size: val.size.into(),
         }
     }
 }
 
-impl From<AABB> for GPUCamera {
+impl From<AABB> for Camera2D {
     fn from(val: AABB) -> Self {
-        GPUCamera {
+        Camera2D {
             screen_pos: (val.center - val.size / 2.0).into(),
             screen_size: val.size.into(),
         }

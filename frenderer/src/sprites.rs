@@ -82,11 +82,11 @@ impl Transform {
     }
 }
 
-/// GPUCamera is a transform for a sprite layer, defining a scale
+/// Camera2D is a transform for a sprite layer, defining a scale
 /// followed by a translation.
 #[repr(C)]
 #[derive(Clone, Copy, Zeroable, Pod, Debug)]
-pub struct GPUCamera {
+pub struct Camera2D {
     /// The position of the camera in world space
     pub screen_pos: [f32; 2],
     /// The size of the camera viewport in world space pixels
@@ -98,7 +98,7 @@ struct SpriteGroup {
     sheet_buffer: wgpu::Buffer,
     world_transforms: Vec<Transform>,
     sheet_regions: Vec<SheetRegion>,
-    camera: GPUCamera,
+    camera: Camera2D,
     camera_buffer: wgpu::Buffer,
     tex_bind_group: wgpu::BindGroup,
     sprite_bind_group: wgpu::BindGroup,
@@ -106,7 +106,7 @@ struct SpriteGroup {
 
 /// SpriteRenderer hosts a number of sprite groups.  Each group has a
 /// specified spritesheet texture array, parallel vectors of
-/// [`Transform`]s and [`SheetRegion`]s, and a [`GPUCamera`] to define
+/// [`Transform`]s and [`SheetRegion`]s, and a [`Camera2D`] to define
 /// its transform.  Currently, all groups render into the same depth
 /// buffer so their outputs are interleaved.
 pub struct SpriteRenderer {
@@ -122,7 +122,7 @@ impl SpriteRenderer {
             .device
             .create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: None,
-                source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("shader.wgsl"))),
+                source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("sprites.wgsl"))),
             });
 
         let texture_bind_group_layout =
@@ -304,7 +304,7 @@ impl SpriteRenderer {
         tex: &wgpu::Texture,
         world_transforms: Vec<Transform>,
         sheet_regions: Vec<SheetRegion>,
-        camera: GPUCamera,
+        camera: Camera2D,
     ) -> usize {
         let view_sprite = tex.create_view(&wgpu::TextureViewDescriptor {
             dimension: Some(wgpu::TextureViewDimension::D2Array),
@@ -355,7 +355,7 @@ impl SpriteRenderer {
         });
         let camera_buffer = gpu.device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
-            size: std::mem::size_of::<GPUCamera>() as u64,
+            size: std::mem::size_of::<Camera2D>() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -493,13 +493,13 @@ impl SpriteRenderer {
         old_len
     }
     /// Set the given camera transform on all sprite groups.  Uploads to the GPU.
-    pub fn set_camera_all(&mut self, gpu: &WGPU, camera: GPUCamera) {
+    pub fn set_camera_all(&mut self, gpu: &WGPU, camera: Camera2D) {
         for sg_index in 0..self.groups.len() {
             self.set_camera(gpu, sg_index, camera);
         }
     }
     /// Set the given camera transform on a specific sprite group.  Uploads to the GPU.
-    pub fn set_camera(&mut self, gpu: &WGPU, which: usize, camera: GPUCamera) {
+    pub fn set_camera(&mut self, gpu: &WGPU, which: usize, camera: Camera2D) {
         let sg = &mut self.groups[which];
         sg.camera = camera;
         gpu.queue
@@ -547,18 +547,12 @@ impl SpriteRenderer {
     ) where
         's: 'pass,
     {
+        if self.groups.is_empty() {
+            return;
+        }
         rpass.set_pipeline(&self.pipeline);
-        let low = match which.start_bound() {
-            std::ops::Bound::Included(&x) => x,
-            std::ops::Bound::Excluded(&x) => x + 1,
-            std::ops::Bound::Unbounded => 0,
-        };
-        let high = match which.end_bound() {
-            std::ops::Bound::Included(&x) => x + 1,
-            std::ops::Bound::Excluded(&x) => x,
-            std::ops::Bound::Unbounded => self.groups.len(),
-        };
-        for group in self.groups[low..high].iter() {
+        let which = crate::range(which, self.groups.len());
+        for group in self.groups[which].iter() {
             if !USE_STORAGE {
                 rpass.set_vertex_buffer(0, group.world_buffer.slice(..));
                 rpass.set_vertex_buffer(1, group.sheet_buffer.slice(..));

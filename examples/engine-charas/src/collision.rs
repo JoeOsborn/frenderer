@@ -16,7 +16,7 @@ pub enum Collision {
     Colliding(CollisionFlags),
 }
 impl Collision {
-    const PUSHABLE:u8 = 0b01;
+    const PUSHABLE: u8 = 0b01;
     const SOLID: u8 = 0b10;
     pub(crate) fn check(self) {
         match self {

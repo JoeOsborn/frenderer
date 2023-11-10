@@ -1,4 +1,4 @@
-use frenderer::{input, wgpu, GPUCamera, SheetRegion, Transform};
+use frenderer::{input, wgpu, Camera2D, SheetRegion, Transform};
 use rand::Rng;
 
 fn main() {
@@ -35,7 +35,7 @@ fn main() {
         sprite_img.dimensions(),
         Some("spr-king.png"),
     );
-    let mut camera = GPUCamera {
+    let mut camera = Camera2D {
         screen_pos: [0.0, 0.0],
         screen_size: [1024.0, 768.0],
     };

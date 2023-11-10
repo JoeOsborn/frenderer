@@ -1,7 +1,7 @@
 pub use bytemuck::Zeroable;
 pub use frenderer::{
     input::{Input, Key},
-    wgpu, Frenderer, GPUCamera as Camera, SheetRegion, Transform,
+    wgpu, Camera2D as Camera, Frenderer, SheetRegion, Transform,
 };
 pub use hecs;
 mod gfx;

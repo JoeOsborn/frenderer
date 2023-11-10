@@ -135,7 +135,7 @@ impl WGPU {
             format: swapchain_format,
             width: size.width,
             height: size.height,
-            present_mode: wgpu::PresentMode::AutoVsync,
+            present_mode: wgpu::PresentMode::AutoNoVsync,
             alpha_mode: swapchain_capabilities.alpha_modes[0],
             view_formats: vec![],
         };

@@ -5,10 +5,12 @@
 use crate::{sprites::SpriteRenderer, WGPU};
 use winit::event::{Event, WindowEvent};
 
+pub use crate::meshes::MeshRenderer;
 /// A wrapper over GPU state and (for now) a sprite renderer.
 pub struct Renderer<RT: super::Runtime> {
     pub gpu: WGPU,
     pub sprites: SpriteRenderer,
+    pub meshes: MeshRenderer,
     runtime: RT,
 }
 
@@ -43,10 +45,12 @@ impl<RT: super::Runtime> Renderer<RT> {
     pub fn with_runtime(window: &winit::window::Window, runtime: RT) -> Self {
         let gpu = runtime.run_future(WGPU::new(window));
         let sprites = SpriteRenderer::new(&gpu);
+        let meshes = MeshRenderer::new(&gpu);
         Self {
             gpu,
             sprites,
             runtime,
+            meshes,
         }
     }
     /// Run a future to completion.  Convenience method to wrap the runtime's executor.
@@ -104,6 +108,7 @@ impl<RT: super::Runtime> Renderer<RT> {
     where
         's: 'pass,
     {
+        self.meshes.render(rpass, ..);
         self.sprites.render(rpass, ..);
     }
     /// Convenience method for acquiring a surface texture, view, and

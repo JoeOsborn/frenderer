@@ -1,6 +1,6 @@
 use std::{any::Any, ops::Range};
 
-pub use frenderer::{input::Input, Frenderer, GPUCamera, Region, Transform};
+pub use frenderer::{input::Input, Frenderer, Camera2D, Region, Transform};
 pub struct Engine {
     pub renderer: Frenderer,
     pub input: Input,

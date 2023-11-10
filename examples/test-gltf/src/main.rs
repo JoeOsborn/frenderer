@@ -1,4 +1,5 @@
-use frenderer::{input, wgpu, GPUCamera, SheetRegion, Transform};
+use frenderer::{input, Camera3D, Transform3D};
+use glam::*;
 use rand::Rng;
 
 fn main() {
@@ -9,49 +10,90 @@ fn main() {
     #[cfg(target_arch = "wasm32")]
     let source = assets_manager::source::Embedded::from(source::embed!("content"));
     let cache = assets_manager::AssetCache::with_source(source);
-    let sprite_img = cache.load::<assets_manager::asset::Png>("king").unwrap();
-    let sprite_invert_img = cache
-        .load::<assets_manager::asset::Png>("king_invert")
-        .unwrap();
     let mut frend = frenderer::with_default_runtime(&window);
     let mut input = input::Input::default();
-    let sprite_tex = {
-        let sprite_img = sprite_img.read();
-        let w = sprite_img.0.width();
-        let h = sprite_img.0.height();
-        let sprite_invert_img = sprite_invert_img.read();
-        frend.gpu.create_array_texture(
-            &[&sprite_img.0.to_rgba8(), &sprite_invert_img.0.to_rgba8()],
-            wgpu::TextureFormat::Rgba8UnormSrgb,
-            (w, h),
-            Some("spr-king.png"),
-        )
+    let fox = cache
+        .load::<assets_manager::asset::Gltf>("khronos.Fox.glTF-Binary.Fox")
+        .unwrap();
+
+    let mut camera = Camera3D {
+        translation: Vec3 {
+            x: 0.0,
+            y: 0.0,
+            z: -100.0,
+        }
+        .into(),
+        rotation: Quat::from_rotation_y(0.0).into(),
+        // 90 degrees is typical
+        fov: std::f32::consts::FRAC_PI_2,
+        near: 10.0,
+        far: 1000.0,
+        aspect: 1024.0 / 768.0,
     };
-    let mut camera = GPUCamera {
-        screen_pos: [0.0, 0.0],
-        screen_size: [1024.0, 768.0],
-    };
+    frend.meshes.set_camera(&frend.gpu, camera);
 
     let mut rng = rand::thread_rng();
-    const COUNT: usize = 100_000;
-    frend.sprites.add_sprite_group(
-        &frend.gpu,
-        &sprite_tex,
-        (0..COUNT)
-            .map(|_n| Transform {
-                x: rng.gen_range(0.0..(camera.screen_size[0] - 16.0)),
-                y: rng.gen_range(0.0..(camera.screen_size[1] - 16.0)),
-                w: 11,
-                h: 16,
-                rot: rng.gen_range(0.0..(std::f32::consts::TAU)),
-            })
-            .collect(),
-        (0..COUNT)
-            .map(|_n| SheetRegion::new(rng.gen_range(0..=1), 0, 16, 0, 11, 16))
-            .collect(),
-        camera,
+    const COUNT: usize = 10;
+    let fox = fox.read();
+    let fox_img = fox.get_image_by_index(0);
+    let fox_tex = frend.gpu.create_array_texture(
+        &[&fox_img.to_rgba8()],
+        frenderer::wgpu::TextureFormat::Rgba8Unorm,
+        (fox_img.width(), fox_img.height()),
+        Some("fox texture"),
     );
-
+    let prim = fox
+        .document
+        .meshes()
+        .next()
+        .unwrap()
+        .primitives()
+        .next()
+        .unwrap();
+    let reader = prim.reader(|b| Some(fox.get_buffer_by_index(b.index())));
+    let verts: Vec<_> = reader
+        .read_positions()
+        .unwrap()
+        .zip(reader.read_tex_coords(0).unwrap().into_f32())
+        .map(|(pos, tex)| frenderer::meshes::Vertex {
+            position: pos.into(),
+            uv: tex.into(),
+            which: 0,
+        })
+        .collect();
+    let vert_count = verts.len();
+    let fox_mesh = frend.meshes.add_mesh_group(
+        &frend.gpu,
+        &fox_tex,
+        verts,
+        (0..vert_count as u32).collect(),
+        vec![frenderer::meshes::MeshEntry {
+            instance_count: COUNT as u32,
+            submeshes: vec![frenderer::meshes::SubmeshEntry {
+                vertex_base: 0,
+                indices: 0..vert_count as u32,
+            }],
+        }],
+    );
+    for trf in frend.meshes.get_meshes_mut(fox_mesh, 0) {
+        *trf = Transform3D {
+            translation: Vec3 {
+                x: rng.gen_range(-400.0..400.0),
+                y: rng.gen_range(-300.0..300.0),
+                z: rng.gen_range(100.0..500.0),
+            }
+            .into(),
+            rotation: Quat::from_euler(
+                EulerRot::XYZ,
+                rng.gen_range(0.0..std::f32::consts::TAU),
+                rng.gen_range(0.0..std::f32::consts::TAU),
+                rng.gen_range(0.0..std::f32::consts::TAU),
+            )
+            .into(),
+            scale: rng.gen_range(0.5..1.0),
+        };
+    }
+    frend.meshes.upload_meshes(&frend.gpu, fox_mesh, 0, ..);
     const DT: f32 = 1.0 / 60.0;
     const DT_FUDGE_AMOUNT: f32 = 0.0002;
     const DT_MAX: f32 = DT * 5.0;
@@ -89,45 +131,29 @@ fn main() {
                 while acc >= DT {
                     // simulate a frame
                     acc -= DT;
+                    // rotate every fox a random amount
+                    // for trf in frend.meshes.get_meshes_mut(fox_mesh, 0) {
+                    //     trf.rotation = (Quat::from_array(trf.rotation)
+                    //         * Quat::from_euler(
+                    //             EulerRot::XYZ,
+                    //             rng.gen_range(0.0..(std::f32::consts::TAU * DT)),
+                    //             rng.gen_range(0.0..(std::f32::consts::TAU * DT)),
+                    //             rng.gen_range(0.0..(std::f32::consts::TAU * DT)),
+                    //         ))
+                    //     .into();
+                    // }
+                    camera.translation[2] -= 100.0 * DT;
+                    frend.meshes.upload_meshes(&frend.gpu, fox_mesh, 0, ..);
                     //println!("tick");
                     //update_game();
-                    camera.screen_pos[0] += 0.01;
+                    // camera.screen_pos[0] += 0.01;
                     input.next_frame();
                 }
                 // Render prep
-                frend.sprites.set_camera_all(&frend.gpu, camera);
+                frend.meshes.set_camera(&frend.gpu, camera);
                 // update sprite positions and sheet regions
                 // ok now render.
                 frend.render();
-                // Or we could do this to integrate frenderer into a larger system.
-                // (This first call isn't necessary if we make our own framebuffer/view and encoder)
-                // let (frame, view, mut encoder) = frend.render_setup();
-                // {
-                //     // This is us manually making a renderpass
-                //     let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                //         label: None,
-                //         color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                //             view: &view,
-                //             resolve_target: None,
-                //             ops: frenderer::wgpu::Operations {
-                //                 load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                //                 store: true,
-                //             },
-                //         })],
-                //         depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                //             view: &frend.gpu.depth_texture_view,
-                //             depth_ops: Some(wgpu::Operations {
-                //                 load: wgpu::LoadOp::Clear(1.0),
-                //                 store: true,
-                //             }),
-                //             stencil_ops: None,
-                //         }),
-                //     });
-                //     // frend has render_into to do the actual rendering
-                //     frend.render_into(&mut rpass);
-                // }
-                // // This just submits the command encoder and presents the frame, we wouldn't need it if we did that some other way.
-                // frend.render_finish(frame, encoder);
                 window.request_redraw();
             }
             event => {
