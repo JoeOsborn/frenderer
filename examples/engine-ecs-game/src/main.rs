@@ -82,10 +82,10 @@ impl engine::Game for Game {
             },
             Pushable::default(),
             BoxCollision(AABB {
-                center: Vec2::ZERO,
+                center: Vec2::zero(),
                 size: GUY_SIZE,
             }),
-            Physics { vel: Vec2::ZERO },
+            Physics { vel: Vec2::zero() },
             Guy(),
         ));
         // floor
@@ -159,7 +159,7 @@ impl engine::Game for Game {
                 },
                 SolidPushable::default(),
                 BoxCollision(AABB {
-                    center: Vec2::ZERO,
+                    center: Vec2::zero(),
                     size: APPLE_SIZE,
                 }),
                 Physics {
@@ -223,7 +223,7 @@ fn make_wall(
         },
         Solid::default(),
         BoxCollision(AABB {
-            center: Vec2::ZERO,
+            center: Vec2::zero(),
             size: Vec2 { x: w, y: h },
         }),
     ))

@@ -1,7 +1,7 @@
 pub use bytemuck::Zeroable;
 use frenderer::{Camera2D, Transform};
-pub use glam::*;
 use std::ops::Add;
+pub use ultraviolet::*;
 
 #[repr(C)]
 #[derive(Clone, Copy, PartialEq, bytemuck::Zeroable, bytemuck::Pod, Debug)]

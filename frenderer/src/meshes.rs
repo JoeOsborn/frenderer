@@ -1,3 +1,26 @@
+//! Similar to sprite groups and individual sprites, in frenderer
+//! there are mesh groups and individual meshes.  Each individual mesh
+//! has some submeshes that are all grouped together (this is kind of
+//! a quirk of the glTF format but it means different submeshes can
+//! use different materials in principle); meshes can have some number
+//! of instances (you set an estimate for the number of instances of
+//! each mesh when you're adding the mesh group; it can grow at
+//! runtime but it might be costly so try to minimize the amount of
+//! growth), and the setting of instance data and uploading of
+//! instance data to the GPU are separated like they are for sprites.
+//! The only instance data is a 3D transform (translation, rotation,
+//! and a uniform scaling factor (so it fits neatly into 8 floats).
+//! Rotations are defined as quaternions.
+//!
+//! Mesh groups share a single array texture.  The vertex format is 3
+//! xyz coordinates, 2 uv coordinates, and an integer indicating which
+//! texture to use.  The shader is a *flat* shader that doesn't do any
+//! lighting or other fancy stuff (turning the quaternion into a
+//! rotation matrix involved some math I had to look up from a
+//! reference).
+//!
+//! 3D graphics in frenderer use a right-handed, y-up coordinate system (to match glTF).
+
 use bytemuck::Zeroable;
 use std::{borrow::Cow, ops::Range};
 use wgpu::util::{self as wutil, DeviceExt};
@@ -9,26 +32,6 @@ pub struct Vertex {
     pub which: u32,
 }
 
-/// Similar to sprite groups and individual sprites, in frenderer
-/// there are mesh groups and individual meshes.  Each individual mesh
-/// has some submeshes that are all grouped together (this is kind of
-/// a quirk of the glTF format but it means different submeshes can
-/// use different materials in principle); meshes can have some number
-/// of instances (you set an estimate for the number of instances of
-/// each mesh when you're adding the mesh group; it can grow at
-/// runtime but it might be costly so try to minimize the amount of
-/// growth), and the setting of instance data and uploading of
-/// instance data to the GPU are separated like they are for sprites.
-/// The only instance data is a 3D transform (translation, rotation,
-/// and a uniform scaling factor (so it fits neatly into 8 floats).
-/// Rotations are defined as quaternions.
-///
-/// Mesh groups share a single array texture.  The vertex format is 3
-/// xyz coordinates, 2 uv coordinates, and an integer indicating which
-/// texture to use.  The shader is a *flat* shader that doesn't do any
-/// lighting or other fancy stuff (turning the quaternion into a
-/// rotation matrix involved some math I had to look up from a
-/// reference).
 pub struct MeshRenderer {
     groups: Vec<MeshGroupData>,
     tex_bind_group_layout: wgpu::BindGroupLayout,
@@ -212,7 +215,7 @@ impl MeshRenderer {
                 }),
                 primitive: wgpu::PrimitiveState {
                     topology: wgpu::PrimitiveTopology::TriangleList,
-                    front_face: wgpu::FrontFace::Cw,
+                    front_face: wgpu::FrontFace::Ccw,
                     cull_mode: Some(wgpu::Face::Back),
                     ..Default::default()
                 },
@@ -236,7 +239,7 @@ impl MeshRenderer {
                 translation: [0.0; 3],
                 near: 0.1,
                 far: 100.0,
-                rotation: glam::Quat::IDENTITY.into(),
+                rotation: ultraviolet::Rotor3::identity().into_quaternion_array(),
                 aspect: 4.0 / 3.0,
                 fov: std::f32::consts::FRAC_PI_2,
             },
@@ -244,12 +247,20 @@ impl MeshRenderer {
         ret.set_camera(gpu, ret.camera);
         ret
     }
+
     pub fn set_camera(&mut self, gpu: &crate::WGPU, camera: Camera3D) {
-        use glam::f32::Mat4;
         self.camera = camera;
-        let view = Mat4::from_quat(glam::f32::Quat::from_array(camera.rotation))
-            * Mat4::look_to_lh(camera.translation.into(), glam::Vec3::Z, glam::Vec3::Y);
-        let proj = Mat4::perspective_lh(camera.fov, camera.aspect, camera.near, camera.far);
+        let tr = ultraviolet::Vec3::from(camera.translation);
+        let view = ultraviolet::Mat4::from_translation(tr)
+            * ultraviolet::Rotor3::from_quaternion_array(camera.rotation)
+                .into_matrix()
+                .into_homogeneous();
+        let proj = ultraviolet::projection::rh_yup::perspective_wgpu_dx(
+            camera.fov,
+            camera.aspect,
+            camera.near,
+            camera.far,
+        );
         let mat = proj * view;
         gpu.queue
             .write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&mat));
@@ -350,16 +361,14 @@ impl MeshRenderer {
         let old_group_len = group.instance_data.len();
         if old_len == len {
             return old_len;
-        } else
-        /* len > old_len */
-        if len < old_len
+        } else if len < old_len
             || match next_mesh {
                 Some(nm) => new_end < group.meshes[nm].instances.start,
                 None => old_group_len > new_end as usize,
             }
         // if there is a next mesh and we fit before it, or this is the last mesh and we still have room in the vec...
         {
-            // just increase the instance data range
+            // just increase (or decrease if we're shrinking) the instance data range
             group.meshes[mesh_idx].instances.end = new_end;
         } else
         /* len > old_len, space not free; extend instance data and move stuff over */

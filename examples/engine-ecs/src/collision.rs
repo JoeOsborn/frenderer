@@ -161,11 +161,8 @@ impl Contacts {
         // Could compact the lists if we wanted to but eh, that sounds tricky, we'd have to update the components of the involved entities
     }
     fn sort(&mut self) {
-        self.contacts.sort_by(|c1, c2| {
-            c2.3.length_squared()
-                .partial_cmp(&c1.3.length_squared())
-                .unwrap()
-        })
+        self.contacts
+            .sort_by(|c1, c2| c2.3.mag_sq().partial_cmp(&c1.3.mag_sq()).unwrap())
     }
     pub(crate) fn do_collisions(&mut self, world: &mut World) {
         // no need to check solid-solid
@@ -212,7 +209,7 @@ impl Contacts {
                     .unwrap();
                 *aabb_j + trf_j.translation()
             };
-            let disp = aabb_j.displacement(aabb_i).unwrap_or(Vec2::ZERO);
+            let disp = aabb_j.displacement(aabb_i).unwrap_or(Vec2::zero());
             if disp.x.abs() < std::f32::EPSILON || disp.y.abs() < std::f32::EPSILON {
                 continue;
             }
@@ -300,6 +297,14 @@ fn displace(
         displacements.push(Contact(char_id, char_other, Vec2 { y: amt.y, x: 0.0 }));
     }
 }
+
+/*
+cache coherency/simd idea: use SoA for AABB components and entity flags, so:
+e_solids: (Vec<f32>, Vec<f32>, Vec<f32>, Vec<f32>, Vec<Entity>)  // or even (Vec<wide::f32x4>, Vec<Entity>), since we always need all 4 components; could use f32x8 to store two boxes per list element (and go through two entities per aabb index)
+then in gather_* we don't do the dangling entity check until the aabb check is done, so we don't need to look up the entity value unless there's a real overlap; might need to store boxes as minx,miny,-maxx,-maxy instead ( https://gamedev.stackexchange.com/a/167846 )
+
+if using simd, would need to iterate through the nonzero displacements; probably would want a wide version of the displacement check that does this, or multiply did_overlap with overlap_amount or something.
+ */
 
 fn gather_within(grp: &[(Entity, AABB)], mut f: impl FnMut(Entity, Entity, Vec2)) {
     for (ci, (ent_i, aabb_i)) in grp.iter().enumerate() {

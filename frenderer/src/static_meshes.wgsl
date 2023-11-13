@@ -1,5 +1,5 @@
 @group(0) @binding(0)
-var<uniform> viewproj: mat4x4<f32>;
+var<uniform> projview: mat4x4<f32>;
 
 struct VertexInput {
   @location(0) position: vec3<f32>,
@@ -22,7 +22,7 @@ fn vs_main(vtx:VertexInput, inst:InstanceInput) -> VertexOutput {
   var out:VertexOutput;
   let model = mat_from_trs(inst.translate_scale.xyz, inst.rot, inst.translate_scale.w);
   let transformed = model * vec4(vtx.position,1.0);
-  out.clip_position = viewproj * transformed;
+  out.clip_position = projview * transformed;
   out.tex_coords = vtx.uv_which.xy;
   out.tex_index = bitcast<u32>(vtx.uv_which.z);
   return out;

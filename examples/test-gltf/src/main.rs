@@ -1,6 +1,6 @@
 use frenderer::{input, Camera3D, Transform3D};
-use glam::*;
 use rand::Rng;
+use ultraviolet::*;
 
 fn main() {
     let event_loop = winit::event_loop::EventLoop::new();
@@ -16,14 +16,14 @@ fn main() {
         .load::<assets_manager::asset::Gltf>("khronos.Fox.glTF-Binary.Fox")
         .unwrap();
 
-    let mut camera = Camera3D {
+    let camera = Camera3D {
         translation: Vec3 {
             x: 0.0,
             y: 0.0,
-            z: -100.0,
+            z: 0.0,
         }
         .into(),
-        rotation: Quat::from_rotation_y(0.0).into(),
+        rotation: Rotor3::identity().into_quaternion_array(),
         // 90 degrees is typical
         fov: std::f32::consts::FRAC_PI_2,
         near: 10.0,
@@ -80,16 +80,15 @@ fn main() {
             translation: Vec3 {
                 x: rng.gen_range(-400.0..400.0),
                 y: rng.gen_range(-300.0..300.0),
-                z: rng.gen_range(100.0..500.0),
+                z: rng.gen_range(-500.0..-100.0),
             }
             .into(),
-            rotation: Quat::from_euler(
-                EulerRot::XYZ,
+            rotation: Rotor3::from_euler_angles(
                 rng.gen_range(0.0..std::f32::consts::TAU),
                 rng.gen_range(0.0..std::f32::consts::TAU),
                 rng.gen_range(0.0..std::f32::consts::TAU),
             )
-            .into(),
+            .into_quaternion_array(),
             scale: rng.gen_range(0.5..1.0),
         };
     }
@@ -132,17 +131,17 @@ fn main() {
                     // simulate a frame
                     acc -= DT;
                     // rotate every fox a random amount
-                    // for trf in frend.meshes.get_meshes_mut(fox_mesh, 0) {
-                    //     trf.rotation = (Quat::from_array(trf.rotation)
-                    //         * Quat::from_euler(
-                    //             EulerRot::XYZ,
-                    //             rng.gen_range(0.0..(std::f32::consts::TAU * DT)),
-                    //             rng.gen_range(0.0..(std::f32::consts::TAU * DT)),
-                    //             rng.gen_range(0.0..(std::f32::consts::TAU * DT)),
-                    //         ))
-                    //     .into();
-                    // }
-                    camera.translation[2] -= 100.0 * DT;
+                    for trf in frend.meshes.get_meshes_mut(fox_mesh, 0) {
+                        trf.rotation = (Rotor3::from_quaternion_array(trf.rotation)
+                            * Rotor3::from_euler_angles(
+                                rng.gen_range(0.0..(std::f32::consts::TAU * DT)),
+                                rng.gen_range(0.0..(std::f32::consts::TAU * DT)),
+                                rng.gen_range(0.0..(std::f32::consts::TAU * DT)),
+                            ))
+                        .into_quaternion_array();
+                        trf.translation[1] += 50.0 * DT;
+                    }
+                    // camera.translation[2] -= 100.0 * DT;
                     frend.meshes.upload_meshes(&frend.gpu, fox_mesh, 0, ..);
                     //println!("tick");
                     //update_game();
