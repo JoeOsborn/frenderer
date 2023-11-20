@@ -5,6 +5,9 @@ struct VertexInput {
   @location(0) position: vec3<f32>,
   @location(1) uv_which: vec3<f32>
 }
+struct FlatVertexInput {
+  @location(0) position_which: vec4<f32>,
+}
 
 struct InstanceInput {
   @location(2) translate_scale: vec4<f32>,
@@ -17,6 +20,11 @@ struct VertexOutput {
     @location(1) @interpolate(flat) tex_index: u32,
 }
 
+struct FlatVertexOutput {
+    @builtin(position) clip_position: vec4<f32>,
+    @location(0) @interpolate(flat) mat_index: u32,
+}
+
 @vertex
 fn vs_main(vtx:VertexInput, inst:InstanceInput) -> VertexOutput {
   var out:VertexOutput;
@@ -25,6 +33,15 @@ fn vs_main(vtx:VertexInput, inst:InstanceInput) -> VertexOutput {
   out.clip_position = projview * transformed;
   out.tex_coords = vtx.uv_which.xy;
   out.tex_index = bitcast<u32>(vtx.uv_which.z);
+  return out;
+}
+@vertex
+fn vs_flat_main(vtx:FlatVertexInput, inst:InstanceInput) -> FlatVertexOutput {
+  var out:FlatVertexOutput;
+  let model = mat_from_trs(inst.translate_scale.xyz, inst.rot, inst.translate_scale.w);
+  let transformed = model * vec4(vtx.position_which.xyz,1.0);
+  out.clip_position = projview * transformed;
+  out.mat_index = bitcast<u32>(vtx.position_which.w);
   return out;
 }
 
@@ -80,5 +97,18 @@ fn fs_main(in:VertexOutput) -> @location(0) vec4<f32> {
     // And we use the tex coords from the vertex output to sample from the texture.
     let color:vec4<f32> = textureSample(t_diffuse, s_diffuse, in.tex_coords, in.tex_index);
     // if color.w < 0.2 { discard; }
+    return color;
+}
+
+// Now our fragment shader needs a global uniform of colors.
+// Without storage buffers we can't support more than 4096KB i.e. 32 colors.
+@group(1) @binding(0)
+var<uniform> mat_diffuse: array<vec4<f32>, 32>;
+
+// Our fragment shader takes an interpolated `FlatVertexOutput` as input now
+@fragment
+fn fs_flat_main(in:FlatVertexOutput) -> @location(0) vec4<f32> {
+    // And we use the tex coords from the vertex output to sample from the texture
+    let color:vec4<f32> = mat_diffuse[in.mat_index];
     return color;
 }

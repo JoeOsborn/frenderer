@@ -22,37 +22,67 @@
 //! 3D graphics in frenderer use a right-handed, y-up coordinate system (to match glTF).
 
 use bytemuck::Zeroable;
-use std::{borrow::Cow, ops::Range};
+use std::{borrow::Cow, marker::PhantomData, ops::Range};
 use wgpu::util::{self as wutil, DeviceExt};
+
 #[repr(C)]
 #[derive(bytemuck::Pod, bytemuck::Zeroable, Clone, Copy, PartialEq, Debug)]
 pub struct Vertex {
-    pub position: [f32; 3],
-    pub uv: [f32; 2],
-    pub which: u32,
+    position: [f32; 3],
+    uv_which: [f32; 3],
+}
+impl Vertex {
+    pub fn new(position: [f32; 3], uv: [f32; 2], which: u32) -> Self {
+        Self {
+            position,
+            uv_which: [uv[0], uv[1], f32::from_bits(which)],
+        }
+    }
+}
+#[repr(C)]
+#[derive(bytemuck::Pod, bytemuck::Zeroable, Clone, Copy, PartialEq, Debug)]
+pub struct FlatVertex {
+    position_which: [f32; 4],
+}
+impl FlatVertex {
+    pub fn new(pos: [f32; 3], which: u32) -> Self {
+        Self {
+            position_which: [pos[0], pos[1], pos[2], f32::from_bits(which)],
+        }
+    }
 }
 
-pub struct MeshRenderer {
+struct MeshRendererInner<Vtx: bytemuck::Pod + bytemuck::Zeroable + Copy> {
     groups: Vec<MeshGroupData>,
-    tex_bind_group_layout: wgpu::BindGroupLayout,
+    bind_group_layout: wgpu::BindGroupLayout,
     camera_bind_group: wgpu::BindGroup,
     camera_buffer: wgpu::Buffer,
     camera: Camera3D,
     pipeline: wgpu::RenderPipeline,
+    _vertex_data: PhantomData<Vtx>,
+}
+
+pub struct MeshRenderer {
+    data: MeshRendererInner<Vertex>,
+}
+pub struct FlatRenderer {
+    data: MeshRendererInner<FlatVertex>,
 }
 struct MeshGroupData {
     instance_data: Vec<Transform3D>,
     instance_buffer: wgpu::Buffer,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
-    tex_bind_group: wgpu::BindGroup,
+    bind_group: wgpu::BindGroup,
     meshes: Vec<MeshData>,
 }
 
+#[derive(Debug)]
 struct MeshData {
     instances: Range<u32>,
     submeshes: Vec<SubmeshData>,
 }
+#[derive(Debug)]
 pub struct SubmeshData {
     pub indices: Range<u32>,
     pub vertex_base: i32,
@@ -79,11 +109,314 @@ pub struct Camera3D {
 
 impl MeshRenderer {
     pub(crate) fn new(gpu: &crate::WGPU) -> Self {
+        let bind_group_layout =
+            gpu.device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: None,
+                    // It needs the first entry for the texture and the second for the sampler.
+                    // This is like defining a type signature.
+                    entries: &[
+                        // The texture binding
+                        wgpu::BindGroupLayoutEntry {
+                            // This matches the binding in the shader
+                            binding: 0,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            // It's a texture binding
+                            ty: wgpu::BindingType::Texture {
+                                // We can use it with float samplers
+                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                                // It's being used as a 2D texture
+                                view_dimension: wgpu::TextureViewDimension::D2Array,
+                                // This is not a multisampled texture
+                                multisampled: false,
+                            },
+                            count: None,
+                        },
+                        // The sampler binding
+                        wgpu::BindGroupLayoutEntry {
+                            // This matches the binding in the shader
+                            binding: 1,
+                            // Only available in the fragment shader
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            // It's a sampler
+                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                            // No count
+                            count: None,
+                        },
+                    ],
+                });
+        let vertex_layout = wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<Vertex>() as u64,
+            attributes: &[
+                // position
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32x3,
+                    offset: 0,
+                    shader_location: 0,
+                },
+                // uv_which (we lie and say it's three floats)
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32x3,
+                    offset: std::mem::size_of::<f32>() as u64 * 3,
+                    shader_location: 1,
+                },
+            ],
+            step_mode: wgpu::VertexStepMode::Vertex,
+        };
+        let data = MeshRendererInner::new(
+            gpu,
+            wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("static_meshes.wgsl"))),
+            "vs_main",
+            "fs_main",
+            bind_group_layout,
+            vertex_layout,
+        );
+
+        Self { data }
+    }
+    pub fn set_camera(&mut self, gpu: &crate::WGPU, camera: Camera3D) {
+        self.data.set_camera(gpu, camera)
+    }
+    pub fn add_mesh_group(
+        &mut self,
+        gpu: &crate::WGPU,
+        texture: &wgpu::Texture,
+        vertices: Vec<Vertex>,
+        indices: Vec<u32>,
+        mesh_info: Vec<MeshEntry>,
+    ) -> MeshGroup {
+        let view_mesh = texture.create_view(&wgpu::TextureViewDescriptor {
+            dimension: Some(wgpu::TextureViewDimension::D2Array),
+            base_array_layer: 0,
+            array_layer_count: match texture.depth_or_array_layers() {
+                0 => Some(1),
+                layers => Some(layers),
+            },
+            ..Default::default()
+        });
+        let sampler_mesh = gpu
+            .device
+            .create_sampler(&wgpu::SamplerDescriptor::default());
+        let bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout: &self.data.bind_group_layout,
+            entries: &[
+                // One for the texture, one for the sampler
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view_mesh),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&sampler_mesh),
+                },
+            ],
+        });
+
+        self.data
+            .add_mesh_group(gpu, bind_group, vertices, indices, mesh_info)
+    }
+    pub fn resize_group_mesh(
+        &mut self,
+        gpu: &crate::WGPU,
+        which: MeshGroup,
+        mesh_idx: usize,
+        len: usize,
+    ) -> usize {
+        self.data.resize_group_mesh(gpu, which, mesh_idx, len)
+    }
+    pub fn mesh_group_count(&mut self) -> usize {
+        self.data.mesh_group_count()
+    }
+    pub fn mesh_count(&mut self, which: MeshGroup) -> usize {
+        self.data.mesh_count(which)
+    }
+    pub fn mesh_instance_count(&mut self, which: MeshGroup, mesh_number: usize) -> usize {
+        self.data.mesh_instance_count(which, mesh_number)
+    }
+    pub fn get_meshes(&mut self, which: MeshGroup, mesh_number: usize) -> &[Transform3D] {
+        self.data.get_meshes(which, mesh_number)
+    }
+    pub fn get_meshes_mut(&mut self, which: MeshGroup, mesh_number: usize) -> &mut [Transform3D] {
+        self.data.get_meshes_mut(which, mesh_number)
+    }
+    /// Deletes a mesh group.  Note that this currently invalidates
+    /// all the MeshGroup handles after this one, which is not great.  Only use it on the
+    /// last mesh group if that matters to you.
+    pub fn remove_mesh_group(&mut self, which: MeshGroup) {
+        self.data.remove_mesh_group(which)
+    }
+    pub fn upload_meshes(
+        &mut self,
+        gpu: &crate::WGPU,
+        which: MeshGroup,
+        mesh_number: usize,
+        range: impl std::ops::RangeBounds<usize>,
+    ) {
+        self.data.upload_meshes(gpu, which, mesh_number, range)
+    }
+    pub fn upload_meshes_group(&mut self, gpu: &crate::WGPU, which: MeshGroup) {
+        self.data.upload_meshes_group(gpu, which)
+    }
+    pub fn render<'s, 'pass>(
+        &'s self,
+        rpass: &mut wgpu::RenderPass<'pass>,
+        which: impl std::ops::RangeBounds<usize>,
+    ) where
+        's: 'pass,
+    {
+        self.data.render(rpass, which)
+    }
+}
+
+impl FlatRenderer {
+    pub(crate) fn new(gpu: &crate::WGPU) -> Self {
+        let bind_group_layout =
+            gpu.device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: None,
+                    // It needs the first entry for the texture and the second for the sampler.
+                    // This is like defining a type signature.
+                    entries: &[
+                        // The material binding
+                        wgpu::BindGroupLayoutEntry {
+                            // This matches the binding in the shader
+                            binding: 0,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            // It's a buffer binding
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Uniform,
+                                has_dynamic_offset: false,
+                                min_binding_size: None,
+                            },
+                            count: None,
+                        },
+                    ],
+                });
+        let vertex_layout = wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<FlatVertex>() as u64,
+            attributes: &[
+                // position_which (we lie and say it's four floats)
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32x4,
+                    offset: 0,
+                    shader_location: 0,
+                },
+            ],
+            step_mode: wgpu::VertexStepMode::Vertex,
+        };
+        let data = MeshRendererInner::new(
+            gpu,
+            wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("static_meshes.wgsl"))),
+            "vs_flat_main",
+            "fs_flat_main",
+            bind_group_layout,
+            vertex_layout,
+        );
+
+        Self { data }
+    }
+    pub fn set_camera(&mut self, gpu: &crate::WGPU, camera: Camera3D) {
+        self.data.set_camera(gpu, camera)
+    }
+    pub fn add_mesh_group(
+        &mut self,
+        gpu: &crate::WGPU,
+        // RGBA colors (A currently unused)
+        material_colors: &[[f32; 4]],
+        vertices: Vec<FlatVertex>,
+        indices: Vec<u32>,
+        mesh_info: Vec<MeshEntry>,
+    ) -> MeshGroup {
+        use wgpu::util::BufferInitDescriptor;
+        let uniforms = gpu.device.create_buffer_init(&BufferInitDescriptor {
+            label: None,
+            contents: bytemuck::cast_slice(material_colors),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        let bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout: &self.data.bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: &uniforms,
+                    offset: 0,
+                    size: Some(uniforms.size().try_into().unwrap()),
+                }),
+            }],
+        });
+
+        self.data
+            .add_mesh_group(gpu, bind_group, vertices, indices, mesh_info)
+    }
+    pub fn resize_group_mesh(
+        &mut self,
+        gpu: &crate::WGPU,
+        which: MeshGroup,
+        mesh_idx: usize,
+        len: usize,
+    ) -> usize {
+        self.data.resize_group_mesh(gpu, which, mesh_idx, len)
+    }
+    pub fn mesh_group_count(&mut self) -> usize {
+        self.data.mesh_group_count()
+    }
+    pub fn mesh_count(&mut self, which: MeshGroup) -> usize {
+        self.data.mesh_count(which)
+    }
+    pub fn mesh_instance_count(&mut self, which: MeshGroup, mesh_number: usize) -> usize {
+        self.data.mesh_instance_count(which, mesh_number)
+    }
+    pub fn get_meshes(&mut self, which: MeshGroup, mesh_number: usize) -> &[Transform3D] {
+        self.data.get_meshes(which, mesh_number)
+    }
+    pub fn get_meshes_mut(&mut self, which: MeshGroup, mesh_number: usize) -> &mut [Transform3D] {
+        self.data.get_meshes_mut(which, mesh_number)
+    }
+    /// Deletes a mesh group.  Note that this currently invalidates
+    /// all the MeshGroup handles after this one, which is not great.  Only use it on the
+    /// last mesh group if that matters to you.
+    pub fn remove_mesh_group(&mut self, which: MeshGroup) {
+        self.data.remove_mesh_group(which)
+    }
+    pub fn upload_meshes(
+        &mut self,
+        gpu: &crate::WGPU,
+        which: MeshGroup,
+        mesh_number: usize,
+        range: impl std::ops::RangeBounds<usize>,
+    ) {
+        self.data.upload_meshes(gpu, which, mesh_number, range)
+    }
+    pub fn upload_meshes_group(&mut self, gpu: &crate::WGPU, which: MeshGroup) {
+        self.data.upload_meshes_group(gpu, which)
+    }
+    pub fn render<'s, 'pass>(
+        &'s self,
+        rpass: &mut wgpu::RenderPass<'pass>,
+        which: impl std::ops::RangeBounds<usize>,
+    ) where
+        's: 'pass,
+    {
+        self.data.render(rpass, which)
+    }
+}
+
+impl<Vtx: bytemuck::Pod + bytemuck::Zeroable + Copy> MeshRendererInner<Vtx> {
+    fn new(
+        gpu: &crate::WGPU,
+        shader: wgpu::ShaderSource,
+        vs_entry: &str,
+        fs_entry: &str,
+        bind_group_layout: wgpu::BindGroupLayout,
+        vertex_layout: wgpu::VertexBufferLayout,
+    ) -> Self {
         let shader = gpu
             .device
             .create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: None,
-                source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("static_meshes.wgsl"))),
+                source: shader,
             });
         let camera_buffer = gpu.device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
@@ -110,42 +443,6 @@ impl MeshRenderer {
                         count: None,
                     }],
                 });
-        let tex_bind_group_layout =
-            gpu.device
-                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: None,
-                    // It needs the first entry for the texture and the second for the sampler.
-                    // This is like defining a type signature.
-                    entries: &[
-                        // The texture binding
-                        wgpu::BindGroupLayoutEntry {
-                            // This matches the binding in the shader
-                            binding: 0,
-                            visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                            // It's a texture binding
-                            ty: wgpu::BindingType::Texture {
-                                // We can use it with float samplers
-                                sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                                // It's being used as a 2D texture
-                                view_dimension: wgpu::TextureViewDimension::D2Array,
-                                // This is not a multisampled texture
-                                multisampled: false,
-                            },
-                            count: None,
-                        },
-                        // The sampler binding
-                        wgpu::BindGroupLayoutEntry {
-                            // This matches the binding in the shader
-                            binding: 1,
-                            // Only available in the fragment shader
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            // It's a sampler
-                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                            // No count
-                            count: None,
-                        },
-                    ],
-                });
         let camera_bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
             layout: &camera_bind_group_layout,
@@ -158,7 +455,7 @@ impl MeshRenderer {
             .device
             .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: None,
-                bind_group_layouts: &[&camera_bind_group_layout, &tex_bind_group_layout],
+                bind_group_layouts: &[&camera_bind_group_layout, &bind_group_layout],
                 push_constant_ranges: &[],
             });
         let pipeline = gpu
@@ -168,26 +465,9 @@ impl MeshRenderer {
                 layout: Some(&pipeline_layout),
                 vertex: wgpu::VertexState {
                     module: &shader,
-                    entry_point: "vs_main",
+                    entry_point: vs_entry,
                     buffers: &[
-                        wgpu::VertexBufferLayout {
-                            array_stride: std::mem::size_of::<Vertex>() as u64,
-                            attributes: &[
-                                // position
-                                wgpu::VertexAttribute {
-                                    format: wgpu::VertexFormat::Float32x3,
-                                    offset: 0,
-                                    shader_location: 0,
-                                },
-                                // uv_which (we lie and say it's three floats)
-                                wgpu::VertexAttribute {
-                                    format: wgpu::VertexFormat::Float32x3,
-                                    offset: std::mem::size_of::<f32>() as u64 * 3,
-                                    shader_location: 1,
-                                },
-                            ],
-                            step_mode: wgpu::VertexStepMode::Vertex,
-                        },
+                        vertex_layout,
                         wgpu::VertexBufferLayout {
                             array_stride: std::mem::size_of::<Transform3D>() as u64,
                             attributes: &[
@@ -210,7 +490,7 @@ impl MeshRenderer {
                 },
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
-                    entry_point: "fs_main",
+                    entry_point: fs_entry,
                     targets: &[Some(gpu.config.format.into())],
                 }),
                 primitive: wgpu::PrimitiveState {
@@ -231,10 +511,11 @@ impl MeshRenderer {
             });
         let mut ret = Self {
             groups: vec![],
-            tex_bind_group_layout,
+            bind_group_layout,
             camera_bind_group,
             camera_buffer,
             pipeline,
+            _vertex_data: PhantomData,
             camera: Camera3D {
                 translation: [0.0; 3],
                 near: 0.1,
@@ -248,7 +529,7 @@ impl MeshRenderer {
         ret
     }
 
-    pub fn set_camera(&mut self, gpu: &crate::WGPU, camera: Camera3D) {
+    fn set_camera(&mut self, gpu: &crate::WGPU, camera: Camera3D) {
         self.camera = camera;
         let tr = ultraviolet::Vec3::from(camera.translation);
         let view = ultraviolet::Mat4::from_translation(tr)
@@ -265,11 +546,11 @@ impl MeshRenderer {
         gpu.queue
             .write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&mat));
     }
-    pub fn add_mesh_group(
+    fn add_mesh_group(
         &mut self,
         gpu: &crate::WGPU,
-        texture: &wgpu::Texture,
-        vertices: Vec<Vertex>,
+        bind_group: wgpu::BindGroup,
+        vertices: Vec<Vtx>,
         indices: Vec<u32>,
         mesh_info: Vec<MeshEntry>,
     ) -> MeshGroup {
@@ -303,45 +584,18 @@ impl MeshRenderer {
                 }
             })
             .collect();
-        let view_mesh = texture.create_view(&wgpu::TextureViewDescriptor {
-            dimension: Some(wgpu::TextureViewDimension::D2Array),
-            base_array_layer: 0,
-            array_layer_count: match texture.depth_or_array_layers() {
-                0 => Some(1),
-                layers => Some(layers),
-            },
-            ..Default::default()
-        });
-        let sampler_mesh = gpu
-            .device
-            .create_sampler(&wgpu::SamplerDescriptor::default());
-        let tex_bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: None,
-            layout: &self.tex_bind_group_layout,
-            entries: &[
-                // One for the texture, one for the sampler
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&view_mesh),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&sampler_mesh),
-                },
-            ],
-        });
         let group = MeshGroupData {
             instance_data,
             instance_buffer,
             vertex_buffer,
             index_buffer,
-            tex_bind_group,
+            bind_group,
             meshes,
         };
         self.groups.push(group);
         MeshGroup(self.groups.len() - 1)
     }
-    pub fn resize_group_mesh(
+    fn resize_group_mesh(
         &mut self,
         gpu: &crate::WGPU,
         which: MeshGroup,
@@ -417,23 +671,23 @@ impl MeshRenderer {
         old_len
     }
 
-    pub fn mesh_group_count(&mut self) -> usize {
+    fn mesh_group_count(&mut self) -> usize {
         self.groups.len()
     }
-    pub fn mesh_count(&mut self, which: MeshGroup) -> usize {
+    fn mesh_count(&mut self, which: MeshGroup) -> usize {
         self.groups[which.0].meshes.len()
     }
-    pub fn mesh_instance_count(&mut self, which: MeshGroup, mesh_number: usize) -> usize {
+    fn mesh_instance_count(&mut self, which: MeshGroup, mesh_number: usize) -> usize {
         let range = &self.groups[which.0].meshes[mesh_number].instances;
         range.end as usize - range.start as usize
     }
-    pub fn get_meshes(&mut self, which: MeshGroup, mesh_number: usize) -> &[Transform3D] {
+    fn get_meshes(&mut self, which: MeshGroup, mesh_number: usize) -> &[Transform3D] {
         let group = &self.groups[which.0];
         let mesh = &group.meshes[mesh_number];
         let range = mesh.instances.clone();
         &group.instance_data[range.start as usize..range.end as usize]
     }
-    pub fn get_meshes_mut(&mut self, which: MeshGroup, mesh_number: usize) -> &mut [Transform3D] {
+    fn get_meshes_mut(&mut self, which: MeshGroup, mesh_number: usize) -> &mut [Transform3D] {
         let group = &mut self.groups[which.0];
         let mesh = &mut group.meshes[mesh_number];
         let range = mesh.instances.clone();
@@ -442,10 +696,10 @@ impl MeshRenderer {
     /// Deletes a mesh group.  Note that this currently invalidates
     /// all the MeshGroup handles after this one, which is not great.  Only use it on the
     /// last mesh group if that matters to you.
-    pub fn remove_mesh_group(&mut self, which: MeshGroup) {
+    fn remove_mesh_group(&mut self, which: MeshGroup) {
         self.groups.remove(which.0);
     }
-    pub fn upload_meshes(
+    fn upload_meshes(
         &mut self,
         gpu: &crate::WGPU,
         which: MeshGroup,
@@ -468,7 +722,7 @@ impl MeshRenderer {
             ),
         );
     }
-    pub fn upload_meshes_group(&mut self, gpu: &crate::WGPU, which: MeshGroup) {
+    fn upload_meshes_group(&mut self, gpu: &crate::WGPU, which: MeshGroup) {
         // upload the whole instance buffer
         let group = &self.groups[which.0];
         gpu.queue.write_buffer(
@@ -477,7 +731,7 @@ impl MeshRenderer {
             bytemuck::cast_slice(&group.instance_data),
         );
     }
-    pub fn render<'s, 'pass>(
+    fn render<'s, 'pass>(
         &'s self,
         rpass: &mut wgpu::RenderPass<'pass>,
         which: impl std::ops::RangeBounds<usize>,
@@ -492,7 +746,7 @@ impl MeshRenderer {
         // camera
         rpass.set_bind_group(0, &self.camera_bind_group, &[]);
         for group in self.groups[which].iter() {
-            rpass.set_bind_group(1, &group.tex_bind_group, &[]);
+            rpass.set_bind_group(1, &group.bind_group, &[]);
             rpass.set_vertex_buffer(0, group.vertex_buffer.slice(..));
             rpass.set_vertex_buffer(1, group.instance_buffer.slice(..));
             rpass.set_index_buffer(group.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
@@ -512,6 +766,7 @@ impl MeshRenderer {
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct MeshGroup(usize);
 
+#[derive(Debug)]
 pub struct MeshEntry {
     pub instance_count: u32,
     pub submeshes: Vec<SubmeshEntry>,

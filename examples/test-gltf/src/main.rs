@@ -1,4 +1,5 @@
-use frenderer::{input, Camera3D, Transform3D};
+use assets_manager::asset::Gltf;
+use frenderer::{input, meshes::MeshGroup, Camera3D, Transform3D};
 use rand::Rng;
 use ultraviolet::*;
 
@@ -17,6 +18,9 @@ fn main() {
     let fox = cache
         .load::<assets_manager::asset::Gltf>("khronos.Fox.glTF-Binary.Fox")
         .unwrap();
+    let raccoon = cache
+        .load::<assets_manager::asset::Gltf>("low_poly_raccoon.scene")
+        .unwrap();
 
     let camera = Camera3D {
         translation: Vec3 {
@@ -33,56 +37,12 @@ fn main() {
         aspect: 1024.0 / 768.0,
     };
     frend.meshes.set_camera(&frend.gpu, camera);
+    frend.flats.set_camera(&frend.gpu, camera);
 
     let mut rng = rand::thread_rng();
     const COUNT: usize = 10;
-    let fox = fox.read();
-    let fox_img = fox.get_image_by_index(0);
-    let prim = fox
-        .document
-        .meshes()
-        .next()
-        .unwrap()
-        .primitives()
-        .next()
-        .unwrap();
-    let reader = prim.reader(|b| Some(fox.get_buffer_by_index(b.index())));
-    let verts: Vec<_> = reader
-        .read_positions()
-        .unwrap()
-        .zip(reader.read_tex_coords(0).unwrap().into_f32())
-        .map(|(position, uv)| frenderer::meshes::Vertex {
-            position,
-            uv,
-            which: 0,
-        })
-        .collect();
-    let vert_count = verts.len();
-
-    /* TODO: also load an obj and show how that could be added to the
-     * existing verts and indices and textures, to illustrate that you
-     * can load multiple models into one group */
-
-    let fox_tex = frend.gpu.create_array_texture(
-        &[&fox_img.to_rgba8()],
-        frenderer::wgpu::TextureFormat::Rgba8Unorm,
-        (fox_img.width(), fox_img.height()),
-        Some("fox texture"),
-    );
-    let fox_mesh = frend.meshes.add_mesh_group(
-        &frend.gpu,
-        &fox_tex,
-        verts,
-        (0..vert_count as u32).collect(),
-        vec![frenderer::meshes::MeshEntry {
-            instance_count: COUNT as u32,
-            submeshes: vec![frenderer::meshes::SubmeshEntry {
-                vertex_base: 0,
-                indices: 0..vert_count as u32,
-            }],
-        }],
-    );
-    for trf in frend.meshes.get_meshes_mut(fox_mesh, 0) {
+    let fox = load_gltf_single_textured(&mut frend, &fox.read(), COUNT as u32);
+    for trf in frend.meshes.get_meshes_mut(fox, 0) {
         *trf = Transform3D {
             translation: Vec3 {
                 x: rng.gen_range(-400.0..400.0),
@@ -99,7 +59,27 @@ fn main() {
             scale: rng.gen_range(0.5..1.0),
         };
     }
-    frend.meshes.upload_meshes(&frend.gpu, fox_mesh, 0, ..);
+    frend.meshes.upload_meshes(&frend.gpu, fox, 0, ..);
+    let raccoon = load_gltf_flat(&mut frend, &raccoon.read(), COUNT as u32);
+    for trf in frend.flats.get_meshes_mut(raccoon, 0) {
+        *trf = Transform3D {
+            translation: Vec3 {
+                x: rng.gen_range(-400.0..400.0),
+                y: rng.gen_range(-300.0..300.0),
+                z: rng.gen_range(-500.0..-100.0),
+            }
+            .into(),
+            rotation: Rotor3::from_euler_angles(
+                rng.gen_range(0.0..std::f32::consts::TAU),
+                rng.gen_range(0.0..std::f32::consts::TAU),
+                rng.gen_range(0.0..std::f32::consts::TAU),
+            )
+            .into_quaternion_array(),
+            scale: rng.gen_range(24.0..32.0),
+        };
+    }
+    frend.flats.upload_meshes(&frend.gpu, raccoon, 0, ..);
+
     const DT: f32 = 1.0 / 60.0;
     const DT_FUDGE_AMOUNT: f32 = 0.0002;
     const DT_MAX: f32 = DT * 5.0;
@@ -119,7 +99,7 @@ fn main() {
             Event::MainEventsCleared => {
                 // compute elapsed time since last frame
                 let mut elapsed = now.elapsed().as_secs_f32();
-                println!("{elapsed}");
+                // println!("{elapsed}");
                 // snap time to nearby vsync framerate
                 TIME_SNAPS.iter().for_each(|s| {
                     if (elapsed - 1.0 / s).abs() < DT_FUDGE_AMOUNT {
@@ -138,7 +118,7 @@ fn main() {
                     // simulate a frame
                     acc -= DT;
                     // rotate every fox a random amount
-                    for trf in frend.meshes.get_meshes_mut(fox_mesh, 0) {
+                    for trf in frend.meshes.get_meshes_mut(fox, 0) {
                         trf.rotation = (Rotor3::from_quaternion_array(trf.rotation)
                             * Rotor3::from_euler_angles(
                                 rng.gen_range(0.0..(std::f32::consts::TAU * DT)),
@@ -149,7 +129,7 @@ fn main() {
                         trf.translation[1] += 50.0 * DT;
                     }
                     // camera.translation[2] -= 100.0 * DT;
-                    frend.meshes.upload_meshes(&frend.gpu, fox_mesh, 0, ..);
+                    frend.meshes.upload_meshes(&frend.gpu, fox, 0, ..);
                     //println!("tick");
                     //update_game();
                     // camera.screen_pos[0] += 0.01;
@@ -170,4 +150,97 @@ fn main() {
             }
         }
     });
+}
+
+fn load_gltf_single_textured(
+    frend: &mut frenderer::Frenderer,
+    asset: &Gltf,
+    instance_count: u32,
+) -> MeshGroup {
+    let img = asset.get_image_by_index(0);
+    let prim = asset
+        .document
+        .meshes()
+        .next()
+        .unwrap()
+        .primitives()
+        .next()
+        .unwrap();
+    let reader = prim.reader(|b| Some(asset.get_buffer_by_index(b.index())));
+    let verts: Vec<_> = reader
+        .read_positions()
+        .unwrap()
+        .zip(reader.read_tex_coords(0).unwrap().into_f32())
+        .map(|(position, uv)| frenderer::meshes::Vertex::new(position, uv, 0))
+        .collect();
+    let vert_count = verts.len();
+
+    let tex = frend.gpu.create_array_texture(
+        &[&img.to_rgba8()],
+        frenderer::wgpu::TextureFormat::Rgba8Unorm,
+        (img.width(), img.height()),
+        None,
+    );
+    frend.meshes.add_mesh_group(
+        &frend.gpu,
+        &tex,
+        verts,
+        (0..vert_count as u32).collect(),
+        vec![frenderer::meshes::MeshEntry {
+            instance_count,
+            submeshes: vec![frenderer::meshes::SubmeshEntry {
+                vertex_base: 0,
+                indices: 0..vert_count as u32,
+            }],
+        }],
+    )
+}
+
+fn load_gltf_flat(
+    frend: &mut frenderer::Frenderer,
+    asset: &Gltf,
+    instance_count: u32,
+) -> MeshGroup {
+    let mut mats: Vec<_> = asset
+        .document
+        .materials()
+        .map(|m| m.pbr_metallic_roughness().base_color_factor())
+        .collect();
+    if mats.is_empty() {
+        mats.push([1.0, 0.0, 0.0, 1.0]);
+    }
+    let mut verts = Vec::with_capacity(1024);
+    let mut indices = Vec::with_capacity(1024);
+    let mut entries = Vec::with_capacity(1);
+    for mesh in asset.document.meshes() {
+        let mut entry = frenderer::meshes::MeshEntry {
+            instance_count,
+            submeshes: Vec::with_capacity(1),
+        };
+        for prim in mesh.primitives() {
+            let reader = prim.reader(|b| Some(asset.get_buffer(&b)));
+            let vtx_old_len = verts.len();
+            assert_eq!(prim.mode(), gltf::mesh::Mode::Triangles);
+            verts.extend(reader.read_positions().unwrap().map(|position| {
+                frenderer::meshes::FlatVertex::new(
+                    position,
+                    prim.material().index().unwrap_or(0) as u32,
+                )
+            }));
+            let idx_old_len = indices.len();
+            match reader.read_indices() {
+                None => indices.extend(0..(verts.len() - vtx_old_len) as u32),
+                Some(index_reader) => indices.extend(index_reader.into_u32()),
+            };
+            entry.submeshes.push(frenderer::meshes::SubmeshData {
+                indices: idx_old_len as u32..(indices.len() as u32),
+                vertex_base: vtx_old_len as i32,
+            })
+        }
+        assert!(!entry.submeshes.is_empty());
+        entries.push(dbg!(entry));
+    }
+    frend
+        .flats
+        .add_mesh_group(&frend.gpu, &mats, verts, indices, entries)
 }
