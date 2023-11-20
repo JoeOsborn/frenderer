@@ -2,6 +2,7 @@ use assets_manager::asset::Gltf;
 use frenderer::{input, meshes::MeshGroup, Camera3D, Transform3D};
 use rand::Rng;
 use ultraviolet::*;
+use winit::event::VirtualKeyCode;
 
 mod obj_loader;
 
@@ -22,14 +23,14 @@ fn main() {
         .load::<assets_manager::asset::Gltf>("low_poly_raccoon.scene")
         .unwrap();
 
-    let camera = Camera3D {
+    let mut camera = Camera3D {
         translation: Vec3 {
             x: 0.0,
             y: 0.0,
-            z: 0.0,
+            z: -100.0,
         }
         .into(),
-        rotation: Rotor3::identity().into_quaternion_array(),
+        rotation: Rotor3::from_rotation_xz(0.0).into_quaternion_array(),
         // 90 degrees is typical
         fov: std::f32::consts::FRAC_PI_2,
         near: 10.0,
@@ -40,13 +41,13 @@ fn main() {
     frend.flats.set_camera(&frend.gpu, camera);
 
     let mut rng = rand::thread_rng();
-    const COUNT: usize = 10;
+    const COUNT: usize = 100;
     let fox = load_gltf_single_textured(&mut frend, &fox.read(), COUNT as u32);
     for trf in frend.meshes.get_meshes_mut(fox, 0) {
         *trf = Transform3D {
             translation: Vec3 {
-                x: rng.gen_range(-400.0..400.0),
-                y: rng.gen_range(-300.0..300.0),
+                x: rng.gen_range(-800.0..800.0),
+                y: rng.gen_range(-600.0..600.0),
                 z: rng.gen_range(-500.0..-100.0),
             }
             .into(),
@@ -64,8 +65,8 @@ fn main() {
     for trf in frend.flats.get_meshes_mut(raccoon, 0) {
         *trf = Transform3D {
             translation: Vec3 {
-                x: rng.gen_range(-400.0..400.0),
-                y: rng.gen_range(-300.0..300.0),
+                x: rng.gen_range(-800.0..800.0),
+                y: rng.gen_range(-600.0..600.0),
                 z: rng.gen_range(-500.0..-100.0),
             }
             .into(),
@@ -128,7 +129,28 @@ fn main() {
                         .into_quaternion_array();
                         trf.translation[1] += 50.0 * DT;
                     }
-                    // camera.translation[2] -= 100.0 * DT;
+                    let (mx, _my): (f32, f32) = input.mouse_delta().into();
+                    let mut rot = Rotor3::from_quaternion_array(camera.rotation)
+                        * Rotor3::from_rotation_xz(-mx * std::f32::consts::FRAC_PI_4 * DT);
+                    rot.normalize();
+                    camera.rotation = rot.into_quaternion_array();
+                    let dx = input.key_axis(VirtualKeyCode::A, VirtualKeyCode::D);
+                    let dz = input.key_axis(VirtualKeyCode::W, VirtualKeyCode::S);
+                    let mut dir = Vec3 {
+                        x: dx,
+                        y: 0.0,
+                        z: dz,
+                    }
+                    .normalized();
+                    let here = if dir.mag_sq() > 0.0 {
+                        dir.normalize();
+                        Vec3::from(camera.translation) + rot * dir * 200.0 * DT
+                    } else {
+                        Vec3::from(camera.translation)
+                    };
+                    dbg!(rot.into_angle_plane());
+                    dbg!(here);
+                    camera.translation = here.into();
                     frend.meshes.upload_meshes(&frend.gpu, fox, 0, ..);
                     //println!("tick");
                     //update_game();
@@ -137,6 +159,7 @@ fn main() {
                 }
                 // Render prep
                 frend.meshes.set_camera(&frend.gpu, camera);
+                frend.flats.set_camera(&frend.gpu, camera);
                 // update sprite positions and sheet regions
                 // ok now render.
                 frend.render();
