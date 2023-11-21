@@ -129,27 +129,35 @@ fn main() {
                         .into_quaternion_array();
                         trf.translation[1] += 50.0 * DT;
                     }
-                    let (mx, _my): (f32, f32) = input.mouse_delta().into();
+                    // let (mx, _my): (f32, f32) = input.mouse_delta().into();
+                    // let mut rot = Rotor3::from_quaternion_array(camera.rotation)
+                    // * Rotor3::from_rotation_xz(-mx * std::f32::consts::FRAC_PI_4 * DT);
                     let mut rot = Rotor3::from_quaternion_array(camera.rotation)
-                        * Rotor3::from_rotation_xz(-mx * std::f32::consts::FRAC_PI_4 * DT);
+                        * (Rotor3::from_rotation_xz(
+                            std::f32::consts::FRAC_PI_2
+                                * if input.is_key_pressed(VirtualKeyCode::R) {
+                                    1.0
+                                } else {
+                                    0.0
+                                },
+                        ));
                     rot.normalize();
                     camera.rotation = rot.into_quaternion_array();
-                    let dx = input.key_axis(VirtualKeyCode::A, VirtualKeyCode::D);
-                    let dz = input.key_axis(VirtualKeyCode::W, VirtualKeyCode::S);
+                    let dx = input.key_axis(VirtualKeyCode::D, VirtualKeyCode::A);
+                    let dz = input.key_axis(VirtualKeyCode::S, VirtualKeyCode::W);
                     let mut dir = Vec3 {
                         x: dx,
                         y: 0.0,
                         z: dz,
-                    }
-                    .normalized();
+                    };
                     let here = if dir.mag_sq() > 0.0 {
                         dir.normalize();
                         Vec3::from(camera.translation) + rot * dir * 200.0 * DT
                     } else {
                         Vec3::from(camera.translation)
                     };
-                    dbg!(rot.into_angle_plane());
-                    dbg!(here);
+                    dbg!(rot.into_angle_plane().0);
+                    dbg!(dir, here);
                     camera.translation = here.into();
                     frend.meshes.upload_meshes(&frend.gpu, fox, 0, ..);
                     //println!("tick");
@@ -261,7 +269,7 @@ fn load_gltf_flat(
             })
         }
         assert!(!entry.submeshes.is_empty());
-        entries.push(dbg!(entry));
+        entries.push(entry);
     }
     frend
         .flats
