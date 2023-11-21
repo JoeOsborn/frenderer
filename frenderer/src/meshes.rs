@@ -532,10 +532,11 @@ impl<Vtx: bytemuck::Pod + bytemuck::Zeroable + Copy> MeshRendererInner<Vtx> {
     fn set_camera(&mut self, gpu: &crate::WGPU, camera: Camera3D) {
         self.camera = camera;
         let tr = ultraviolet::Vec3::from(camera.translation);
-        let view = ultraviolet::Rotor3::from_quaternion_array(camera.rotation)
-            .into_matrix()
-            .into_homogeneous()
-            * ultraviolet::Mat4::from_translation(tr);
+        let view = (ultraviolet::Mat4::from_translation(tr)
+            * ultraviolet::Rotor3::from_quaternion_array(camera.rotation)
+                .into_matrix()
+                .into_homogeneous())
+        .inversed();
         let proj = ultraviolet::projection::rh_yup::perspective_wgpu_dx(
             camera.fov,
             camera.aspect,

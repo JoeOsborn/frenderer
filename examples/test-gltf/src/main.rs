@@ -143,8 +143,8 @@ fn main() {
                         ));
                     rot.normalize();
                     camera.rotation = rot.into_quaternion_array();
-                    let dx = input.key_axis(VirtualKeyCode::D, VirtualKeyCode::A);
-                    let dz = input.key_axis(VirtualKeyCode::S, VirtualKeyCode::W);
+                    let dx = input.key_axis(VirtualKeyCode::A, VirtualKeyCode::D);
+                    let dz = input.key_axis(VirtualKeyCode::W, VirtualKeyCode::S);
                     let mut dir = Vec3 {
                         x: dx,
                         y: 0.0,
