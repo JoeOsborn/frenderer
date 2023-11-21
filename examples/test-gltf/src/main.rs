@@ -129,18 +129,18 @@ fn main() {
                         .into_quaternion_array();
                         trf.translation[1] += 50.0 * DT;
                     }
-                    // let (mx, _my): (f32, f32) = input.mouse_delta().into();
-                    // let mut rot = Rotor3::from_quaternion_array(camera.rotation)
-                    // * Rotor3::from_rotation_xz(-mx * std::f32::consts::FRAC_PI_4 * DT);
+                    let (mx, _my): (f32, f32) = input.mouse_delta().into();
                     let mut rot = Rotor3::from_quaternion_array(camera.rotation)
-                        * (Rotor3::from_rotation_xz(
-                            std::f32::consts::FRAC_PI_2
-                                * if input.is_key_pressed(VirtualKeyCode::R) {
-                                    1.0
-                                } else {
-                                    0.0
-                                },
-                        ));
+                        * Rotor3::from_rotation_xz(mx * std::f32::consts::FRAC_PI_4 * DT);
+                    // let mut rot = Rotor3::from_quaternion_array(camera.rotation)
+                    //     * (Rotor3::from_rotation_xz(
+                    //         std::f32::consts::FRAC_PI_2
+                    //             * if input.is_key_pressed(VirtualKeyCode::R) {
+                    //                 1.0
+                    //             } else {
+                    //                 0.0
+                    //             },
+                    //     ));
                     rot.normalize();
                     camera.rotation = rot.into_quaternion_array();
                     let dx = input.key_axis(VirtualKeyCode::A, VirtualKeyCode::D);
