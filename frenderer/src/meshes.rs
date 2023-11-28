@@ -716,7 +716,8 @@ impl<Vtx: bytemuck::Pod + bytemuck::Zeroable + Copy> MeshRendererInner<Vtx> {
         // offset range by instance_start
         gpu.queue.write_buffer(
             &group.instance_buffer,
-            mesh.instances.start as u64 + range.start as u64,
+            ((mesh.instances.start as usize + range.start as usize)
+                * std::mem::size_of::<Transform3D>()) as u64,
             bytemuck::cast_slice(
                 &group.instance_data[(mesh.instances.start as usize + range.start)
                     ..(mesh.instances.start as usize + range.end)],

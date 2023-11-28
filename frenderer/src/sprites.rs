@@ -515,7 +515,7 @@ impl SpriteRenderer {
     pub fn upload_world_transforms(&mut self, gpu: &WGPU, which: usize, range: Range<usize>) {
         gpu.queue.write_buffer(
             &self.groups[which].world_buffer,
-            range.start as u64,
+            (range.start * std::mem::size_of::<Transform>()) as u64,
             bytemuck::cast_slice(&self.groups[which].world_transforms[range]),
         );
     }
@@ -523,7 +523,7 @@ impl SpriteRenderer {
     pub fn upload_sheet_regions(&mut self, gpu: &WGPU, which: usize, range: Range<usize>) {
         gpu.queue.write_buffer(
             &self.groups[which].sheet_buffer,
-            range.start as u64,
+            (range.start * std::mem::size_of::<SheetRegion>()) as u64,
             bytemuck::cast_slice(&self.groups[which].sheet_regions[range]),
         );
     }
