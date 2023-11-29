@@ -1,5 +1,5 @@
 [workspace]
-members = ["frenderer", "examples/*"]
+members = ["frenderer", "helperer", "examples/*"]
 exclude = ["target", "content", "examples/engine-fancy", "examples/engine-fancy-game"]
 resolver = "2"
 

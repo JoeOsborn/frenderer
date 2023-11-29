@@ -1,33 +1,34 @@
-use frenderer::{input, wgpu, Camera2D, SheetRegion, Transform};
+use std::error::Error;
+
+use frenderer::{wgpu, Camera2D, SheetRegion, Transform};
+use helperer::input;
 use rand::Rng;
 
-fn main() {
-    let event_loop = winit::event_loop::EventLoop::new();
-    let window = winit::window::Window::new(&event_loop).unwrap();
-    let mut frend = frenderer::with_default_runtime(&window);
+fn main() -> Result<(), Box<dyn Error>> {
+    let event_loop = winit::event_loop::EventLoop::new()?;
+    let window = std::sync::Arc::new(winit::window::Window::new(&event_loop)?);
+    let mut frend = frenderer::with_default_runtime(window.clone());
     let mut input = input::Input::default();
     // init game code here
     #[cfg(target_arch = "wasm32")]
     let sprite_img = {
         let img_bytes = include_bytes!("content/king.png");
         image::load_from_memory_with_format(&img_bytes, image::ImageFormat::Png)
-            .map_err(|e| e.to_string())
-            .unwrap()
+            .map_err(|e| e.to_string())?
             .into_rgba8()
     };
     #[cfg(not(target_arch = "wasm32"))]
-    let sprite_img = image::open("content/king.png").unwrap().into_rgba8();
+    let sprite_img = image::open("content/king.png")?.into_rgba8();
 
     #[cfg(target_arch = "wasm32")]
     let sprite_invert_img = {
         let img_bytes = include_bytes!("content/king_invert.png");
         image::load_from_memory_with_format(&img_bytes, image::ImageFormat::Png)
-            .map_err(|e| e.to_string())
-            .unwrap()
+            .map_err(|e| e.to_string())?
             .into_rgba8()
     };
     #[cfg(not(target_arch = "wasm32"))]
-    let sprite_invert_img = image::open("content/king_invert.png").unwrap().into_rgba8();
+    let sprite_invert_img = image::open("content/king_invert.png")?.into_rgba8();
 
     let sprite_tex = frend.gpu.create_array_texture(
         &[&sprite_img, &sprite_invert_img],
@@ -66,42 +67,20 @@ fn main() {
     const TIME_SNAPS: [f32; 5] = [15.0, 30.0, 60.0, 120.0, 144.0];
     let mut acc = 0.0;
     let mut now = std::time::Instant::now();
-    event_loop.run(move |event, _, control_flow| {
+    Ok(event_loop.run(move |event, target| {
         use winit::event::{Event, WindowEvent};
-        control_flow.set_poll();
+        target.set_control_flow(winit::event_loop::ControlFlow::Poll);
         match event {
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
                 ..
             } => {
-                *control_flow = winit::event_loop::ControlFlow::Exit;
+                target.exit();
             }
-            Event::MainEventsCleared => {
-                // compute elapsed time since last frame
-                let mut elapsed = now.elapsed().as_secs_f32();
-                println!("{elapsed}");
-                // snap time to nearby vsync framerate
-                TIME_SNAPS.iter().for_each(|s| {
-                    if (elapsed - 1.0 / s).abs() < DT_FUDGE_AMOUNT {
-                        elapsed = 1.0 / s;
-                    }
-                });
-                // Death spiral prevention
-                if elapsed > DT_MAX {
-                    acc = 0.0;
-                    elapsed = DT;
-                }
-                acc += elapsed;
-                now = std::time::Instant::now();
-                // While we have time to spend
-                while acc >= DT {
-                    // simulate a frame
-                    acc -= DT;
-                    println!("tick");
-                    //update_game();
-                    camera.screen_pos[0] += 0.01;
-                    input.next_frame();
-                }
+            Event::WindowEvent {
+                event: WindowEvent::RedrawRequested,
+                ..
+            } => {
                 // Render prep
                 frend.sprites.set_camera_all(&frend.gpu, camera);
                 // update sprite positions and sheet regions
@@ -136,6 +115,33 @@ fn main() {
                 // }
                 // // This just submits the command encoder and presents the frame, we wouldn't need it if we did that some other way.
                 // frend.render_finish(frame, encoder);
+            }
+            Event::AboutToWait => {
+                // compute elapsed time since last frame
+                let mut elapsed = now.elapsed().as_secs_f32();
+                println!("{elapsed}");
+                // snap time to nearby vsync framerate
+                TIME_SNAPS.iter().for_each(|s| {
+                    if (elapsed - 1.0 / s).abs() < DT_FUDGE_AMOUNT {
+                        elapsed = 1.0 / s;
+                    }
+                });
+                // Death spiral prevention
+                if elapsed > DT_MAX {
+                    acc = 0.0;
+                    elapsed = DT;
+                }
+                acc += elapsed;
+                now = std::time::Instant::now();
+                // While we have time to spend
+                while acc >= DT {
+                    // simulate a frame
+                    acc -= DT;
+                    println!("tick");
+                    //update_game();
+                    camera.screen_pos[0] += 0.01;
+                    input.next_frame();
+                }
                 window.request_redraw();
             }
             event => {
@@ -145,5 +151,5 @@ fn main() {
                 input.process_input_event(&event);
             }
         }
-    });
+    })?)
 }

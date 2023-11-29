@@ -1,27 +1,23 @@
 use assets_manager::asset::Gltf;
-use frenderer::{input, meshes::MeshGroup, Camera3D, Transform3D};
+use frenderer::{meshes::MeshGroup, Camera3D, Transform3D};
+use helperer::input::{self, Key};
 use rand::Rng;
 use ultraviolet::*;
-use winit::event::VirtualKeyCode;
 
 mod obj_loader;
 
-fn main() {
-    let event_loop = winit::event_loop::EventLoop::new();
-    let window = winit::window::Window::new(&event_loop).unwrap();
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let event_loop = winit::event_loop::EventLoop::new()?;
+    let window = std::sync::Arc::new(winit::window::Window::new(&event_loop)?);
     #[cfg(not(target_arch = "wasm32"))]
-    let source = assets_manager::source::FileSystem::new("content").unwrap();
+    let source = assets_manager::source::FileSystem::new("content")?;
     #[cfg(target_arch = "wasm32")]
     let source = assets_manager::source::Embedded::from(source::embed!("content"));
     let cache = assets_manager::AssetCache::with_source(source);
-    let mut frend = frenderer::with_default_runtime(&window);
+    let mut frend = frenderer::with_default_runtime(window.clone());
     let mut input = input::Input::default();
-    let fox = cache
-        .load::<assets_manager::asset::Gltf>("khronos.Fox.glTF-Binary.Fox")
-        .unwrap();
-    let raccoon = cache
-        .load::<assets_manager::asset::Gltf>("low_poly_raccoon.scene")
-        .unwrap();
+    let fox = cache.load::<assets_manager::asset::Gltf>("khronos.Fox.glTF-Binary.Fox")?;
+    let raccoon = cache.load::<assets_manager::asset::Gltf>("low_poly_raccoon.scene")?;
 
     let mut camera = Camera3D {
         translation: Vec3 {
@@ -87,17 +83,17 @@ fn main() {
     const TIME_SNAPS: [f32; 5] = [15.0, 30.0, 60.0, 120.0, 144.0];
     let mut acc = 0.0;
     let mut now = std::time::Instant::now();
-    event_loop.run(move |event, _, control_flow| {
+    Ok(event_loop.run(move |event, target| {
         use winit::event::{Event, WindowEvent};
-        control_flow.set_poll();
+        target.set_control_flow(winit::event_loop::ControlFlow::Poll);
         match event {
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
                 ..
             } => {
-                *control_flow = winit::event_loop::ControlFlow::Exit;
+                target.exit();
             }
-            Event::MainEventsCleared => {
+            Event::AboutToWait => {
                 // compute elapsed time since last frame
                 let mut elapsed = now.elapsed().as_secs_f32();
                 // println!("{elapsed}");
@@ -135,7 +131,7 @@ fn main() {
                     // let mut rot = Rotor3::from_quaternion_array(camera.rotation)
                     //     * (Rotor3::from_rotation_xz(
                     //         std::f32::consts::FRAC_PI_2
-                    //             * if input.is_key_pressed(VirtualKeyCode::R) {
+                    //             * if input.is_key_pressed(Key::KeyR) {
                     //                 1.0
                     //             } else {
                     //                 0.0
@@ -143,8 +139,8 @@ fn main() {
                     //     ));
                     rot.normalize();
                     camera.rotation = rot.into_quaternion_array();
-                    let dx = input.key_axis(VirtualKeyCode::A, VirtualKeyCode::D);
-                    let dz = input.key_axis(VirtualKeyCode::W, VirtualKeyCode::S);
+                    let dx = input.key_axis(Key::KeyA, Key::KeyD);
+                    let dz = input.key_axis(Key::KeyW, Key::KeyS);
                     let mut dir = Vec3 {
                         x: dx,
                         y: 0.0,
@@ -165,13 +161,18 @@ fn main() {
                     // camera.screen_pos[0] += 0.01;
                     input.next_frame();
                 }
+                window.request_redraw();
+            }
+            Event::WindowEvent {
+                event: winit::event::WindowEvent::RedrawRequested,
+                ..
+            } => {
                 // Render prep
                 frend.meshes.set_camera(&frend.gpu, camera);
                 frend.flats.set_camera(&frend.gpu, camera);
                 // update sprite positions and sheet regions
                 // ok now render.
                 frend.render();
-                window.request_redraw();
             }
             event => {
                 if frend.process_window_event(&event) {
@@ -180,7 +181,7 @@ fn main() {
                 input.process_input_event(&event);
             }
         }
-    });
+    })?)
 }
 
 fn load_gltf_single_textured(

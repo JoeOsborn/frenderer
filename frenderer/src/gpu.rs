@@ -4,13 +4,15 @@
 //! so that it can be provided by client code rather than initialized
 //! solely within frenderer.
 
+use std::sync::Arc;
+
 use crate::USE_STORAGE;
 
 /// A wrapper for a WGPU instance, surface, adapter, device, queue, and surface configuration.
 #[allow(dead_code)]
 pub struct WGPU {
     instance: wgpu::Instance,
-    pub surface: wgpu::Surface,
+    pub surface: wgpu::Surface<'static>,
     adapter: wgpu::Adapter,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
@@ -19,7 +21,7 @@ pub struct WGPU {
     pub depth_texture_view: wgpu::TextureView,
 }
 
-impl WGPU {
+impl<'window> WGPU {
     pub fn create_array_texture(
         &self,
         images: &[&[u8]],
@@ -83,14 +85,14 @@ impl WGPU {
         self.create_array_texture(&[image], format, (width, height), label)
     }
     /// Initialize [`wgpu`] with the given [`winit::window::Window`].
-    pub(crate) async fn new(window: &winit::window::Window) -> Self {
+    pub(crate) async fn new(window: Arc<winit::window::Window>) -> Self {
         let size = window.inner_size();
 
         log::info!("Use storage? {:?}", USE_STORAGE);
 
         let instance = wgpu::Instance::default();
 
-        let surface = unsafe { instance.create_surface(&window) }.unwrap();
+        let surface = instance.create_surface(window).unwrap();
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::default(),
@@ -106,8 +108,8 @@ impl WGPU {
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: None,
-                    features: wgpu::Features::empty(),
-                    limits: if USE_STORAGE {
+                    required_features: wgpu::Features::empty(),
+                    required_limits: if USE_STORAGE {
                         wgpu::Limits::downlevel_defaults()
                     } else {
                         wgpu::Limits::downlevel_webgl2_defaults()

@@ -1,8 +1,8 @@
 //! A wrapper for a current and previous input button/mouse state.
 
 pub use winit::dpi::PhysicalPosition as MousePos;
-pub use winit::event::VirtualKeyCode as Key;
 use winit::event::{ElementState, Event, MouseButton, WindowEvent};
+pub use winit::keyboard::KeyCode as Key;
 
 /// `Input` wraps a current and previous input state.  When window
 /// events arrive from [`winit`], you should call
@@ -35,11 +35,11 @@ impl Default for Input {
 impl Input {
     /// Process a [`winit`] event and update the current keys/mouse position.
     pub fn process_input_event<T>(&mut self, ev: &Event<T>) {
-        match *ev {
+        match ev {
             // WindowEvent->KeyboardInput: Keyboard input!
             Event::WindowEvent {
                 // Note this deeply nested pattern match
-                event: WindowEvent::KeyboardInput { input: key_ev, .. },
+                event: WindowEvent::KeyboardInput { event: key_ev, .. },
                 ..
             } => {
                 self.handle_key_event(key_ev);
@@ -48,13 +48,13 @@ impl Input {
                 event: WindowEvent::MouseInput { state, button, .. },
                 ..
             } => {
-                self.handle_mouse_button(state, button);
+                self.handle_mouse_button(*state, *button);
             }
             Event::WindowEvent {
                 event: WindowEvent::CursorMoved { position, .. },
                 ..
             } => {
-                self.handle_mouse_move(position);
+                self.handle_mouse_move(*position);
             }
             _ => (),
         }
@@ -84,6 +84,8 @@ impl Input {
             MouseButton::Left => 0,
             MouseButton::Right => 1,
             MouseButton::Middle => 2,
+            MouseButton::Back => 3,
+            MouseButton::Forward => 4,
             MouseButton::Other(n) => n as usize,
         }
     }
@@ -124,19 +126,19 @@ impl Input {
         self.prev_mouse.copy_from_slice(&self.now_mouse);
         self.prev_mouse_pos = self.now_mouse_pos;
     }
-    fn handle_key_event(&mut self, ke: winit::event::KeyboardInput) {
-        if let winit::event::KeyboardInput {
-            virtual_keycode: Some(keycode),
+    fn handle_key_event(&mut self, ke: &winit::event::KeyEvent) {
+        if let winit::event::KeyEvent {
+            physical_key: winit::keyboard::PhysicalKey::Code(keycode),
             state,
             ..
         } = ke
         {
             match state {
                 winit::event::ElementState::Pressed => {
-                    self.now_keys[keycode as usize] = true;
+                    self.now_keys[*keycode as usize] = true;
                 }
                 winit::event::ElementState::Released => {
-                    self.now_keys[keycode as usize] = false;
+                    self.now_keys[*keycode as usize] = false;
                 }
             }
         }

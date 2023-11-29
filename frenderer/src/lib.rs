@@ -22,8 +22,6 @@
 //! In the future, more types of renderers including 3D renderers will
 //! also be provided.
 
-pub mod input;
-
 /// Whether storage buffers should be used (currently only WebGL uses instance buffers instead)
 #[cfg(not(feature = "webgl"))]
 pub(crate) const USE_STORAGE: bool = true;
@@ -69,8 +67,6 @@ pub use frenderer::*;
 pub type Frenderer = Renderer<PollsterRuntime>;
 #[cfg(target_arch = "wasm32")]
 pub type Frenderer = Renderer<WebRuntime>;
-pub mod bitfont;
-pub use bitfont::BitFont;
 
 fn range<R: std::ops::RangeBounds<usize>>(r: R, hi: usize) -> std::ops::Range<usize> {
     let low = match r.start_bound() {
