@@ -36,6 +36,8 @@ mod sprites;
 pub use sprites::{Camera2D, SheetRegion, SpriteRenderer, Transform};
 pub mod meshes;
 pub use meshes::{Camera3D, Transform3D};
+pub mod frenderer;
+pub use frenderer::*;
 
 /// A runtime for frenderer; mainly wraps an async runtime, but also sets up logging, etc.
 /// In the future it might be responsible for setting up WGPU/providing a rendering context as well.
@@ -61,8 +63,6 @@ impl Runtime for WebRuntime {
         wasm_bindgen_futures::spawn_local(f)
     }
 }
-pub mod frenderer;
-pub use frenderer::*;
 #[cfg(not(target_arch = "wasm32"))]
 pub type Frenderer = Renderer<PollsterRuntime>;
 #[cfg(target_arch = "wasm32")]

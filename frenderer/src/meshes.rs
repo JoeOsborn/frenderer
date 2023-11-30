@@ -108,9 +108,13 @@ pub struct Camera3D {
 }
 
 impl MeshRenderer {
-    pub(crate) fn new(gpu: &crate::WGPU) -> Self {
+    pub(crate) fn new(
+        gpu: &crate::WGPU,
+        color_target: wgpu::ColorTargetState,
+        depth_format: wgpu::TextureFormat,
+    ) -> Self {
         let bind_group_layout =
-            gpu.device
+            gpu.device()
                 .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                     label: None,
                     // It needs the first entry for the texture and the second for the sampler.
@@ -170,6 +174,8 @@ impl MeshRenderer {
             "fs_main",
             bind_group_layout,
             vertex_layout,
+            color_target,
+            depth_format,
         );
 
         Self { data }
@@ -195,9 +201,9 @@ impl MeshRenderer {
             ..Default::default()
         });
         let sampler_mesh = gpu
-            .device
+            .device()
             .create_sampler(&wgpu::SamplerDescriptor::default());
-        let bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+        let bind_group = gpu.device().create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
             layout: &self.data.bind_group_layout,
             entries: &[
@@ -270,9 +276,13 @@ impl MeshRenderer {
 }
 
 impl FlatRenderer {
-    pub(crate) fn new(gpu: &crate::WGPU) -> Self {
+    pub(crate) fn new(
+        gpu: &crate::WGPU,
+        color_target: wgpu::ColorTargetState,
+        depth_format: wgpu::TextureFormat,
+    ) -> Self {
         let bind_group_layout =
-            gpu.device
+            gpu.device()
                 .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                     label: None,
                     // It needs the first entry for the texture and the second for the sampler.
@@ -312,6 +322,8 @@ impl FlatRenderer {
             "fs_flat_main",
             bind_group_layout,
             vertex_layout,
+            color_target,
+            depth_format,
         );
 
         Self { data }
@@ -329,12 +341,12 @@ impl FlatRenderer {
         mesh_info: Vec<MeshEntry>,
     ) -> MeshGroup {
         use wgpu::util::BufferInitDescriptor;
-        let uniforms = gpu.device.create_buffer_init(&BufferInitDescriptor {
+        let uniforms = gpu.device().create_buffer_init(&BufferInitDescriptor {
             label: None,
             contents: bytemuck::cast_slice(material_colors),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
-        let bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+        let bind_group = gpu.device().create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
             layout: &self.data.bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
@@ -411,21 +423,23 @@ impl<Vtx: bytemuck::Pod + bytemuck::Zeroable + Copy> MeshRendererInner<Vtx> {
         fs_entry: &str,
         bind_group_layout: wgpu::BindGroupLayout,
         vertex_layout: wgpu::VertexBufferLayout,
+        color_target: wgpu::ColorTargetState,
+        depth_format: wgpu::TextureFormat,
     ) -> Self {
         let shader = gpu
-            .device
+            .device()
             .create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: None,
                 source: shader,
             });
-        let camera_buffer = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+        let camera_buffer = gpu.device().create_buffer(&wgpu::BufferDescriptor {
             label: None,
             size: std::mem::size_of::<[f32; 16]>() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         let camera_bind_group_layout =
-            gpu.device
+            gpu.device()
                 .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                     label: None,
                     entries: &[wgpu::BindGroupLayoutEntry {
@@ -443,7 +457,7 @@ impl<Vtx: bytemuck::Pod + bytemuck::Zeroable + Copy> MeshRendererInner<Vtx> {
                         count: None,
                     }],
                 });
-        let camera_bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+        let camera_bind_group = gpu.device().create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
             layout: &camera_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
@@ -451,15 +465,15 @@ impl<Vtx: bytemuck::Pod + bytemuck::Zeroable + Copy> MeshRendererInner<Vtx> {
                 resource: camera_buffer.as_entire_binding(),
             }],
         });
-        let pipeline_layout = gpu
-            .device
-            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: None,
-                bind_group_layouts: &[&camera_bind_group_layout, &bind_group_layout],
-                push_constant_ranges: &[],
-            });
+        let pipeline_layout =
+            gpu.device()
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: None,
+                    bind_group_layouts: &[&camera_bind_group_layout, &bind_group_layout],
+                    push_constant_ranges: &[],
+                });
         let pipeline = gpu
-            .device
+            .device()
             .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: None,
                 layout: Some(&pipeline_layout),
@@ -491,7 +505,7 @@ impl<Vtx: bytemuck::Pod + bytemuck::Zeroable + Copy> MeshRendererInner<Vtx> {
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
                     entry_point: fs_entry,
-                    targets: &[Some(gpu.config.format.into())],
+                    targets: &[Some(color_target)],
                 }),
                 primitive: wgpu::PrimitiveState {
                     topology: wgpu::PrimitiveTopology::TriangleList,
@@ -500,7 +514,7 @@ impl<Vtx: bytemuck::Pod + bytemuck::Zeroable + Copy> MeshRendererInner<Vtx> {
                     ..Default::default()
                 },
                 depth_stencil: Some(wgpu::DepthStencilState {
-                    format: wgpu::TextureFormat::Depth32Float,
+                    format: depth_format,
                     depth_write_enabled: true,
                     depth_compare: wgpu::CompareFunction::Less,
                     stencil: wgpu::StencilState::default(),
@@ -544,7 +558,7 @@ impl<Vtx: bytemuck::Pod + bytemuck::Zeroable + Copy> MeshRendererInner<Vtx> {
             camera.far,
         );
         let mat = proj * view;
-        gpu.queue
+        gpu.queue()
             .write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&mat));
     }
     fn add_mesh_group(
@@ -555,19 +569,23 @@ impl<Vtx: bytemuck::Pod + bytemuck::Zeroable + Copy> MeshRendererInner<Vtx> {
         indices: Vec<u32>,
         mesh_info: Vec<MeshEntry>,
     ) -> MeshGroup {
-        let vertex_buffer = gpu.device.create_buffer_init(&wutil::BufferInitDescriptor {
-            label: None,
-            contents: bytemuck::cast_slice(&vertices),
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-        });
-        let index_buffer = gpu.device.create_buffer_init(&wutil::BufferInitDescriptor {
-            label: None,
-            contents: bytemuck::cast_slice(&indices),
-            usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
-        });
+        let vertex_buffer = gpu
+            .device()
+            .create_buffer_init(&wutil::BufferInitDescriptor {
+                label: None,
+                contents: bytemuck::cast_slice(&vertices),
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            });
+        let index_buffer = gpu
+            .device()
+            .create_buffer_init(&wutil::BufferInitDescriptor {
+                label: None,
+                contents: bytemuck::cast_slice(&indices),
+                usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
+            });
         let instance_count: u32 = mesh_info.iter().map(|me| me.instance_count).sum();
         let instance_data = vec![Transform3D::zeroed(); instance_count as usize];
-        let instance_buffer = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+        let instance_buffer = gpu.device().create_buffer(&wgpu::BufferDescriptor {
             label: None,
             size: instance_count as u64 * std::mem::size_of::<Transform3D>() as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
@@ -655,14 +673,14 @@ impl<Vtx: bytemuck::Pod + bytemuck::Zeroable + Copy> MeshRendererInner<Vtx> {
             // grow instance buffer if needed
             let new_len_bytes = std::mem::size_of::<Transform3D>() * new_group_len;
             if new_len_bytes > group.instance_buffer.size() as usize {
-                group.instance_buffer = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+                group.instance_buffer = gpu.device().create_buffer(&wgpu::BufferDescriptor {
                     label: None,
                     size: new_len_bytes as u64,
                     usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                     mapped_at_creation: false,
                 });
                 // write immediately since otherwise it will contain garbage
-                gpu.queue.write_buffer(
+                gpu.queue().write_buffer(
                     &group.instance_buffer,
                     0,
                     bytemuck::cast_slice(&group.instance_data),
@@ -714,7 +732,7 @@ impl<Vtx: bytemuck::Pod + bytemuck::Zeroable + Copy> MeshRendererInner<Vtx> {
             mesh.instances.end as usize - mesh.instances.start as usize,
         );
         // offset range by instance_start
-        gpu.queue.write_buffer(
+        gpu.queue().write_buffer(
             &group.instance_buffer,
             ((mesh.instances.start as usize + range.start as usize)
                 * std::mem::size_of::<Transform3D>()) as u64,
@@ -727,7 +745,7 @@ impl<Vtx: bytemuck::Pod + bytemuck::Zeroable + Copy> MeshRendererInner<Vtx> {
     fn upload_meshes_group(&mut self, gpu: &crate::WGPU, which: MeshGroup) {
         // upload the whole instance buffer
         let group = &self.groups[which.0];
-        gpu.queue.write_buffer(
+        gpu.queue().write_buffer(
             &group.instance_buffer,
             0,
             bytemuck::cast_slice(&group.instance_data),

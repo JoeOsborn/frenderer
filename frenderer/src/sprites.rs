@@ -117,16 +117,20 @@ pub struct SpriteRenderer {
 }
 
 impl SpriteRenderer {
-    pub(crate) fn new(gpu: &WGPU) -> Self {
+    pub(crate) fn new(
+        gpu: &WGPU,
+        color_target: wgpu::ColorTargetState,
+        depth_format: wgpu::TextureFormat,
+    ) -> Self {
         let shader = gpu
-            .device
+            .device()
             .create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: None,
                 source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("sprites.wgsl"))),
             });
 
         let texture_bind_group_layout =
-            gpu.device
+            gpu.device()
                 .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                     label: None,
                     // It needs the first entry for the texture and the second for the sampler.
@@ -177,7 +181,7 @@ impl SpriteRenderer {
             count: None,
         };
         let sprite_bind_group_layout = if USE_STORAGE {
-            gpu.device
+            gpu.device()
                 .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                     label: None,
                     entries: &[
@@ -213,24 +217,24 @@ impl SpriteRenderer {
                     ],
                 })
         } else {
-            gpu.device
+            gpu.device()
                 .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                     label: None,
                     entries: &[camera_layout_entry],
                 })
         };
-        let pipeline_layout = gpu
-            .device
-            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: None,
-                bind_group_layouts: &[&sprite_bind_group_layout, &texture_bind_group_layout],
-                push_constant_ranges: &[],
-            });
+        let pipeline_layout =
+            gpu.device()
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: None,
+                    bind_group_layouts: &[&sprite_bind_group_layout, &texture_bind_group_layout],
+                    push_constant_ranges: &[],
+                });
 
         assert_eq!(std::mem::size_of::<Transform>(), 4 * 4);
         assert_eq!(std::mem::size_of::<SheetRegion>(), 4 * 4);
         let pipeline = gpu
-            .device
+            .device()
             .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: None,
                 layout: Some(&pipeline_layout),
@@ -275,11 +279,11 @@ impl SpriteRenderer {
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
                     entry_point: "fs_main",
-                    targets: &[Some(gpu.config.format.into())],
+                    targets: &[Some(color_target)],
                 }),
                 primitive: wgpu::PrimitiveState::default(),
                 depth_stencil: Some(wgpu::DepthStencilState {
-                    format: wgpu::TextureFormat::Depth32Float,
+                    format: depth_format,
                     depth_write_enabled: true,
                     depth_compare: wgpu::CompareFunction::Less,
                     stencil: wgpu::StencilState::default(),
@@ -316,9 +320,9 @@ impl SpriteRenderer {
             ..Default::default()
         });
         let sampler_sprite = gpu
-            .device
+            .device()
             .create_sampler(&wgpu::SamplerDescriptor::default());
-        let tex_bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+        let tex_bind_group = gpu.device().create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
             layout: &self.texture_bind_group_layout,
             entries: &[
@@ -333,7 +337,7 @@ impl SpriteRenderer {
                 },
             ],
         });
-        let buffer_world = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+        let buffer_world = gpu.device().create_buffer(&wgpu::BufferDescriptor {
             label: None,
             size: world_transforms.len() as u64 * std::mem::size_of::<Transform>() as u64,
             usage: if USE_STORAGE {
@@ -343,7 +347,7 @@ impl SpriteRenderer {
             } | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let buffer_sheet = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+        let buffer_sheet = gpu.device().create_buffer(&wgpu::BufferDescriptor {
             label: None,
             size: sheet_regions.len() as u64 * std::mem::size_of::<SheetRegion>() as u64,
             usage: if USE_STORAGE {
@@ -353,14 +357,14 @@ impl SpriteRenderer {
             } | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let camera_buffer = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+        let camera_buffer = gpu.device().create_buffer(&wgpu::BufferDescriptor {
             label: None,
             size: std::mem::size_of::<Camera2D>() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         let sprite_bind_group = if USE_STORAGE {
-            gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            gpu.device().create_bind_group(&wgpu::BindGroupDescriptor {
                 label: None,
                 layout: &self.sprite_bind_group_layout,
                 entries: &[
@@ -379,7 +383,7 @@ impl SpriteRenderer {
                 ],
             })
         } else {
-            gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            gpu.device().create_bind_group(&wgpu::BindGroupDescriptor {
                 label: None,
                 layout: &self.sprite_bind_group_layout,
                 entries: &[wgpu::BindGroupEntry {
@@ -388,11 +392,11 @@ impl SpriteRenderer {
                 }],
             })
         };
-        gpu.queue
+        gpu.queue()
             .write_buffer(&buffer_world, 0, bytemuck::cast_slice(&world_transforms));
-        gpu.queue
+        gpu.queue()
             .write_buffer(&buffer_sheet, 0, bytemuck::cast_slice(&sheet_regions));
-        gpu.queue
+        gpu.queue()
             .write_buffer(&camera_buffer, 0, bytemuck::bytes_of(&camera));
         self.groups.push(SpriteGroup {
             world_buffer: buffer_world,
@@ -438,7 +442,7 @@ impl SpriteRenderer {
         // realloc buffer if needed, remake sprite_bind_group if using storage buffers
         let new_size = len * std::mem::size_of::<Transform>();
         if new_size > group.world_buffer.size() as usize {
-            group.world_buffer = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+            group.world_buffer = gpu.device().create_buffer(&wgpu::BufferDescriptor {
                 label: None,
                 size: new_size as u64,
                 usage: if USE_STORAGE {
@@ -448,7 +452,7 @@ impl SpriteRenderer {
                 } | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
-            group.sheet_buffer = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+            group.sheet_buffer = gpu.device().create_buffer(&wgpu::BufferDescriptor {
                 label: None,
                 size: new_size as u64,
                 usage: if USE_STORAGE {
@@ -460,7 +464,7 @@ impl SpriteRenderer {
             });
             if USE_STORAGE {
                 group.sprite_bind_group =
-                    gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    gpu.device().create_bind_group(&wgpu::BindGroupDescriptor {
                         label: None,
                         layout: &self.sprite_bind_group_layout,
                         entries: &[
@@ -479,12 +483,12 @@ impl SpriteRenderer {
                         ],
                     });
             };
-            gpu.queue.write_buffer(
+            gpu.queue().write_buffer(
                 &group.world_buffer,
                 0,
                 bytemuck::cast_slice(&group.world_transforms),
             );
-            gpu.queue.write_buffer(
+            gpu.queue().write_buffer(
                 &group.sheet_buffer,
                 0,
                 bytemuck::cast_slice(&group.sheet_regions),
@@ -502,7 +506,7 @@ impl SpriteRenderer {
     pub fn set_camera(&mut self, gpu: &WGPU, which: usize, camera: Camera2D) {
         let sg = &mut self.groups[which];
         sg.camera = camera;
-        gpu.queue
+        gpu.queue()
             .write_buffer(&sg.camera_buffer, 0, bytemuck::bytes_of(&sg.camera));
     }
     /// Send a range of stored sprite data for a particular group to the GPU.
@@ -513,7 +517,7 @@ impl SpriteRenderer {
     }
     /// Upload only position changes to the GPU
     pub fn upload_world_transforms(&mut self, gpu: &WGPU, which: usize, range: Range<usize>) {
-        gpu.queue.write_buffer(
+        gpu.queue().write_buffer(
             &self.groups[which].world_buffer,
             (range.start * std::mem::size_of::<Transform>()) as u64,
             bytemuck::cast_slice(&self.groups[which].world_transforms[range]),
@@ -521,7 +525,7 @@ impl SpriteRenderer {
     }
     /// Upload only visual changes to the GPU
     pub fn upload_sheet_regions(&mut self, gpu: &WGPU, which: usize, range: Range<usize>) {
-        gpu.queue.write_buffer(
+        gpu.queue().write_buffer(
             &self.groups[which].sheet_buffer,
             (range.start * std::mem::size_of::<SheetRegion>()) as u64,
             bytemuck::cast_slice(&self.groups[which].sheet_regions[range]),
