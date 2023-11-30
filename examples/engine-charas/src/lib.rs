@@ -2,10 +2,8 @@ use std::sync::Arc;
 
 pub use bytemuck::Zeroable;
 pub use frenderer::{wgpu, Camera2D as Camera, Frenderer, SheetRegion, Transform};
-pub use helperer::{
-    input::{Input, Key},
-    Clock,
-};
+pub use helperer::input::{Input, Key};
+use helperer::Clock;
 mod gfx;
 pub use gfx::{BitFont, Spritesheet};
 
@@ -154,7 +152,6 @@ impl<G: Game> Engine<G> {
                         .set_camera_all(&self.renderer.gpu, self.camera);
                     self.renderer.render();
                     self.texts.clear();
-                    self.window.request_redraw();
                 }
                 helperer::EventPhase::Quit => {
                     target.exit();
