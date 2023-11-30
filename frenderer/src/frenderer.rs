@@ -1,12 +1,17 @@
 //! [`Renderer`] is the main user-facing type of this crate.  You can
 //! make one using [`with_default_runtime()`] or provide your own
 //! [`super::Runtime`] implementor via [`Renderer::with_runtime()`].
+//! If you don't need frenderer to intiialize `wgpu` for you, you
+//! don't need to provide any runtime but can instead use
+//! [`Renderer::with_gpu`] to construct a renderer with a given
+//! instance, adapter, device, and queue (wrapped in a [`gpu::WGPU`]
+//! struct), dimensions, and surface.
 
 use crate::{sprites::SpriteRenderer, WGPU};
 
 pub use crate::meshes::{FlatRenderer, MeshRenderer};
-/// A wrapper over GPU state and (for now) a sprite renderer.
-pub struct Renderer<RT: super::Runtime> {
+/// A wrapper over GPU state, surface, depth texture, and some renderers.
+pub struct Renderer {
     pub gpu: WGPU,
     surface: wgpu::Surface<'static>,
     config: wgpu::SurfaceConfiguration,
@@ -15,7 +20,6 @@ pub struct Renderer<RT: super::Runtime> {
     pub sprites: SpriteRenderer,
     pub meshes: MeshRenderer,
     pub flats: FlatRenderer,
-    runtime: RT,
 }
 
 /// Initialize frenderer with default settings for the current target
@@ -25,7 +29,7 @@ pub struct Renderer<RT: super::Runtime> {
 #[cfg(all(not(target_arch = "wasm32"), feature = "winit"))]
 pub fn with_default_runtime(
     window: std::sync::Arc<winit::window::Window>,
-) -> Result<super::Frenderer, Box<dyn std::error::Error>> {
+) -> Result<Renderer, Box<dyn std::error::Error>> {
     env_logger::init();
     let sz = window.inner_size();
     let instance = wgpu::Instance::default();
@@ -63,10 +67,11 @@ pub fn with_default_runtime(
     )
 }
 
-impl<RT: super::Runtime> Renderer<RT> {
+impl Renderer {
+    /// The format used for depth textures within frenderer.
     pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
-    /// Create a new Renderer with the given window and runtime.
-    pub fn with_runtime(
+    /// Create a new Renderer with the given size, surface, and runtime.
+    pub fn with_runtime<RT: crate::Runtime>(
         width: u32,
         height: u32,
         instance: &wgpu::Instance,
@@ -74,14 +79,14 @@ impl<RT: super::Runtime> Renderer<RT> {
         runtime: RT,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let gpu = runtime.run_future(WGPU::new(instance, Some(&surface)))?;
-        Ok(Self::with_gpu(width, height, gpu, surface, runtime))
+        Ok(Self::with_gpu(width, height, gpu, surface))
     }
+    /// Create a new Renderer with a full set of GPU resources, a size, and a surface.
     pub fn with_gpu(
         width: u32,
         height: u32,
         gpu: crate::gpu::WGPU,
         surface: wgpu::Surface<'static>,
-        runtime: RT,
     ) -> Self {
         if crate::USE_STORAGE {
             let supports_storage_resources = gpu
@@ -118,15 +123,11 @@ impl<RT: super::Runtime> Renderer<RT> {
             depth_texture,
             depth_texture_view,
             sprites,
-            runtime,
             meshes,
             flats,
         }
     }
-    /// Run a future to completion.  Convenience method to wrap the runtime's executor.
-    pub fn block_on<F: std::future::Future>(&self, f: F) -> F::Output {
-        self.runtime.run_future(f)
-    }
+    /// Resize the internal surface and depth textures (typically called when the window or canvas size changes).
     pub fn resize(&mut self, w: u32, h: u32) {
         self.config.width = w;
         self.config.height = h;
@@ -189,8 +190,9 @@ impl<RT: super::Runtime> Renderer<RT> {
         self.render_finish(frame, encoder);
     }
     /// Renders all the frenderer stuff into a given
-    /// [`wgpu::RenderPass`].  Just does rendering, no encoder
-    /// submitting or frame acquire/present.
+    /// [`wgpu::RenderPass`].  Just does rendering of the built-in
+    /// renderers, with no encoder submission or frame
+    /// acquire/present.
     pub fn render_into<'s, 'pass>(&'s self, rpass: &mut wgpu::RenderPass<'pass>)
     where
         's: 'pass,
@@ -227,6 +229,7 @@ impl<RT: super::Runtime> Renderer<RT> {
         self.gpu.queue().submit(Some(encoder.finish()));
         frame.present();
     }
+    /// Creates an array texture on the renderer's GPU.
     pub fn create_array_texture(
         &self,
         images: &[&[u8]],
@@ -264,6 +267,11 @@ impl<RT: super::Runtime> Renderer<RT> {
             let image_combined_len: usize = images.iter().map(|img| img.len()).sum();
             let mut staging = Vec::with_capacity(image_combined_len);
             for img in images {
+                assert_eq!(
+                    img.len(),
+                    images[0].len(),
+                    "Can't create an array texture with images of different dimensions"
+                );
                 staging.extend_from_slice(img);
             }
             // TODO Fixme this will also make a copy, it might be better to do multiple write_texture calls or else take an images[] slice which is already dense in memory
@@ -280,6 +288,7 @@ impl<RT: super::Runtime> Renderer<RT> {
         }
         texture
     }
+    /// Creates a single texture on the renderer's GPU.
     pub fn create_texture(
         &self,
         image: &[u8],
