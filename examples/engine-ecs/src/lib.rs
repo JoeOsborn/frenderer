@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 pub use bytemuck::Zeroable;
+pub use frenderer::input::{Input, Key};
 pub use frenderer::{wgpu, Camera2D as Camera, Frenderer, SheetRegion, Transform};
+use frenderer::{Clock, EventPhase, FrendererEvents};
 pub use hecs;
-pub use helperer::input::{Input, Key};
-use helperer::Clock;
 mod gfx;
 pub use gfx::{BitFont, Spritesheet};
 
@@ -52,7 +52,7 @@ impl<G: Game> Engine<G> {
     pub fn new(builder: winit::window::WindowBuilder) -> Result<Self, Box<dyn std::error::Error>> {
         let event_loop = winit::event_loop::EventLoop::new()?;
         let window = Arc::new(builder.build(&event_loop)?);
-        let renderer = frenderer::with_default_runtime(window.clone());
+        let renderer = frenderer::with_default_runtime(window.clone())?;
         let input = Input::default();
         let camera = Camera {
             screen_pos: [0.0, 0.0],
@@ -93,16 +93,15 @@ impl<G: Game> Engine<G> {
         let mut displacements: Vec<Contact> = Vec::with_capacity(128);
         let mut triggers: Vec<Contact> = Vec::with_capacity(128);
 
-        Ok(self.event_loop.take().unwrap().run(
-            move |event, target| match helperer::handle_event(
+        Ok(self.event_loop.take().unwrap().run(move |event, target| {
+            match self.renderer.handle_event(
                 &mut clock,
                 &self.window,
                 &event,
                 target,
                 &mut self.input,
-                &mut self.renderer,
             ) {
-                helperer::EventPhase::Simulate(steps) => {
+                EventPhase::Simulate(steps) => {
                     for _ in 0..steps {
                         game.update(&mut self);
                         for (_e, (trf, phys)) in self
@@ -136,7 +135,7 @@ impl<G: Game> Engine<G> {
                         self.input.next_frame();
                     }
                 }
-                helperer::EventPhase::Draw => {
+                EventPhase::Draw => {
                     game.render(&mut self);
                     let chara_len = self
                         .world_
@@ -190,12 +189,12 @@ impl<G: Game> Engine<G> {
                     self.renderer.render();
                     self.texts.clear();
                 }
-                helperer::EventPhase::Quit => {
+                EventPhase::Quit => {
                     target.exit();
                 }
-                helperer::EventPhase::Wait => {}
-            },
-        )?)
+                EventPhase::Wait => {}
+            }
+        })?)
     }
     pub fn make_font<B: std::ops::RangeBounds<char>>(
         &mut self,
@@ -205,7 +204,7 @@ impl<G: Game> Engine<G> {
         chars_per_row: u16,
     ) -> BitFont<B> {
         BitFont {
-            font: helperer::BitFont::with_sheet_region(range, uv, chars_per_row),
+            font: frenderer::BitFont::with_sheet_region(range, uv, chars_per_row),
             _spritesheet: spritesheet,
         }
     }
@@ -232,7 +231,7 @@ impl<G: Game> Engine<G> {
         let img_bytes: Vec<_> = imgs.iter().map(|img| img.as_raw().as_slice()).collect();
         let idx = self.renderer.sprites.add_sprite_group(
             &self.renderer.gpu,
-            &self.renderer.gpu.create_array_texture(
+            &self.renderer.create_array_texture(
                 &img_bytes,
                 wgpu::TextureFormat::Rgba8UnormSrgb,
                 imgs[0].dimensions(),

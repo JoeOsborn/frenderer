@@ -7,7 +7,6 @@ edition = "2021"
 
 [dependencies]
 frenderer = {path="../../frenderer"}
-helperer = {path="../../helperer"}
 winit = "0.29"
 image = {version="0.24", features=["png"]}
 ultraviolet = {version="0.9.2", features=["bytemuck", "serde"]}

@@ -1,13 +1,12 @@
 use std::error::Error;
 
-use frenderer::{wgpu, Camera2D, SheetRegion, Transform};
-use helperer::input;
+use frenderer::{input, wgpu, Camera2D, SheetRegion, Transform};
 use rand::Rng;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let event_loop = winit::event_loop::EventLoop::new()?;
     let window = std::sync::Arc::new(winit::window::Window::new(&event_loop)?);
-    let mut frend = frenderer::with_default_runtime(window.clone());
+    let mut frend = frenderer::with_default_runtime(window.clone())?;
     let mut input = input::Input::default();
     // init game code here
     #[cfg(target_arch = "wasm32")]
@@ -30,7 +29,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     #[cfg(not(target_arch = "wasm32"))]
     let sprite_invert_img = image::open("content/king_invert.png")?.into_rgba8();
 
-    let sprite_tex = frend.gpu.create_array_texture(
+    let sprite_tex = frend.create_array_texture(
         &[&sprite_img, &sprite_invert_img],
         wgpu::TextureFormat::Rgba8UnormSrgb,
         sprite_img.dimensions(),
@@ -76,6 +75,13 @@ fn main() -> Result<(), Box<dyn Error>> {
                 ..
             } => {
                 target.exit();
+            }
+            Event::WindowEvent {
+                event: WindowEvent::Resized(size),
+                ..
+            } => {
+                frend.resize(size.width, size.height);
+                window.request_redraw();
             }
             Event::WindowEvent {
                 event: WindowEvent::RedrawRequested,
@@ -145,9 +151,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                 window.request_redraw();
             }
             event => {
-                if frend.process_window_event(&event) {
-                    window.request_redraw();
-                }
                 input.process_input_event(&event);
             }
         }

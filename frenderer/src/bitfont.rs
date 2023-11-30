@@ -1,6 +1,6 @@
 use std::ops::RangeBounds;
 
-use frenderer::{SheetRegion, SpriteRenderer, Transform};
+use crate::{SheetRegion, SpriteRenderer, Transform};
 
 #[derive(Clone, Copy, Debug)]
 pub struct BitFont<B: RangeBounds<char> = std::ops::RangeInclusive<char>> {

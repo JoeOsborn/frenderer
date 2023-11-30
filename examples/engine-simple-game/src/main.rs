@@ -45,7 +45,7 @@ impl engine::Game for Game {
         };
         #[cfg(not(target_arch = "wasm32"))]
         let sprite_img = image::open("content/demo.png").unwrap().into_rgba8();
-        let sprite_tex = engine.renderer.gpu.create_texture(
+        let sprite_tex = engine.renderer.create_texture(
             &sprite_img,
             wgpu::TextureFormat::Rgba8UnormSrgb,
             sprite_img.dimensions(),

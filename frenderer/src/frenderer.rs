@@ -2,8 +2,6 @@
 //! make one using [`with_default_runtime()`] or provide your own
 //! [`super::Runtime`] implementor via [`Renderer::with_runtime()`].
 
-use std::sync::Arc;
-
 use crate::{sprites::SpriteRenderer, WGPU};
 
 pub use crate::meshes::{FlatRenderer, MeshRenderer};
@@ -26,7 +24,7 @@ pub struct Renderer<RT: super::Runtime> {
 /// consider using your own [`super::Runtime`].
 #[cfg(all(not(target_arch = "wasm32"), feature = "winit"))]
 pub fn with_default_runtime(
-    window: Arc<winit::window::Window>,
+    window: std::sync::Arc<winit::window::Window>,
 ) -> Result<super::Frenderer, Box<dyn std::error::Error>> {
     env_logger::init();
     let sz = window.inner_size();
@@ -41,7 +39,7 @@ pub fn with_default_runtime(
 }
 #[cfg(all(target_arch = "wasm32", feature = "winit"))]
 pub fn with_default_runtime(
-    window: Arc<winit::window::Window>,
+    window: std::sync::Arc<winit::window::Window>,
 ) -> Result<super::Frenderer, Box<dyn std::error::Error>> {
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
     console_log::init_with_level(log::Level::Trace).expect("could not initialize logger");
@@ -94,7 +92,7 @@ impl<RT: super::Runtime> Renderer<RT> {
                 && gpu.device().limits().max_storage_buffers_per_shader_stage > 0;
             assert!(supports_storage_resources, "Storage buffers not supported");
         }
-        let swapchain_capabilities = surface.get_capabilities(&gpu.adapter());
+        let swapchain_capabilities = surface.get_capabilities(gpu.adapter());
         let swapchain_format = swapchain_capabilities.formats[0];
 
         let config = wgpu::SurfaceConfiguration {
@@ -107,9 +105,8 @@ impl<RT: super::Runtime> Renderer<RT> {
             view_formats: vec![],
         };
 
-        surface.configure(&gpu.device(), &config);
-        let (depth_texture, depth_texture_view) =
-            Self::create_depth_texture(&gpu.device(), &config);
+        surface.configure(gpu.device(), &config);
+        let (depth_texture, depth_texture_view) = Self::create_depth_texture(gpu.device(), &config);
 
         let sprites = SpriteRenderer::new(&gpu, config.format.into(), depth_texture.format());
         let meshes = MeshRenderer::new(&gpu, config.format.into(), depth_texture.format());
@@ -129,23 +126,6 @@ impl<RT: super::Runtime> Renderer<RT> {
     /// Run a future to completion.  Convenience method to wrap the runtime's executor.
     pub fn block_on<F: std::future::Future>(&self, f: F) -> F::Output {
         self.runtime.run_future(f)
-    }
-    /// Process a window event
-    /// (e.g. [`winit::event::WindowEvent::Resized`]).  Will resize
-    /// the surface or perform other renderer-appropriate actions.
-    /// Returns `true` if the window should be redrawn.
-    #[cfg(feature = "winit")]
-    pub fn process_window_event<T>(&mut self, ev: &winit::event::Event<T>) -> bool {
-        match *ev {
-            winit::event::Event::WindowEvent {
-                event: winit::event::WindowEvent::Resized(size),
-                ..
-            } => {
-                self.resize(size.width, size.height);
-                true
-            }
-            _ => false,
-        }
     }
     pub fn resize(&mut self, w: u32, h: u32) {
         self.config.width = w;

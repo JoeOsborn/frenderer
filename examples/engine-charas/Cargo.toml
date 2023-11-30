@@ -7,7 +7,6 @@ edition = "2021"
 
 [dependencies]
 frenderer = {path="../../frenderer"}
-helperer = {path="../../helperer"}
 winit = "0.29"
 image = {version="0.24", features=["png"]}
 glam = {version="0.24", features=["bytemuck","rand","serde","debug-glam-assert","std"]}

@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
 pub use bytemuck::Zeroable;
-pub use frenderer::{wgpu, Camera2D as Camera, Frenderer, SheetRegion, Transform};
-pub use helperer::{
+use frenderer::FrendererEvents;
+pub use frenderer::{
     input::{Input, Key},
     BitFont, Clock,
 };
+pub use frenderer::{wgpu, Camera2D as Camera, Frenderer, SheetRegion, Transform};
 pub trait Game: Sized + 'static {
     fn new(engine: &mut Engine) -> Self;
     fn update(&mut self, engine: &mut Engine);
@@ -25,7 +26,7 @@ impl Engine {
     pub fn new(builder: winit::window::WindowBuilder) -> Result<Self, Box<dyn std::error::Error>> {
         let event_loop = winit::event_loop::EventLoop::new()?;
         let window = Arc::new(builder.build(&event_loop)?);
-        let renderer = frenderer::with_default_runtime(window.clone());
+        let renderer = frenderer::with_default_runtime(window.clone())?;
         let input = Input::default();
         let camera = Camera {
             screen_pos: [0.0, 0.0],
@@ -43,22 +44,21 @@ impl Engine {
     pub fn run<G: Game>(mut self) -> Result<(), Box<dyn std::error::Error>> {
         let mut clock = Clock::new(1.0 / 60.0, 0.0002, 5);
         let mut game = G::new(&mut self);
-        Ok(self.event_loop.take().unwrap().run(
-            move |event, target| match helperer::handle_event(
+        Ok(self.event_loop.take().unwrap().run(move |event, target| {
+            match self.renderer.handle_event(
                 &mut clock,
                 &self.window,
                 &event,
                 target,
                 &mut self.input,
-                &mut self.renderer,
             ) {
-                helperer::EventPhase::Simulate(steps) => {
+                frenderer::EventPhase::Simulate(steps) => {
                     for _ in 0..steps {
                         game.update(&mut self);
                         self.input.next_frame();
                     }
                 }
-                helperer::EventPhase::Draw => {
+                frenderer::EventPhase::Draw => {
                     self.sprite_counts.fill(0);
                     game.render(&mut self);
                     for (idx, &count) in self.sprite_counts.iter().enumerate() {
@@ -74,12 +74,12 @@ impl Engine {
                         .set_camera_all(&self.renderer.gpu, self.camera);
                     self.renderer.render();
                 }
-                helperer::EventPhase::Quit => {
+                frenderer::EventPhase::Quit => {
                     target.exit();
                 }
-                helperer::EventPhase::Wait => {}
-            },
-        )?)
+                frenderer::EventPhase::Wait => {}
+            }
+        })?)
     }
 }
 
@@ -100,7 +100,7 @@ impl Engine {
         self.sprite_counts.push(0);
         Spritesheet(self.renderer.sprites.add_sprite_group(
             &self.renderer.gpu,
-            &self.renderer.gpu.create_texture(
+            &self.renderer.create_texture(
                 &img,
                 wgpu::TextureFormat::Rgba8UnormSrgb,
                 img.dimensions(),

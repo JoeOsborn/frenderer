@@ -81,3 +81,16 @@ fn range<R: std::ops::RangeBounds<usize>>(r: R, hi: usize) -> std::ops::Range<us
     };
     low..high
 }
+
+#[cfg(feature = "winit")]
+mod events;
+#[cfg(feature = "winit")]
+pub mod input;
+#[cfg(feature = "winit")]
+pub use events::*;
+
+mod bitfont;
+pub use bitfont::BitFont;
+
+mod clock;
+pub use clock::Clock;

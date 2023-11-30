@@ -416,6 +416,7 @@ impl FlatRenderer {
 }
 
 impl<Vtx: bytemuck::Pod + bytemuck::Zeroable + Copy> MeshRendererInner<Vtx> {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         gpu: &crate::WGPU,
         shader: wgpu::ShaderSource,

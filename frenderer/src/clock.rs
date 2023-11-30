@@ -1,8 +1,4 @@
-pub mod bitfont;
 use std::time::Instant;
-
-pub use bitfont::BitFont;
-pub mod input;
 
 const TIME_SNAPS: [f32; 5] = [15.0, 30.0, 60.0, 120.0, 144.0];
 
@@ -49,52 +45,5 @@ impl Clock {
         let steps = (self.acc / self.dt) as usize;
         self.acc -= steps as f32 * self.dt;
         steps
-    }
-}
-
-pub enum EventPhase {
-    Simulate(usize),
-    Draw,
-    Quit,
-    Wait,
-}
-
-pub fn handle_event<RT: frenderer::Runtime, T>(
-    clock: &mut Clock,
-    window: &winit::window::Window,
-    evt: &winit::event::Event<T>,
-    target: &winit::event_loop::EventLoopWindowTarget<T>,
-    input: &mut input::Input,
-    renderer: &mut frenderer::Renderer<RT>,
-) -> EventPhase {
-    use winit::event::{Event, WindowEvent};
-    target.set_control_flow(winit::event_loop::ControlFlow::Poll);
-    match evt {
-        Event::WindowEvent {
-            event: WindowEvent::CloseRequested,
-            ..
-        } => EventPhase::Quit,
-        Event::WindowEvent {
-            event: WindowEvent::RedrawRequested,
-            ..
-        } => {
-            window.request_redraw();
-            EventPhase::Draw
-        }
-        Event::AboutToWait => {
-            let steps = clock.tick();
-            if steps > 0 {
-                EventPhase::Simulate(steps)
-            } else {
-                EventPhase::Wait
-            }
-        }
-        event => {
-            if renderer.process_window_event(event) {
-                window.request_redraw();
-            }
-            input.process_input_event(event);
-            EventPhase::Wait
-        }
     }
 }

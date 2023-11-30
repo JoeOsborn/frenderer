@@ -1,10 +1,13 @@
 use assets_manager::asset::Gltf;
-use frenderer::{meshes::MeshGroup, Camera3D, Transform3D};
-use helperer::input::{self, Key};
+use frenderer::{
+    input::{self, Key},
+    meshes::MeshGroup,
+    Camera3D, Transform3D,
+};
 use rand::Rng;
 use ultraviolet::*;
 
-mod obj_loader;
+//mod obj_loader;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let event_loop = winit::event_loop::EventLoop::new()?;
@@ -14,7 +17,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(target_arch = "wasm32")]
     let source = assets_manager::source::Embedded::from(source::embed!("content"));
     let cache = assets_manager::AssetCache::with_source(source);
-    let mut frend = frenderer::with_default_runtime(window.clone());
+    let mut frend = frenderer::with_default_runtime(window.clone())?;
     let mut input = input::Input::default();
     let fox = cache.load::<assets_manager::asset::Gltf>("khronos.Fox.glTF-Binary.Fox")?;
     let raccoon = cache.load::<assets_manager::asset::Gltf>("low_poly_raccoon.scene")?;
@@ -174,10 +177,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // ok now render.
                 frend.render();
             }
+            Event::WindowEvent {
+                event: winit::event::WindowEvent::Resized(size),
+                ..
+            } => {
+                frend.resize(size.width, size.height);
+                window.request_redraw();
+            }
             event => {
-                if frend.process_window_event(&event) {
-                    window.request_redraw();
-                }
                 input.process_input_event(&event);
             }
         }
@@ -207,7 +214,7 @@ fn load_gltf_single_textured(
         .collect();
     let vert_count = verts.len();
 
-    let tex = frend.gpu.create_array_texture(
+    let tex = frend.create_array_texture(
         &[&img.to_rgba8()],
         frenderer::wgpu::TextureFormat::Rgba8Unorm,
         (img.width(), img.height()),
