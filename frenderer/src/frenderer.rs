@@ -4,7 +4,7 @@
 //! If you don't need frenderer to intiialize `wgpu` for you, you
 //! don't need to provide any runtime but can instead use
 //! [`Renderer::with_gpu`] to construct a renderer with a given
-//! instance, adapter, device, and queue (wrapped in a [`gpu::WGPU`]
+//! instance, adapter, device, and queue (wrapped in a [`crate::gpu::WGPU`]
 //! struct), dimensions, and surface.
 
 use crate::{sprites::SpriteRenderer, WGPU};

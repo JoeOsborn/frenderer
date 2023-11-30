@@ -2,7 +2,7 @@
 pub enum EventPhase {
     /// The game should simulate time forward by the given number of steps
     Simulate(usize),
-    /// The game should do whatever it needs to draw onto the screen.  Typically the caller of [`FrendererEvents::handle_event`] should respond to this by calling `render` on the [`frenderer::frenderer::Renderer`].
+    /// The game should do whatever it needs to draw onto the screen.  Typically the caller of [`FrendererEvents::handle_event`] should respond to this by calling `render` on the [`crate::frenderer::Renderer`].
     Draw,
     /// The game should terminate as quickly as possible and close the window.
     Quit,
@@ -11,10 +11,10 @@ pub enum EventPhase {
 }
 /// This extension trait is used under the `winit` feature to simplify event-loop handling.
 pub trait FrendererEvents<T> {
-    /// Call `handle_event` on your [`frenderer::frenderer::Renderer`]
-    /// with a given [`frenderer::clock::Clock`] to let Frenderer
+    /// Call `handle_event` on your [`crate::frenderer::Renderer`]
+    /// with a given [`crate::clock::Clock`] to let Frenderer
     /// figure out "the right thing to do" for the current `winit`
-    /// event.  See [`frenderer::clock::Clock`] for details on the timestep computation.
+    /// event.  See [`crate::clock::Clock`] for details on the timestep computation.
     fn handle_event(
         &mut self,
         clock: &mut crate::Clock,

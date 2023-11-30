@@ -30,6 +30,7 @@ pub struct WGPU {
 }
 
 impl WGPU {
+    /// Create a WGPU structure with already-created GPU resources.
     pub fn with_resources(
         adapter: Arc<wgpu::Adapter>,
         device: Arc<wgpu::Device>,
@@ -41,7 +42,8 @@ impl WGPU {
             queue,
         }
     }
-    pub(crate) async fn new<'inst>(
+    /// Create a WGPU structure by initializing WGPU for display onto the given surface.
+    pub async fn new<'inst>(
         instance: &'inst wgpu::Instance,
         surface: Option<&wgpu::Surface<'inst>>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
@@ -79,12 +81,15 @@ impl WGPU {
             Arc::new(queue),
         ))
     }
+    /// Returns this GPU wrapper's [`wgpu::Adapter`].
     pub fn adapter(&self) -> &wgpu::Adapter {
         &self.adapter
     }
+    /// Returns this GPU wrapper's [`wgpu::Device`].
     pub fn device(&self) -> &wgpu::Device {
         &self.device
     }
+    /// Returns this GPU wrapper's [`wgpu::Queue`].
     pub fn queue(&self) -> &wgpu::Queue {
         &self.queue
     }

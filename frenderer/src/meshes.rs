@@ -1,30 +1,28 @@
 //! Similar to sprite groups and individual sprites, in frenderer
 //! there are mesh groups and individual meshes.  Each individual mesh
-//! has some submeshes that are all grouped together (this is kind of
-//! a quirk of the glTF format but it means different submeshes can
-//! use different materials in principle); meshes can have some number
-//! of instances (you set an estimate for the number of instances of
-//! each mesh when you're adding the mesh group; it can grow at
-//! runtime but it might be costly so try to minimize the amount of
-//! growth), and the setting of instance data and uploading of
-//! instance data to the GPU are separated like they are for sprites.
-//! The only instance data is a 3D transform (translation, rotation,
-//! and a uniform scaling factor (so it fits neatly into 8 floats).
-//! Rotations are defined as quaternions.
+//! has some submeshes that are all grouped together (different
+//! submeshes can use different materials); meshes can have some
+//! number of instances (you set an estimate for the number of
+//! instances of each mesh when you're adding the mesh group; it can
+//! grow at runtime but it might be costly so try to minimize the
+//! amount of growth), and the setting of instance data and uploading
+//! of instance data to the GPU are separated like they are for
+//! sprites.  The only instance data is a 3D transform (translation,
+//! rotation, and a uniform scaling factor (so it fits neatly into 8
+//! floats).  Rotations are defined as quaternions.
 //!
-//! Mesh groups share a single array texture.  The vertex format is 3
-//! xyz coordinates, 2 uv coordinates, and an integer indicating which
-//! texture to use.  The shader is a *flat* shader that doesn't do any
-//! lighting or other fancy stuff (turning the quaternion into a
-//! rotation matrix involved some math I had to look up from a
-//! reference).
+//! This module defines two renderers: the textured renderer
+//! [`MeshRenderer`] and the flat-colored renderer [`FlatRenderer`].
+//! They use slightly different vertex coordinates (e.g., the mesh
+//! renderer has UV coordinates).
 //!
-//! 3D graphics in frenderer use a right-handed, y-up coordinate system (to match glTF).
+//! 3D graphics in frenderer use a right-handed, y-up coordinate system.
 
 use bytemuck::Zeroable;
 use std::{borrow::Cow, marker::PhantomData, ops::Range};
 use wgpu::util::{self as wutil, DeviceExt};
 
+/// A vertex for meshes in the [`MeshRenderer`].
 #[repr(C)]
 #[derive(bytemuck::Pod, bytemuck::Zeroable, Clone, Copy, PartialEq, Debug)]
 pub struct Vertex {
@@ -32,6 +30,7 @@ pub struct Vertex {
     uv_which: [f32; 3],
 }
 impl Vertex {
+    /// Creates a vertex with the given position, UV coordinates, and index into the texture array.
     pub fn new(position: [f32; 3], uv: [f32; 2], which: u32) -> Self {
         Self {
             position,
@@ -39,12 +38,14 @@ impl Vertex {
         }
     }
 }
+/// A vertex for meshes in the [`FlatRenderer`].
 #[repr(C)]
 #[derive(bytemuck::Pod, bytemuck::Zeroable, Clone, Copy, PartialEq, Debug)]
 pub struct FlatVertex {
     position_which: [f32; 4],
 }
 impl FlatVertex {
+    /// Creates a vertex with the given position and index into the color array.
     pub fn new(pos: [f32; 3], which: u32) -> Self {
         Self {
             position_which: [pos[0], pos[1], pos[2], f32::from_bits(which)],
@@ -53,7 +54,8 @@ impl FlatVertex {
 }
 
 struct MeshRendererInner<Vtx: bytemuck::Pod + bytemuck::Zeroable + Copy> {
-    groups: Vec<MeshGroupData>,
+    groups: Vec<Option<MeshGroupData>>,
+    free_groups: Vec<usize>,
     bind_group_layout: wgpu::BindGroupLayout,
     camera_bind_group: wgpu::BindGroup,
     camera_buffer: wgpu::Buffer,
@@ -62,9 +64,11 @@ struct MeshRendererInner<Vtx: bytemuck::Pod + bytemuck::Zeroable + Copy> {
     _vertex_data: PhantomData<Vtx>,
 }
 
+/// Renders groups of 3D meshes with textures and no lighting.
 pub struct MeshRenderer {
     data: MeshRendererInner<Vertex>,
 }
+/// Renders groups of 3D meshes with flat colors and no lighting.
 pub struct FlatRenderer {
     data: MeshRendererInner<FlatVertex>,
 }
@@ -82,12 +86,16 @@ struct MeshData {
     instances: Range<u32>,
     submeshes: Vec<SubmeshData>,
 }
+/// The range of indices and base vertex for a single submesh.
 #[derive(Debug)]
 pub struct SubmeshData {
+    /// A range of indices within the mesh group's index buffer
     pub indices: Range<u32>,
+    /// The base vertex to be added to the value of each index in the submesh
     pub vertex_base: i32,
 }
 
+/// A transform in 3D space comprised of a translation, a rotation (a quaternion), and a scale.
 #[repr(C)]
 #[derive(bytemuck::Zeroable, bytemuck::Pod, Clone, Copy, PartialEq, Debug)]
 pub struct Transform3D {
@@ -96,6 +104,7 @@ pub struct Transform3D {
     pub rotation: [f32; 4],
 }
 
+/// A 3D perspective camera positioned at some point and rotated in some orientation (a quaternion).
 #[repr(C)]
 #[derive(bytemuck::Zeroable, bytemuck::Pod, Clone, Copy, PartialEq, Debug)]
 pub struct Camera3D {
@@ -108,7 +117,8 @@ pub struct Camera3D {
 }
 
 impl MeshRenderer {
-    pub(crate) fn new(
+    /// Creates a new `MeshRenderer` meant to draw into the given color target state with the given depth texture format..
+    pub fn new(
         gpu: &crate::WGPU,
         color_target: wgpu::ColorTargetState,
         depth_format: wgpu::TextureFormat,
@@ -180,9 +190,13 @@ impl MeshRenderer {
 
         Self { data }
     }
+    /// Sets the given camera for all mesh groups.
     pub fn set_camera(&mut self, gpu: &crate::WGPU, camera: Camera3D) {
         self.data.set_camera(gpu, camera)
     }
+    /// Add a mesh group with the given array texture.
+    /// All meshes in the group pull from the same vertex buffer, and each submesh is defined in terms of a range of indices within that buffer.
+    /// When loading your mesh resources from whatever format they're stored in, fill out vertex and index vecs while tracking the beginning and end of each mesh and submesh (see [`MeshEntry`] for details).
     pub fn add_mesh_group(
         &mut self,
         gpu: &crate::WGPU,
@@ -222,6 +236,7 @@ impl MeshRenderer {
         self.data
             .add_mesh_group(gpu, bind_group, vertices, indices, mesh_info)
     }
+    /// Change the number of instances of the given mesh of the given mesh group.
     pub fn resize_group_mesh(
         &mut self,
         gpu: &crate::WGPU,
@@ -231,27 +246,31 @@ impl MeshRenderer {
     ) -> usize {
         self.data.resize_group_mesh(gpu, which, mesh_idx, len)
     }
+    /// Returns how many mesh groups there are.
     pub fn mesh_group_count(&mut self) -> usize {
         self.data.mesh_group_count()
     }
+    /// Returns how many meshes there are in the given mesh group.
     pub fn mesh_count(&mut self, which: MeshGroup) -> usize {
         self.data.mesh_count(which)
     }
+    /// Returns how many mesh instances there are in the given mesh of the given mesh group.
     pub fn mesh_instance_count(&mut self, which: MeshGroup, mesh_number: usize) -> usize {
         self.data.mesh_instance_count(which, mesh_number)
     }
+    /// Gets the transforms of every instance of the given mesh of a mesh group.
     pub fn get_meshes(&mut self, which: MeshGroup, mesh_number: usize) -> &[Transform3D] {
         self.data.get_meshes(which, mesh_number)
     }
+    /// Gets the (mutable) transforms of every instance of the given mesh of a mesh group.
     pub fn get_meshes_mut(&mut self, which: MeshGroup, mesh_number: usize) -> &mut [Transform3D] {
         self.data.get_meshes_mut(which, mesh_number)
     }
-    /// Deletes a mesh group.  Note that this currently invalidates
-    /// all the MeshGroup handles after this one, which is not great.  Only use it on the
-    /// last mesh group if that matters to you.
+    /// Deletes a mesh group, leaving its slot free to be reused.
     pub fn remove_mesh_group(&mut self, which: MeshGroup) {
         self.data.remove_mesh_group(which)
     }
+    /// Uploads a range of instance data for the given mesh of a given mesh group.
     pub fn upload_meshes(
         &mut self,
         gpu: &crate::WGPU,
@@ -261,9 +280,11 @@ impl MeshRenderer {
     ) {
         self.data.upload_meshes(gpu, which, mesh_number, range)
     }
+    /// Uploads instance data for all the meshes of a given mesh group.
     pub fn upload_meshes_group(&mut self, gpu: &crate::WGPU, which: MeshGroup) {
         self.data.upload_meshes_group(gpu, which)
     }
+    /// Renders the given range of mesh groups into the given [`wgpu::RenderPass`].
     pub fn render<'s, 'pass>(
         &'s self,
         rpass: &mut wgpu::RenderPass<'pass>,
@@ -276,7 +297,8 @@ impl MeshRenderer {
 }
 
 impl FlatRenderer {
-    pub(crate) fn new(
+    /// Creates a new `FlatRenderer` meant to draw into the given color target state with the given depth texture format..
+    pub fn new(
         gpu: &crate::WGPU,
         color_target: wgpu::ColorTargetState,
         depth_format: wgpu::TextureFormat,
@@ -328,9 +350,13 @@ impl FlatRenderer {
 
         Self { data }
     }
+    /// Sets the given camera for all mesh groups.
     pub fn set_camera(&mut self, gpu: &crate::WGPU, camera: Camera3D) {
         self.data.set_camera(gpu, camera)
     }
+    /// Add a mesh group with the given array of material colors.
+    /// All meshes in the group pull from the same vertex buffer, and each submesh is defined in terms of a range of indices within that buffer.
+    /// When loading your mesh resources from whatever format they're stored in, fill out vertex and index vecs while tracking the beginning and end of each mesh and submesh (see [`MeshEntry`] for details).
     pub fn add_mesh_group(
         &mut self,
         gpu: &crate::WGPU,
@@ -362,6 +388,7 @@ impl FlatRenderer {
         self.data
             .add_mesh_group(gpu, bind_group, vertices, indices, mesh_info)
     }
+    /// Change the number of instances of the given mesh of the given mesh group.
     pub fn resize_group_mesh(
         &mut self,
         gpu: &crate::WGPU,
@@ -371,27 +398,31 @@ impl FlatRenderer {
     ) -> usize {
         self.data.resize_group_mesh(gpu, which, mesh_idx, len)
     }
+    /// Returns how many mesh groups there are.
     pub fn mesh_group_count(&mut self) -> usize {
         self.data.mesh_group_count()
     }
+    /// Returns how many meshes there are in the given mesh group.
     pub fn mesh_count(&mut self, which: MeshGroup) -> usize {
         self.data.mesh_count(which)
     }
+    /// Returns how many mesh instances there are in the given mesh of the given mesh group.
     pub fn mesh_instance_count(&mut self, which: MeshGroup, mesh_number: usize) -> usize {
         self.data.mesh_instance_count(which, mesh_number)
     }
+    /// Gets the transforms of every instance of the given mesh of a mesh group.
     pub fn get_meshes(&mut self, which: MeshGroup, mesh_number: usize) -> &[Transform3D] {
         self.data.get_meshes(which, mesh_number)
     }
+    /// Gets the (mutable) transforms of every instance of the given mesh of a mesh group.
     pub fn get_meshes_mut(&mut self, which: MeshGroup, mesh_number: usize) -> &mut [Transform3D] {
         self.data.get_meshes_mut(which, mesh_number)
     }
-    /// Deletes a mesh group.  Note that this currently invalidates
-    /// all the MeshGroup handles after this one, which is not great.  Only use it on the
-    /// last mesh group if that matters to you.
+    /// Deletes a mesh group, leaving its slot free to be reused.
     pub fn remove_mesh_group(&mut self, which: MeshGroup) {
         self.data.remove_mesh_group(which)
     }
+    /// Uploads a range of instance data for the given mesh of a given mesh group.
     pub fn upload_meshes(
         &mut self,
         gpu: &crate::WGPU,
@@ -401,9 +432,11 @@ impl FlatRenderer {
     ) {
         self.data.upload_meshes(gpu, which, mesh_number, range)
     }
+    /// Uploads instance data for all the meshes of a given mesh group.
     pub fn upload_meshes_group(&mut self, gpu: &crate::WGPU, which: MeshGroup) {
         self.data.upload_meshes_group(gpu, which)
     }
+    /// Renders the given range of mesh groups into the given [`wgpu::RenderPass`].
     pub fn render<'s, 'pass>(
         &'s self,
         rpass: &mut wgpu::RenderPass<'pass>,
@@ -526,6 +559,7 @@ impl<Vtx: bytemuck::Pod + bytemuck::Zeroable + Copy> MeshRendererInner<Vtx> {
             });
         let mut ret = Self {
             groups: vec![],
+            free_groups: vec![],
             bind_group_layout,
             camera_bind_group,
             camera_buffer,
@@ -570,6 +604,12 @@ impl<Vtx: bytemuck::Pod + bytemuck::Zeroable + Copy> MeshRendererInner<Vtx> {
         indices: Vec<u32>,
         mesh_info: Vec<MeshEntry>,
     ) -> MeshGroup {
+        let group_idx = if let Some(idx) = self.free_groups.pop() {
+            idx
+        } else {
+            self.groups.push(None);
+            self.groups.len() - 1
+        };
         let vertex_buffer = gpu
             .device()
             .create_buffer_init(&wutil::BufferInitDescriptor {
@@ -612,8 +652,8 @@ impl<Vtx: bytemuck::Pod + bytemuck::Zeroable + Copy> MeshRendererInner<Vtx> {
             bind_group,
             meshes,
         };
-        self.groups.push(group);
-        MeshGroup(self.groups.len() - 1)
+        self.groups[group_idx] = Some(group);
+        MeshGroup(group_idx)
     }
     fn resize_group_mesh(
         &mut self,
@@ -622,7 +662,7 @@ impl<Vtx: bytemuck::Pod + bytemuck::Zeroable + Copy> MeshRendererInner<Vtx> {
         mesh_idx: usize,
         len: usize,
     ) -> usize {
-        let group = &mut self.groups[which.0];
+        let group = self.groups[which.0].as_mut().unwrap();
         let mesh_count = group.meshes.len();
         let mesh = &group.meshes[mesh_idx];
         let new_end = mesh.instances.start + len as u32;
@@ -695,20 +735,20 @@ impl<Vtx: bytemuck::Pod + bytemuck::Zeroable + Copy> MeshRendererInner<Vtx> {
         self.groups.len()
     }
     fn mesh_count(&mut self, which: MeshGroup) -> usize {
-        self.groups[which.0].meshes.len()
+        self.groups[which.0].as_ref().unwrap().meshes.len()
     }
     fn mesh_instance_count(&mut self, which: MeshGroup, mesh_number: usize) -> usize {
-        let range = &self.groups[which.0].meshes[mesh_number].instances;
+        let range = &self.groups[which.0].as_ref().unwrap().meshes[mesh_number].instances;
         range.end as usize - range.start as usize
     }
     fn get_meshes(&mut self, which: MeshGroup, mesh_number: usize) -> &[Transform3D] {
-        let group = &self.groups[which.0];
+        let group = &self.groups[which.0].as_ref().unwrap();
         let mesh = &group.meshes[mesh_number];
         let range = mesh.instances.clone();
         &group.instance_data[range.start as usize..range.end as usize]
     }
     fn get_meshes_mut(&mut self, which: MeshGroup, mesh_number: usize) -> &mut [Transform3D] {
-        let group = &mut self.groups[which.0];
+        let group = self.groups[which.0].as_mut().unwrap();
         let mesh = &mut group.meshes[mesh_number];
         let range = mesh.instances.clone();
         &mut group.instance_data[range.start as usize..range.end as usize]
@@ -717,7 +757,10 @@ impl<Vtx: bytemuck::Pod + bytemuck::Zeroable + Copy> MeshRendererInner<Vtx> {
     /// all the MeshGroup handles after this one, which is not great.  Only use it on the
     /// last mesh group if that matters to you.
     fn remove_mesh_group(&mut self, which: MeshGroup) {
-        self.groups.remove(which.0);
+        if self.groups[which.0].is_some() {
+            self.groups[which.0] = None;
+            self.free_groups.push(which.0);
+        }
     }
     fn upload_meshes(
         &mut self,
@@ -726,7 +769,7 @@ impl<Vtx: bytemuck::Pod + bytemuck::Zeroable + Copy> MeshRendererInner<Vtx> {
         mesh_number: usize,
         range: impl std::ops::RangeBounds<usize>,
     ) {
-        let group = &self.groups[which.0];
+        let group = &self.groups[which.0].as_ref().unwrap();
         let mesh = &group.meshes[mesh_number];
         let range = crate::range(
             range,
@@ -745,7 +788,7 @@ impl<Vtx: bytemuck::Pod + bytemuck::Zeroable + Copy> MeshRendererInner<Vtx> {
     }
     fn upload_meshes_group(&mut self, gpu: &crate::WGPU, which: MeshGroup) {
         // upload the whole instance buffer
-        let group = &self.groups[which.0];
+        let group = &self.groups[which.0].as_ref().unwrap();
         gpu.queue().write_buffer(
             &group.instance_buffer,
             0,
@@ -766,7 +809,7 @@ impl<Vtx: bytemuck::Pod + bytemuck::Zeroable + Copy> MeshRendererInner<Vtx> {
         let which = crate::range(which, self.groups.len());
         // camera
         rpass.set_bind_group(0, &self.camera_bind_group, &[]);
-        for group in self.groups[which].iter() {
+        for group in self.groups[which].iter().filter_map(|o| o.as_ref()) {
             rpass.set_bind_group(1, &group.bind_group, &[]);
             rpass.set_vertex_buffer(0, group.vertex_buffer.slice(..));
             rpass.set_vertex_buffer(1, group.instance_buffer.slice(..));
@@ -784,12 +827,16 @@ impl<Vtx: bytemuck::Pod + bytemuck::Zeroable + Copy> MeshRendererInner<Vtx> {
     }
 }
 
+/// An opaque identifier for a mesh group.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct MeshGroup(usize);
 
+/// An entry in a mesh group, i.e. a 3D model.
 #[derive(Debug)]
 pub struct MeshEntry {
+    /// How many instances of this model should be allocated
     pub instance_count: u32,
+    /// The submeshes making up this model.
     pub submeshes: Vec<SubmeshEntry>,
 }
 pub type SubmeshEntry = SubmeshData;

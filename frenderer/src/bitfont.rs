@@ -2,6 +2,7 @@ use std::ops::RangeBounds;
 
 use crate::{SheetRegion, SpriteRenderer, Transform};
 
+/// A bitmapped font helper described as a rectangular area of a spritesheet.
 #[derive(Clone, Copy, Debug)]
 pub struct BitFont<B: RangeBounds<char> = std::ops::RangeInclusive<char>> {
     region: SheetRegion,
@@ -9,8 +10,15 @@ pub struct BitFont<B: RangeBounds<char> = std::ops::RangeInclusive<char>> {
     chars: B,
 }
 
+// TODO: take char w, h as arguments so that we don't need to have chars_per_row or squash non-square characters.
+
 impl<B: RangeBounds<char>> BitFont<B> {
-    /// Creates a bitfont data structure; the bounds used must not be open on either end.
+    /// Creates a bitfont data structure; the bounds used must not be
+    /// open on either end.  Each character is assumed to be the same
+    /// size, with width equal to the width of the region divided by
+    /// the number of characters in the row and height equal to the
+    /// height of the region divided by the number of rows (the number
+    /// of characters divided by the number of rows).
     pub fn with_sheet_region(chars: B, uvs: SheetRegion, chars_per_row: u16) -> Self {
         if let std::ops::Bound::Unbounded = chars.start_bound() {
             panic!("Can't use unbounded lower bound on bitfont chars");
@@ -28,6 +36,7 @@ impl<B: RangeBounds<char>> BitFont<B> {
     /// The given position is the top-left corner of the rendered string.
     /// Panics if any character in text is not within the font's character range.
     /// Returns the bottom right corner of the rendered string.
+    /// Non-square characters will be squashed.
     pub fn draw_text(
         &self,
         sprites: &mut SpriteRenderer,
@@ -36,7 +45,7 @@ impl<B: RangeBounds<char>> BitFont<B> {
         text: &str,
         mut screen_pos: [f32; 2],
         char_sz: f32,
-    ) -> (usize, [f32; 2]) {
+    ) -> [f32; 2] {
         let char_uv_sz = self.region.w / self.chars_per_row;
         let end_char: u32 = match self.chars.end_bound() {
             std::ops::Bound::Included(&c) => u32::from(c) + 1,
@@ -82,9 +91,6 @@ impl<B: RangeBounds<char>> BitFont<B> {
             );
             screen_pos[0] += char_sz;
         }
-        (
-            text.len(),
-            [screen_pos[0] + char_sz / 2.0, screen_pos[1] + char_sz / 2.0],
-        )
+        [screen_pos[0] + char_sz / 2.0, screen_pos[1] + char_sz / 2.0]
     }
 }

@@ -4,12 +4,11 @@ const TIME_SNAPS: [f32; 5] = [15.0, 30.0, 60.0, 120.0, 144.0];
 
 /// A data structure storing a time accumulator and some parameters
 /// for controlling the progression of game time.  This implementation
-/// yields a fixed-timestep simulation loop following
-/// [https://www.gafferongames.com/post/fix_your_timestep/](Fix Your
-/// Timestep!) with optional improvements to smoothness and avoidance
-/// of death spirals based on
-/// [https://medium.com/@tglaiel/how-to-make-your-game-run-at-60fps-24c61210fe75](Tyler
-/// Glaiel's blog post).
+/// yields a fixed-timestep simulation loop following [Fix Your
+/// Timestep!](https://www.gafferongames.com/post/fix_your_timestep/)
+/// with optional improvements to smoothness and avoidance of death
+/// spirals based on [Tyler Glaiel's blog
+/// post](https://medium.com/@tglaiel/how-to-make-your-game-run-at-60fps-24c61210fe75).
 pub struct Clock {
     acc: f32,
     dt: f32,
