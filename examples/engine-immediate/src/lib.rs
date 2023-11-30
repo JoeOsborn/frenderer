@@ -1,7 +1,10 @@
+use std::sync::Arc;
+
 pub use bytemuck::Zeroable;
-pub use frenderer::{
+pub use frenderer::{wgpu, Camera2D as Camera, Frenderer, SheetRegion, Transform};
+pub use helperer::{
     input::{Input, Key},
-    wgpu, BitFont, Camera2D as Camera, Frenderer, SheetRegion, Transform,
+    BitFont, Clock,
 };
 pub trait Game: Sized + 'static {
     fn new(engine: &mut Engine) -> Self;
@@ -14,100 +17,69 @@ pub struct Engine {
     pub input: Input,
     camera: Camera,
     event_loop: Option<winit::event_loop::EventLoop<()>>,
-    window: winit::window::Window,
+    window: Arc<winit::window::Window>,
     sprite_counts: Vec<usize>,
 }
 
 impl Engine {
-    pub fn new(builder: winit::window::WindowBuilder) -> Self {
-        let event_loop = winit::event_loop::EventLoop::new();
-        let window = builder.build(&event_loop).unwrap();
-        let renderer = frenderer::with_default_runtime(&window);
+    pub fn new(builder: winit::window::WindowBuilder) -> Result<Self, Box<dyn std::error::Error>> {
+        let event_loop = winit::event_loop::EventLoop::new()?;
+        let window = Arc::new(builder.build(&event_loop)?);
+        let renderer = frenderer::with_default_runtime(window.clone());
         let input = Input::default();
         let camera = Camera {
             screen_pos: [0.0, 0.0],
             screen_size: window.inner_size().into(),
         };
-        Self {
+        Ok(Self {
             renderer,
             input,
             window,
             event_loop: Some(event_loop),
             camera,
             sprite_counts: vec![],
-        }
+        })
     }
-    pub fn run<G: Game>(mut self) {
+    pub fn run<G: Game>(mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let mut clock = Clock::new(1.0 / 60.0, 0.0002, 5);
         let mut game = G::new(&mut self);
-        const DT: f32 = 1.0 / 60.0;
-        const DT_FUDGE_AMOUNT: f32 = 0.0002;
-        const DT_MAX: f32 = DT * 5.0;
-        const TIME_SNAPS: [f32; 5] = [15.0, 30.0, 60.0, 120.0, 144.0];
-        let mut acc = 0.0;
-        let mut now = std::time::Instant::now();
-        self.event_loop
-            .take()
-            .unwrap()
-            .run(move |event, _, control_flow| {
-                use winit::event::{Event, WindowEvent};
-                control_flow.set_poll();
-                match event {
-                    Event::WindowEvent {
-                        event: WindowEvent::CloseRequested,
-                        ..
-                    } => {
-                        *control_flow = winit::event_loop::ControlFlow::Exit;
-                    }
-                    Event::MainEventsCleared => {
-                        // compute elapsed time since last frame
-                        let mut elapsed = now.elapsed().as_secs_f32();
-                        // println!("{elapsed}");
-                        // snap time to nearby vsync framerate
-                        TIME_SNAPS.iter().for_each(|s| {
-                            if (elapsed - 1.0 / s).abs() < DT_FUDGE_AMOUNT {
-                                elapsed = 1.0 / s;
-                            }
-                        });
-                        // Death spiral prevention
-                        if elapsed > DT_MAX {
-                            acc = 0.0;
-                            elapsed = DT;
-                        }
-                        acc += elapsed;
-                        now = std::time::Instant::now();
-                        // While we have time to spend
-                        while acc >= DT {
-                            // simulate a frame
-                            acc -= DT;
-                            game.update(&mut self);
-                            self.input.next_frame();
-                        }
-                        self.sprite_counts.fill(0);
-                        game.render(&mut self);
-                        for (idx, &count) in self.sprite_counts.iter().enumerate() {
-                            self.renderer.sprites.resize_sprite_group(
-                                &self.renderer.gpu,
-                                idx,
-                                count,
-                            );
-                            self.renderer
-                                .sprites
-                                .upload_sprites(&self.renderer.gpu, idx, 0..count);
-                        }
-                        self.renderer
-                            .sprites
-                            .set_camera_all(&self.renderer.gpu, self.camera);
-                        self.renderer.render();
-                        self.window.request_redraw();
-                    }
-                    event => {
-                        if self.renderer.process_window_event(&event) {
-                            self.window.request_redraw();
-                        }
-                        self.input.process_input_event(&event);
+        Ok(self.event_loop.take().unwrap().run(
+            move |event, target| match helperer::handle_event(
+                &mut clock,
+                &self.window,
+                &event,
+                target,
+                &mut self.input,
+                &mut self.renderer,
+            ) {
+                helperer::EventPhase::Simulate(steps) => {
+                    for _ in 0..steps {
+                        game.update(&mut self);
+                        self.input.next_frame();
                     }
                 }
-            });
+                helperer::EventPhase::Draw => {
+                    self.sprite_counts.fill(0);
+                    game.render(&mut self);
+                    for (idx, &count) in self.sprite_counts.iter().enumerate() {
+                        self.renderer
+                            .sprites
+                            .resize_sprite_group(&self.renderer.gpu, idx, count);
+                        self.renderer
+                            .sprites
+                            .upload_sprites(&self.renderer.gpu, idx, 0..count);
+                    }
+                    self.renderer
+                        .sprites
+                        .set_camera_all(&self.renderer.gpu, self.camera);
+                    self.renderer.render();
+                }
+                helperer::EventPhase::Quit => {
+                    target.exit();
+                }
+                helperer::EventPhase::Wait => {}
+            },
+        )?)
     }
 }
 

@@ -83,7 +83,9 @@ impl engine::Game for Game {
         }
     }
     fn update(&mut self, engine: &mut Engine) {
-        let dir = engine.input.key_axis(engine::Key::Left, engine::Key::Right);
+        let dir = engine
+            .input
+            .key_axis(engine::Key::ArrowLeft, engine::Key::ArrowRight);
         self.guy.pos.x += dir * GUY_SPEED;
         let mut contacts = Vec::with_capacity(self.walls.len());
         // TODO: for multiple guys this might be better as flags on the guy for what side he's currently colliding with stuff on
@@ -221,6 +223,6 @@ impl engine::Game for Game {
         );
     }
 }
-fn main() {
-    Engine::new(winit::window::WindowBuilder::new()).run::<Game>();
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    Engine::new(winit::window::WindowBuilder::new())?.run::<Game>()
 }

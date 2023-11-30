@@ -1,7 +1,10 @@
+use std::sync::Arc;
+
 pub use bytemuck::Zeroable;
-pub use frenderer::{
+pub use frenderer::{wgpu, Camera2D as Camera, Frenderer, SheetRegion, Transform};
+pub use helperer::{
     input::{Input, Key},
-    wgpu, Camera2D as Camera, Frenderer, SheetRegion, Transform,
+    Clock,
 };
 mod gfx;
 pub use gfx::{BitFont, Spritesheet};
@@ -23,7 +26,7 @@ pub struct Engine<G: Game> {
     pub input: Input,
     camera: Camera,
     event_loop: Option<winit::event_loop::EventLoop<()>>,
-    window: winit::window::Window,
+    window: Arc<winit::window::Window>,
     // We could pull these three out into a "World" or "CollisionWorld",
     // but note that the collision system only needs AABBs and tags, not vel or uv.
     charas_nocollide: Vec<Chara<G::Tag>>,
@@ -45,16 +48,16 @@ impl<G: Game> Engine<G> {
     const C_TR: u8 = 1;
     const C_PH: u8 = 2;
 
-    pub fn new(builder: winit::window::WindowBuilder) -> Self {
-        let event_loop = winit::event_loop::EventLoop::new();
-        let window = builder.build(&event_loop).unwrap();
-        let renderer = frenderer::with_default_runtime(&window);
+    pub fn new(builder: winit::window::WindowBuilder) -> Result<Self, Box<dyn std::error::Error>> {
+        let event_loop = winit::event_loop::EventLoop::new()?;
+        let window = Arc::new(builder.build(&event_loop)?);
+        let renderer = frenderer::with_default_runtime(window.clone());
         let input = Input::default();
         let camera = Camera {
             screen_pos: [0.0, 0.0],
             screen_size: window.inner_size().into(),
         };
-        Self {
+        Ok(Self {
             renderer,
             input,
             window,
@@ -64,128 +67,101 @@ impl<G: Game> Engine<G> {
             charas_trigger: vec![],
             charas_physical: vec![],
             texts: Vec::with_capacity(128),
-        }
+        })
     }
-    pub fn run(mut self) {
+    pub fn run(mut self) -> Result<(), Box<dyn std::error::Error>> {
+        let mut clock = Clock::new(1.0 / 60.0, 0.0002, 5);
         let mut game = G::new(&mut self);
-        const DT: f32 = 1.0 / 60.0;
-        const DT_FUDGE_AMOUNT: f32 = 0.0002;
-        const DT_MAX: f32 = DT * 5.0;
-        const TIME_SNAPS: [f32; 5] = [15.0, 30.0, 60.0, 120.0, 144.0];
         let mut contacts = collision::Contacts::new();
-        let mut acc = 0.0;
-        let mut now = std::time::Instant::now();
-        self.event_loop
-            .take()
-            .unwrap()
-            .run(move |event, _, control_flow| {
-                use winit::event::{Event, WindowEvent};
-                control_flow.set_poll();
-                match event {
-                    Event::WindowEvent {
-                        event: WindowEvent::CloseRequested,
-                        ..
-                    } => {
-                        *control_flow = winit::event_loop::ControlFlow::Exit;
-                    }
-                    Event::MainEventsCleared => {
-                        // compute elapsed time since last frame
-                        let mut elapsed = now.elapsed().as_secs_f32();
-                        // println!("{elapsed}");
-                        // snap time to nearby vsync framerate
-                        TIME_SNAPS.iter().for_each(|s| {
-                            if (elapsed - 1.0 / s).abs() < DT_FUDGE_AMOUNT {
-                                elapsed = 1.0 / s;
-                            }
-                        });
-                        // Death spiral prevention
-                        if elapsed > DT_MAX {
-                            acc = 0.0;
-                            elapsed = DT;
+
+        Ok(self.event_loop.take().unwrap().run(
+            move |event, target| match helperer::handle_event(
+                &mut clock,
+                &self.window,
+                &event,
+                target,
+                &mut self.input,
+                &mut self.renderer,
+            ) {
+                helperer::EventPhase::Simulate(steps) => {
+                    for _ in 0..steps {
+                        game.update(&mut self);
+                        for (_id, chara) in self.charas_mut() {
+                            // This will update dead charas too but it won't cause any harm
+                            chara.aabb_.center += chara.vel_;
                         }
-                        acc += elapsed;
-                        now = std::time::Instant::now();
-                        // While we have time to spend
-                        while acc >= DT {
-                            // simulate a frame
-                            acc -= DT;
-                            game.update(&mut self);
-                            for (_id, chara) in self.charas_mut() {
-                                // This will update dead charas too but it won't cause any harm
-                                chara.aabb_.center += chara.vel_;
-                            }
-                            for _iter in 0..COLLISION_STEPS {
-                                collision::do_collisions(&mut self.charas_physical, &mut contacts);
-                                game.handle_collisions(&mut self, contacts.displacements.drain(..));
-                                contacts.clear();
-                            }
-                            collision::gather_triggers(
-                                &mut self.charas_trigger,
-                                &mut self.charas_physical,
-                                &mut contacts,
-                            );
-                            game.handle_triggers(&mut self, contacts.triggers.drain(..));
+                        for _iter in 0..COLLISION_STEPS {
+                            collision::do_collisions(&mut self.charas_physical, &mut contacts);
+                            game.handle_collisions(&mut self, contacts.displacements.drain(..));
                             contacts.clear();
-                            self.input.next_frame();
                         }
-                        game.render(&mut self);
-                        let chara_len = self.charas().count();
-                        let text_len: usize = self.texts.iter().map(|t| t.1.len()).sum();
-                        self.renderer.sprites.resize_sprite_group(
-                            &self.renderer.gpu,
-                            0,
-                            chara_len + text_len,
+                        collision::gather_triggers(
+                            &mut self.charas_trigger,
+                            &mut self.charas_physical,
+                            &mut contacts,
                         );
-                        let (trfs, uvs) = self.renderer.sprites.get_sprites_mut(0);
-                        // iterate through charas and update trf,uv
-                        // TODO: this could be more efficient by only updating charas which changed, or could be done during integration?
-                        for ((_id, chara), (trf, uv)) in Self::charas_internal(
-                            &self.charas_nocollide,
-                            &self.charas_trigger,
-                            &self.charas_physical,
-                        )
-                        .zip(trfs.iter_mut().zip(uvs.iter_mut()))
-                        {
-                            *trf = chara.aabb_.into();
-                            *uv = chara.uv_;
-                        }
-                        // iterate through texts and draw each one
-                        let mut sprite_idx = chara_len;
-                        for TextDraw(font, text, pos, sz) in self.texts.iter() {
-                            let (count, _) = font.draw_text(
-                                &mut self.renderer.sprites,
-                                0,
-                                sprite_idx,
-                                text,
-                                (*pos).into(),
-                                *sz,
-                            );
-                            sprite_idx += count;
-                        }
-                        assert_eq!(sprite_idx, chara_len + text_len);
-                        // TODO: this could be more efficient by only uploading charas which changed
-                        self.renderer.sprites.upload_sprites(
-                            &self.renderer.gpu,
-                            0,
-                            0..(chara_len + text_len),
-                        );
-                        // update sprites from charas
-                        // update texts
-                        self.renderer
-                            .sprites
-                            .set_camera_all(&self.renderer.gpu, self.camera);
-                        self.renderer.render();
-                        self.texts.clear();
-                        self.window.request_redraw();
-                    }
-                    event => {
-                        if self.renderer.process_window_event(&event) {
-                            self.window.request_redraw();
-                        }
-                        self.input.process_input_event(&event);
+                        game.handle_triggers(&mut self, contacts.triggers.drain(..));
+                        contacts.clear();
+                        self.input.next_frame();
                     }
                 }
-            });
+                helperer::EventPhase::Draw => {
+                    game.render(&mut self);
+                    let chara_len = self.charas().count();
+                    let text_len: usize = self.texts.iter().map(|t| t.1.len()).sum();
+                    self.renderer.sprites.resize_sprite_group(
+                        &self.renderer.gpu,
+                        0,
+                        chara_len + text_len,
+                    );
+                    let (trfs, uvs) = self.renderer.sprites.get_sprites_mut(0);
+                    // iterate through charas and update trf,uv
+                    // TODO: this could be more efficient by only updating charas which changed, or could be done during integration?
+                    for ((_id, chara), (trf, uv)) in Self::charas_internal(
+                        &self.charas_nocollide,
+                        &self.charas_trigger,
+                        &self.charas_physical,
+                    )
+                    .zip(trfs.iter_mut().zip(uvs.iter_mut()))
+                    {
+                        *trf = chara.aabb_.into();
+                        *uv = chara.uv_;
+                    }
+                    // iterate through texts and draw each one
+                    let mut sprite_idx = chara_len;
+                    for TextDraw(font, text, pos, sz) in self.texts.iter() {
+                        let (count, _) = font.draw_text(
+                            &mut self.renderer.sprites,
+                            0,
+                            sprite_idx,
+                            text,
+                            (*pos).into(),
+                            *sz,
+                        );
+                        sprite_idx += count;
+                    }
+                    assert_eq!(sprite_idx, chara_len + text_len);
+                    // TODO: this could be more efficient by only uploading charas which changed
+                    self.renderer.sprites.upload_sprites(
+                        &self.renderer.gpu,
+                        0,
+                        0..(chara_len + text_len),
+                    );
+                    // update sprites from charas
+                    // update texts
+                    self.renderer
+                        .sprites
+                        .set_camera_all(&self.renderer.gpu, self.camera);
+                    self.renderer.render();
+                    self.texts.clear();
+                    self.window.request_redraw();
+                }
+                helperer::EventPhase::Quit => {
+                    target.exit();
+                }
+                helperer::EventPhase::Wait => {}
+            },
+        )?)
     }
     pub fn make_chara(
         &mut self,
@@ -291,7 +267,7 @@ impl<G: Game> Engine<G> {
         chars_per_row: u16,
     ) -> BitFont<B> {
         BitFont {
-            font: frenderer::BitFont::with_sheet_region(range, uv, chars_per_row),
+            font: helperer::BitFont::with_sheet_region(range, uv, chars_per_row),
             _spritesheet: spritesheet,
         }
     }

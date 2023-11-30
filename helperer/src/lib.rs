@@ -90,10 +90,10 @@ pub fn handle_event<RT: frenderer::Runtime, T>(
             }
         }
         event => {
-            if renderer.process_window_event(&event) {
+            if renderer.process_window_event(event) {
                 window.request_redraw();
             }
-            input.process_input_event(&event);
+            input.process_input_event(event);
             EventPhase::Wait
         }
     }
