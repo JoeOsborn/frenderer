@@ -11,6 +11,7 @@ async-trait = "0.1.73"
 winit = "0.29"
 rand = "0.8.5"
 image = {version="0.24.7", features=["png"]}
+assets_manager = { version = "0.10.2", features = ["png", "hot-reloading", "embedded"] }
 
 [features]
 default = []

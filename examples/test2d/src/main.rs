@@ -1,3 +1,4 @@
+use assets_manager::asset::Png;
 use std::error::Error;
 
 use frenderer::{input, wgpu, Camera2D, SheetRegion, Transform};
@@ -8,26 +9,18 @@ fn main() -> Result<(), Box<dyn Error>> {
     let window = std::sync::Arc::new(winit::window::Window::new(&event_loop)?);
     let mut frend = frenderer::with_default_runtime(window.clone())?;
     let mut input = input::Input::default();
-    // init game code here
-    #[cfg(target_arch = "wasm32")]
-    let sprite_img = {
-        let img_bytes = include_bytes!("content/king.png");
-        image::load_from_memory_with_format(&img_bytes, image::ImageFormat::Png)
-            .map_err(|e| e.to_string())?
-            .into_rgba8()
-    };
-    #[cfg(not(target_arch = "wasm32"))]
-    let sprite_img = image::open("content/king.png")?.into_rgba8();
 
-    #[cfg(target_arch = "wasm32")]
-    let sprite_invert_img = {
-        let img_bytes = include_bytes!("content/king_invert.png");
-        image::load_from_memory_with_format(&img_bytes, image::ImageFormat::Png)
-            .map_err(|e| e.to_string())?
-            .into_rgba8()
-    };
     #[cfg(not(target_arch = "wasm32"))]
-    let sprite_invert_img = image::open("content/king_invert.png")?.into_rgba8();
+    let source = assets_manager::source::FileSystem::new("content")?;
+    #[cfg(target_arch = "wasm32")]
+    let source = assets_manager::source::Embedded::from(source::embed!("content"));
+    let cache = assets_manager::AssetCache::with_source(source);
+
+    let sprite_img_handle = cache.load::<Png>("king")?;
+    let sprite_img = sprite_img_handle.read().0.to_rgba8();
+
+    let sprite_invert_img_handle = cache.load::<Png>("king_invert")?;
+    let sprite_invert_img = sprite_invert_img_handle.read().0.to_rgba8();
 
     let sprite_tex = frend.create_array_texture(
         &[&sprite_img, &sprite_invert_img],
