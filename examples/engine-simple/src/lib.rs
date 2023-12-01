@@ -5,7 +5,7 @@ pub use frenderer::{
     input::{Input, Key},
     BitFont, Clock,
 };
-pub use frenderer::{wgpu, Camera2D as Camera, Frenderer, SheetRegion, Transform};
+pub use frenderer::{wgpu, Camera2D as Camera, Renderer, SheetRegion, Transform};
 use frenderer::{EventPhase, FrendererEvents};
 pub trait Game: Sized + 'static {
     fn new(engine: &mut Engine) -> Self;
@@ -14,7 +14,7 @@ pub trait Game: Sized + 'static {
 }
 
 pub struct Engine {
-    pub renderer: Frenderer,
+    pub renderer: Renderer,
     pub input: Input,
     event_loop: Option<winit::event_loop::EventLoop<()>>,
     window: Arc<winit::window::Window>,

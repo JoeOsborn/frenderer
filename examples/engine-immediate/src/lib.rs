@@ -6,7 +6,7 @@ pub use frenderer::{
     input::{Input, Key},
     BitFont, Clock,
 };
-pub use frenderer::{wgpu, Camera2D as Camera, Frenderer, SheetRegion, Transform};
+pub use frenderer::{wgpu, Camera2D as Camera, Renderer, SheetRegion, Transform};
 pub trait Game: Sized + 'static {
     fn new(engine: &mut Engine) -> Self;
     fn update(&mut self, engine: &mut Engine);
@@ -14,7 +14,7 @@ pub trait Game: Sized + 'static {
 }
 
 pub struct Engine {
-    pub renderer: Frenderer,
+    pub renderer: Renderer,
     pub input: Input,
     camera: Camera,
     event_loop: Option<winit::event_loop::EventLoop<()>>,
@@ -123,7 +123,7 @@ impl Engine {
             spritesheet.0,
             self.sprite_counts[spritesheet.0] + text.len(),
         );
-        let (drawn, corner) = font.draw_text(
+        let corner = font.draw_text(
             &mut self.renderer.sprites,
             spritesheet.0,
             self.sprite_counts[spritesheet.0],
@@ -131,7 +131,7 @@ impl Engine {
             pos.into(),
             char_sz,
         );
-        self.sprite_counts[spritesheet.0] += drawn;
+        self.sprite_counts[spritesheet.0] += text.len();
         corner.into()
     }
     pub fn draw_sprite(

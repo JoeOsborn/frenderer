@@ -192,7 +192,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn load_gltf_single_textured(
-    frend: &mut frenderer::Frenderer,
+    frend: &mut frenderer::Renderer,
     asset: &Gltf,
     instance_count: u32,
 ) -> MeshGroup {
@@ -235,11 +235,7 @@ fn load_gltf_single_textured(
     )
 }
 
-fn load_gltf_flat(
-    frend: &mut frenderer::Frenderer,
-    asset: &Gltf,
-    instance_count: u32,
-) -> MeshGroup {
+fn load_gltf_flat(frend: &mut frenderer::Renderer, asset: &Gltf, instance_count: u32) -> MeshGroup {
     let mut mats: Vec<_> = asset
         .document
         .materials()

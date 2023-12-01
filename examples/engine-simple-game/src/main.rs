@@ -83,7 +83,8 @@ impl engine::Game for Game {
         let font = engine::BitFont::with_sheet_region(
             '0'..='9',
             SheetRegion::new(0, 0, 512, 0, 80, 8),
-            10,
+            8,
+            8,
         );
         Game {
             camera,

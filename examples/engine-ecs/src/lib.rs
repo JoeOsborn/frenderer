@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 pub use bytemuck::Zeroable;
 pub use frenderer::input::{Input, Key};
-pub use frenderer::{wgpu, Camera2D as Camera, Frenderer, SheetRegion, Transform};
+pub use frenderer::{wgpu, Camera2D as Camera, Renderer, SheetRegion, Transform};
 use frenderer::{Clock, EventPhase, FrendererEvents};
 pub use hecs;
 mod gfx;
@@ -28,7 +28,7 @@ pub mod components {
 }
 
 pub struct Engine<G: Game> {
-    pub renderer: Frenderer,
+    pub renderer: Renderer,
     world_: hecs::World,
     pub input: Input,
     camera: Camera,
@@ -159,7 +159,7 @@ impl<G: Game> Engine<G> {
                     // iterate through texts and draw each one
                     let mut sprite_idx = chara_len;
                     for TextDraw(font, text, pos, sz) in self.texts.iter() {
-                        let (count, _) = font.draw_text(
+                        font.draw_text(
                             &mut self.renderer.sprites,
                             0,
                             sprite_idx,
@@ -167,7 +167,7 @@ impl<G: Game> Engine<G> {
                             (*pos).into(),
                             *sz,
                         );
-                        sprite_idx += count;
+                        sprite_idx += text.len();
                     }
                     assert_eq!(sprite_idx, chara_len + text_len);
                     // TODO: this could be more efficient by only uploading charas which changed
@@ -201,10 +201,11 @@ impl<G: Game> Engine<G> {
         spritesheet: Spritesheet,
         range: B,
         uv: SheetRegion,
-        chars_per_row: u16,
+        char_w: u16,
+        char_h: u16,
     ) -> BitFont<B> {
         BitFont {
-            font: frenderer::BitFont::with_sheet_region(range, uv, chars_per_row),
+            font: frenderer::BitFont::with_sheet_region(range, uv, char_w, char_h),
             _spritesheet: spritesheet,
         }
     }

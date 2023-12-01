@@ -98,7 +98,8 @@ impl engine::Game for Game {
             spritesheet,
             '0'..='9',
             SheetRegion::new(0, 0, 512, 0, 80, 8),
-            10,
+            8,
+            8,
         );
         Game {
             apple_timer: 0,
