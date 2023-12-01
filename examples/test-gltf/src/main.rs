@@ -131,15 +131,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let (mx, _my): (f32, f32) = input.mouse_delta().into();
                     let mut rot = Rotor3::from_quaternion_array(camera.rotation)
                         * Rotor3::from_rotation_xz(mx * std::f32::consts::FRAC_PI_4 * DT);
-                    // let mut rot = Rotor3::from_quaternion_array(camera.rotation)
-                    //     * (Rotor3::from_rotation_xz(
-                    //         std::f32::consts::FRAC_PI_2
-                    //             * if input.is_key_pressed(Key::KeyR) {
-                    //                 1.0
-                    //             } else {
-                    //                 0.0
-                    //             },
-                    //     ));
                     rot.normalize();
                     camera.rotation = rot.into_quaternion_array();
                     let dx = input.key_axis(Key::KeyA, Key::KeyD);
