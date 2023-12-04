@@ -7,6 +7,7 @@ use std::{borrow::Cow, ops::Range};
 
 use crate::{USE_STORAGE, WGPU};
 use bytemuck::{Pod, Zeroable};
+use range_set_blaze::RangeSetBlaze;
 
 /// A SheetRegion defines the visual appearance of a sprite: which spritesheet (of an array of spritesheets), its pixel region within the spritesheet, and its visual depth (larger meaning further away).
 #[repr(C)]
@@ -109,6 +110,7 @@ struct SpriteGroup {
     camera_buffer: wgpu::Buffer,
     tex_bind_group: wgpu::BindGroup,
     sprite_bind_group: wgpu::BindGroup,
+    dirty_ranges: RangeSetBlaze<usize>,
 }
 
 /// SpriteRenderer hosts a number of sprite groups.  Each group has a
@@ -416,6 +418,7 @@ impl SpriteRenderer {
         gpu.queue()
             .write_buffer(&camera_buffer, 0, bytemuck::bytes_of(&camera));
         self.groups[group_idx] = Some(SpriteGroup {
+            dirty_ranges: RangeSetBlaze::from_iter([0..=(world_transforms.len() - 1)]),
             world_buffer: buffer_world,
             sheet_buffer: buffer_sheet,
             world_transforms,
@@ -514,6 +517,8 @@ impl SpriteRenderer {
                 bytemuck::cast_slice(&group.sheet_regions),
             );
         }
+        group.dirty_ranges.clear();
+        group.dirty_ranges.extend(0..group.world_transforms.len());
         old_len
     }
     /// Set the given camera transform on all sprite groups.  Uploads to the GPU.
@@ -535,13 +540,21 @@ impl SpriteRenderer {
     /// Send a range of stored sprite data for a particular group to the GPU.
     /// You must call this yourself after modifying sprite data.
     /// Panics if the given sprite group is not populated.
-    pub fn upload_sprites(&mut self, gpu: &WGPU, which: usize, range: Range<usize>) {
+    pub fn upload_sprites(
+        &mut self,
+        gpu: &WGPU,
+        which: usize,
+        range: impl std::ops::RangeBounds<usize>,
+    ) {
+        let group = self.groups[which].as_mut().unwrap();
+        let range = crate::range(range, group.world_transforms.len());
+        group.dirty_ranges = &group.dirty_ranges - RangeSetBlaze::from(range.clone());
         self.upload_world_transforms(gpu, which, range.clone());
         self.upload_sheet_regions(gpu, which, range);
     }
     /// Upload only position changes to the GPU.
     /// Panics if the given sprite group is not populated.
-    pub fn upload_world_transforms(&mut self, gpu: &WGPU, which: usize, range: Range<usize>) {
+    fn upload_world_transforms(&mut self, gpu: &WGPU, which: usize, range: Range<usize>) {
         let group = self.groups[which].as_ref().unwrap();
         gpu.queue().write_buffer(
             &group.world_buffer,
@@ -551,8 +564,9 @@ impl SpriteRenderer {
     }
     /// Upload only visual changes to the GPU.
     /// Panics if the given sprite group is not populated.
-    pub fn upload_sheet_regions(&mut self, gpu: &WGPU, which: usize, range: Range<usize>) {
+    fn upload_sheet_regions(&mut self, gpu: &WGPU, which: usize, range: Range<usize>) {
         let group = self.groups[which].as_ref().unwrap();
+        let range = crate::range(range);
         gpu.queue().write_buffer(
             &group.sheet_buffer,
             (range.start * std::mem::size_of::<SheetRegion>()) as u64,
@@ -561,19 +575,37 @@ impl SpriteRenderer {
     }
     /// Get a read-only slice of a specified sprite group's world transforms and texture regions.
     /// Panics if the given sprite group is not populated.
-    pub fn get_sprites(&self, which: usize) -> (&[Transform], &[SheetRegion]) {
+    pub fn get_sprites(
+        &self,
+        which: usize,
+        range: impl std::ops::RangeBounds<usize>,
+    ) -> (&[Transform], &[SheetRegion]) {
         let group = self.groups[which].as_ref().unwrap();
-        (&group.world_transforms, &group.sheet_regions)
+        let range = crate::range(range, group.world_transforms.len());
+        (
+            &group.world_transforms[range.clone()],
+            &group.sheet_regions[range],
+        )
     }
     /// Get a mutable slice of a specified sprite group's world transforms and texture regions.
     /// Panics if the given sprite group is not populated.
-    pub fn get_sprites_mut(&mut self, which: usize) -> (&mut [Transform], &mut [SheetRegion]) {
+    pub fn get_sprites_mut(
+        &mut self,
+        which: usize,
+        range: impl std::ops::RangeBounds<usize>,
+    ) -> (&mut [Transform], &mut [SheetRegion]) {
         let group = self.groups[which].as_mut().unwrap();
-        (&mut group.world_transforms, &mut group.sheet_regions)
+        let range = crate::range(range, group.world_transforms.len());
+        group.dirty_ranges.extend(range.clone());
+        (
+            &mut group.world_transforms[range.clone()],
+            &mut group.sheet_regions[range],
+        )
     }
     /// Render the given range of sprite groups into the given pass.
     pub fn render<'s, 'pass>(
         &'s self,
+        gpu: &WGPU,
         rpass: &mut wgpu::RenderPass<'pass>,
         which: impl std::ops::RangeBounds<usize>,
     ) where
@@ -584,7 +616,14 @@ impl SpriteRenderer {
         }
         rpass.set_pipeline(&self.pipeline);
         let which = crate::range(which, self.groups.len());
-        for group in self.groups[which].iter().filter_map(|o| o.as_ref()) {
+        for (which, group) in self.groups[which]
+            .iter()
+            .enumerate()
+            .filter_map(|(i, o)| o.as_ref().map(|o| (i, o)))
+        {
+            for range in group.dirty_ranges.ranges() {
+                self.upload_sprites(gpu, which, range);
+            }
             if !USE_STORAGE {
                 rpass.set_vertex_buffer(0, group.world_buffer.slice(..));
                 rpass.set_vertex_buffer(1, group.sheet_buffer.slice(..));

@@ -81,7 +81,7 @@ impl<B: RangeBounds<char>> BitFont<B> {
             _ => unreachable!(),
         };
         let chars_per_row = self.region.w / self.char_w;
-        let (trfs, uvs) = sprites.get_sprites_mut(group);
+        let (trfs, uvs) = sprites.get_sprites_mut(group, ..);
         let aspect = self.char_w as f32 / self.char_h as f32;
         let char_width = aspect * char_height;
         screen_pos[0] += char_width / 2.0;
