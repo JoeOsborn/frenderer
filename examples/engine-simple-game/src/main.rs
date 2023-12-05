@@ -51,8 +51,7 @@ impl engine::Game for Game {
             sprite_img.dimensions(),
             Some("spr-demo.png"),
         );
-        engine.renderer.sprites.add_sprite_group(
-            &engine.renderer.gpu,
+        engine.renderer.sprite_group_add(
             &sprite_tex,
             vec![Transform::zeroed(); SPRITE_MAX], //bg, three walls, guy, a few apples
             vec![SheetRegion::zeroed(); SPRITE_MAX],
@@ -185,7 +184,7 @@ impl engine::Game for Game {
     }
     fn render(&mut self, engine: &mut Engine) {
         // set bg image
-        let (trfs, uvs) = engine.renderer.sprites.get_sprites_mut(0);
+        let (trfs, uvs) = engine.renderer.sprites_mut(0, ..);
         trfs[0] = AABB {
             center: Vec2 {
                 x: W / 2.0,
@@ -231,15 +230,9 @@ impl engine::Game for Game {
         let sprite_count = apple_start + self.apples.len();
         let score_str = self.score.to_string();
         let text_len = score_str.len();
-        engine.renderer.sprites.resize_sprite_group(
-            &engine.renderer.gpu,
-            0,
-            sprite_count + text_len,
-        );
         self.font.draw_text(
-            &mut engine.renderer.sprites,
-            0,
-            sprite_count,
+            &mut trfs[sprite_count..],
+            &mut uvs[sprite_count..],
             &score_str,
             Vec2 {
                 x: 16.0,
@@ -250,12 +243,8 @@ impl engine::Game for Game {
         );
         engine
             .renderer
-            .sprites
-            .upload_sprites(&engine.renderer.gpu, 0, 0..sprite_count + text_len);
-        engine
-            .renderer
-            .sprites
-            .set_camera_all(&engine.renderer.gpu, self.camera);
+            .sprite_group_resize(0, sprite_count + text_len);
+        engine.renderer.sprite_group_set_camera(0, self.camera);
     }
 }
 fn main() -> Result<(), Box<dyn std::error::Error>> {

@@ -1,6 +1,6 @@
 use std::ops::RangeBounds;
 
-use crate::{SheetRegion, SpriteRenderer, Transform};
+use crate::{SheetRegion, Transform};
 
 /// A bitmapped font helper described as a rectangular area of a spritesheet.
 #[derive(Clone, Copy, Debug)]
@@ -68,9 +68,8 @@ impl<B: RangeBounds<char>> BitFont<B> {
     /// Returns the bottom right corner of the rendered string.
     pub fn draw_text(
         &self,
-        sprites: &mut SpriteRenderer,
-        group: usize,
-        start: usize,
+        trfs: &mut [crate::sprites::Transform],
+        uvs: &mut [crate::sprites::SheetRegion],
         text: &str,
         mut screen_pos: [f32; 2],
         char_height: f32,
@@ -81,15 +80,11 @@ impl<B: RangeBounds<char>> BitFont<B> {
             _ => unreachable!(),
         };
         let chars_per_row = self.region.w / self.char_w;
-        let (trfs, uvs) = sprites.get_sprites_mut(group);
         let aspect = self.char_w as f32 / self.char_h as f32;
         let char_width = aspect * char_height;
         screen_pos[0] += char_width / 2.0;
         screen_pos[1] -= char_height / 2.0;
-        for (chara, (trf, uv)) in text
-            .chars()
-            .zip(trfs[start..].iter_mut().zip(uvs[start..].iter_mut()))
-        {
+        for (chara, (trf, uv)) in text.chars().zip(trfs.iter_mut().zip(uvs.iter_mut())) {
             if !self.chars.contains(&chara) {
                 panic!("Drawing outside of font character range");
             }

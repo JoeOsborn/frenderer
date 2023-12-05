@@ -247,19 +247,19 @@ impl MeshRenderer {
         self.data.resize_group_mesh(gpu, which, mesh_idx, len)
     }
     /// Returns how many mesh groups there are.
-    pub fn mesh_group_count(&mut self) -> usize {
+    pub fn mesh_group_count(&self) -> usize {
         self.data.mesh_group_count()
     }
     /// Returns how many meshes there are in the given mesh group.
-    pub fn mesh_count(&mut self, which: MeshGroup) -> usize {
+    pub fn mesh_count(&self, which: MeshGroup) -> usize {
         self.data.mesh_count(which)
     }
     /// Returns how many mesh instances there are in the given mesh of the given mesh group.
-    pub fn mesh_instance_count(&mut self, which: MeshGroup, mesh_number: usize) -> usize {
+    pub fn mesh_instance_count(&self, which: MeshGroup, mesh_number: usize) -> usize {
         self.data.mesh_instance_count(which, mesh_number)
     }
     /// Gets the transforms of every instance of the given mesh of a mesh group.
-    pub fn get_meshes(&mut self, which: MeshGroup, mesh_number: usize) -> &[Transform3D] {
+    pub fn get_meshes(&self, which: MeshGroup, mesh_number: usize) -> &[Transform3D] {
         self.data.get_meshes(which, mesh_number)
     }
     /// Gets the (mutable) transforms of every instance of the given mesh of a mesh group.
@@ -399,19 +399,19 @@ impl FlatRenderer {
         self.data.resize_group_mesh(gpu, which, mesh_idx, len)
     }
     /// Returns how many mesh groups there are.
-    pub fn mesh_group_count(&mut self) -> usize {
+    pub fn mesh_group_count(&self) -> usize {
         self.data.mesh_group_count()
     }
     /// Returns how many meshes there are in the given mesh group.
-    pub fn mesh_count(&mut self, which: MeshGroup) -> usize {
+    pub fn mesh_count(&self, which: MeshGroup) -> usize {
         self.data.mesh_count(which)
     }
     /// Returns how many mesh instances there are in the given mesh of the given mesh group.
-    pub fn mesh_instance_count(&mut self, which: MeshGroup, mesh_number: usize) -> usize {
+    pub fn mesh_instance_count(&self, which: MeshGroup, mesh_number: usize) -> usize {
         self.data.mesh_instance_count(which, mesh_number)
     }
     /// Gets the transforms of every instance of the given mesh of a mesh group.
-    pub fn get_meshes(&mut self, which: MeshGroup, mesh_number: usize) -> &[Transform3D] {
+    pub fn get_meshes(&self, which: MeshGroup, mesh_number: usize) -> &[Transform3D] {
         self.data.get_meshes(which, mesh_number)
     }
     /// Gets the (mutable) transforms of every instance of the given mesh of a mesh group.
@@ -731,17 +731,17 @@ impl<Vtx: bytemuck::Pod + bytemuck::Zeroable + Copy> MeshRendererInner<Vtx> {
         old_len
     }
 
-    fn mesh_group_count(&mut self) -> usize {
+    fn mesh_group_count(&self) -> usize {
         self.groups.len()
     }
-    fn mesh_count(&mut self, which: MeshGroup) -> usize {
+    fn mesh_count(&self, which: MeshGroup) -> usize {
         self.groups[which.0].as_ref().unwrap().meshes.len()
     }
-    fn mesh_instance_count(&mut self, which: MeshGroup, mesh_number: usize) -> usize {
+    fn mesh_instance_count(&self, which: MeshGroup, mesh_number: usize) -> usize {
         let range = &self.groups[which.0].as_ref().unwrap().meshes[mesh_number].instances;
         range.end as usize - range.start as usize
     }
-    fn get_meshes(&mut self, which: MeshGroup, mesh_number: usize) -> &[Transform3D] {
+    fn get_meshes(&self, which: MeshGroup, mesh_number: usize) -> &[Transform3D] {
         let group = &self.groups[which.0].as_ref().unwrap();
         let mesh = &group.meshes[mesh_number];
         let range = mesh.instances.clone();
@@ -753,9 +753,7 @@ impl<Vtx: bytemuck::Pod + bytemuck::Zeroable + Copy> MeshRendererInner<Vtx> {
         let range = mesh.instances.clone();
         &mut group.instance_data[range.start as usize..range.end as usize]
     }
-    /// Deletes a mesh group.  Note that this currently invalidates
-    /// all the MeshGroup handles after this one, which is not great.  Only use it on the
-    /// last mesh group if that matters to you.
+    /// Deletes a mesh group, leaving an empty placeholder.
     fn remove_mesh_group(&mut self, which: MeshGroup) {
         if self.groups[which.0].is_some() {
             self.groups[which.0] = None;
@@ -830,7 +828,16 @@ impl<Vtx: bytemuck::Pod + bytemuck::Zeroable + Copy> MeshRendererInner<Vtx> {
 /// An opaque identifier for a mesh group.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct MeshGroup(usize);
-
+impl MeshGroup {
+    pub fn index(&self) -> usize {
+        self.0
+    }
+}
+impl From<usize> for MeshGroup {
+    fn from(value: usize) -> Self {
+        Self(value)
+    }
+}
 /// An entry in a mesh group, i.e. a 3D model.
 #[derive(Debug)]
 pub struct MeshEntry {

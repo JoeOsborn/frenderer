@@ -62,16 +62,9 @@ impl Engine {
                     self.sprite_counts.fill(0);
                     game.render(&mut self);
                     for (idx, &count) in self.sprite_counts.iter().enumerate() {
-                        self.renderer
-                            .sprites
-                            .resize_sprite_group(&self.renderer.gpu, idx, count);
-                        self.renderer
-                            .sprites
-                            .upload_sprites(&self.renderer.gpu, idx, 0..count);
+                        self.renderer.sprite_group_set_camera(idx, self.camera);
+                        self.renderer.sprite_group_resize(idx, count);
                     }
-                    self.renderer
-                        .sprites
-                        .set_camera_all(&self.renderer.gpu, self.camera);
                     self.renderer.render();
                 }
                 frenderer::EventPhase::Quit => {
@@ -85,12 +78,9 @@ impl Engine {
 
 impl Engine {
     fn ensure_spritegroup_size(&mut self, group: usize, count: usize) {
-        if count > self.renderer.sprites.sprite_group_size(group) {
-            self.renderer.sprites.resize_sprite_group(
-                &self.renderer.gpu,
-                group,
-                count.next_power_of_two(),
-            );
+        if count > self.renderer.sprite_group_size(group) {
+            self.renderer
+                .sprite_group_resize(group, count.next_power_of_two());
         }
     }
     pub fn set_camera(&mut self, camera: Camera) {
@@ -98,8 +88,7 @@ impl Engine {
     }
     pub fn add_spritesheet(&mut self, img: image::RgbaImage, label: Option<&str>) -> Spritesheet {
         self.sprite_counts.push(0);
-        Spritesheet(self.renderer.sprites.add_sprite_group(
-            &self.renderer.gpu,
+        Spritesheet(self.renderer.sprite_group_add(
             &self.renderer.create_texture(
                 &img,
                 wgpu::TextureFormat::Rgba8UnormSrgb,

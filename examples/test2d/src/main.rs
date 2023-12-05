@@ -35,8 +35,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut rng = rand::thread_rng();
     const COUNT: usize = 100_000;
-    frend.sprites.add_sprite_group(
-        &frend.gpu,
+    frend.sprite_group_add(
         &sprite_tex,
         (0..COUNT)
             .map(|_n| Transform {
@@ -81,7 +80,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 ..
             } => {
                 // Render prep
-                frend.sprites.set_camera_all(&frend.gpu, camera);
+                frend.sprite_group_set_camera(0, camera);
                 // update sprite positions and sheet regions
                 // ok now render.
                 frend.render();

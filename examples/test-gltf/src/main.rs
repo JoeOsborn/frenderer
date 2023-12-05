@@ -36,13 +36,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         far: 1000.0,
         aspect: 1024.0 / 768.0,
     };
-    frend.meshes.set_camera(&frend.gpu, camera);
-    frend.flats.set_camera(&frend.gpu, camera);
+    frend.mesh_set_camera(camera);
+    frend.flat_set_camera(camera);
 
     let mut rng = rand::thread_rng();
     const COUNT: usize = 100;
     let fox = load_gltf_single_textured(&mut frend, &fox.read(), COUNT as u32);
-    for trf in frend.meshes.get_meshes_mut(fox, 0) {
+    for trf in frend.meshes_mut(fox, 0, ..) {
         *trf = Transform3D {
             translation: Vec3 {
                 x: rng.gen_range(-800.0..800.0),
@@ -59,9 +59,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             scale: rng.gen_range(0.5..1.0),
         };
     }
-    frend.meshes.upload_meshes(&frend.gpu, fox, 0, ..);
     let raccoon = load_gltf_flat(&mut frend, &raccoon.read(), COUNT as u32);
-    for trf in frend.flats.get_meshes_mut(raccoon, 0) {
+    for trf in frend.flats_mut(raccoon, 0, ..) {
         *trf = Transform3D {
             translation: Vec3 {
                 x: rng.gen_range(-800.0..800.0),
@@ -78,7 +77,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             scale: rng.gen_range(24.0..32.0),
         };
     }
-    frend.flats.upload_meshes(&frend.gpu, raccoon, 0, ..);
 
     const DT: f32 = 1.0 / 60.0;
     const DT_FUDGE_AMOUNT: f32 = 0.0002;
@@ -118,7 +116,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // simulate a frame
                     acc -= DT;
                     // rotate every fox a random amount
-                    for trf in frend.meshes.get_meshes_mut(fox, 0) {
+                    for trf in frend.meshes_mut(fox, 0, ..) {
                         trf.rotation = (Rotor3::from_quaternion_array(trf.rotation)
                             * Rotor3::from_euler_angles(
                                 rng.gen_range(0.0..(std::f32::consts::TAU * DT)),
@@ -149,7 +147,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     dbg!(rot.into_angle_plane().0);
                     dbg!(dir, here);
                     camera.translation = here.into();
-                    frend.meshes.upload_meshes(&frend.gpu, fox, 0, ..);
                     //println!("tick");
                     //update_game();
                     // camera.screen_pos[0] += 0.01;
@@ -162,8 +159,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ..
             } => {
                 // Render prep
-                frend.meshes.set_camera(&frend.gpu, camera);
-                frend.flats.set_camera(&frend.gpu, camera);
+                frend.mesh_set_camera(camera);
+                frend.flat_set_camera(camera);
                 // update sprite positions and sheet regions
                 // ok now render.
                 frend.render();
@@ -211,8 +208,7 @@ fn load_gltf_single_textured(
         (img.width(), img.height()),
         None,
     );
-    frend.meshes.add_mesh_group(
-        &frend.gpu,
+    frend.mesh_group_add(
         &tex,
         verts,
         (0..vert_count as u32).collect(),
@@ -266,7 +262,5 @@ fn load_gltf_flat(frend: &mut frenderer::Renderer, asset: &Gltf, instance_count:
         assert!(!entry.submeshes.is_empty());
         entries.push(entry);
     }
-    frend
-        .flats
-        .add_mesh_group(&frend.gpu, &mats, verts, indices, entries)
+    frend.flat_group_add(&mats, verts, indices, entries)
 }

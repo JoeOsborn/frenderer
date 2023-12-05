@@ -170,22 +170,8 @@ impl<G: Game> Engine<G> {
                         sprite_idx += text.len();
                     }
                     assert_eq!(sprite_idx, chara_len + text_len);
-                    // TODO: this could be more efficient by only uploading charas which changed
-                    self.renderer.sprites.upload_sprites(
-                        &self.renderer.gpu,
-                        0,
-                        0..(chara_len + text_len),
-                    );
-                    // update sprites from charas
-                    // update texts
-                    self.renderer
-                        .sprites
-                        .set_camera_all(&self.renderer.gpu, self.camera);
-                    self.renderer.sprites.resize_sprite_group(
-                        &self.renderer.gpu,
-                        0,
-                        chara_len + text_len,
-                    );
+                    self.renderer.sprite_group_set_camera(0, self.camera);
+                    self.renderer.sprite_group_resize(0, chara_len + text_len);
                     self.renderer.render();
                     self.texts.clear();
                 }
@@ -210,12 +196,9 @@ impl<G: Game> Engine<G> {
         }
     }
     fn ensure_spritegroup_size(&mut self, group: usize, count: usize) {
-        if count > self.renderer.sprites.sprite_group_size(group) {
-            self.renderer.sprites.resize_sprite_group(
-                &self.renderer.gpu,
-                group,
-                count.next_power_of_two(),
-            );
+        if count > self.renderer.sprite_group_size(group) {
+            self.renderer
+                .sprite_group_resize(group, count.next_power_of_two());
         }
     }
     pub fn set_camera(&mut self, camera: Camera) {
@@ -230,8 +213,7 @@ impl<G: Game> Engine<G> {
         label: Option<&str>,
     ) -> Spritesheet {
         let img_bytes: Vec<_> = imgs.iter().map(|img| img.as_raw().as_slice()).collect();
-        let idx = self.renderer.sprites.add_sprite_group(
-            &self.renderer.gpu,
+        let idx = self.renderer.sprite_group_add(
             &self.renderer.create_array_texture(
                 &img_bytes,
                 wgpu::TextureFormat::Rgba8UnormSrgb,

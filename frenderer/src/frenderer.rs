@@ -7,6 +7,8 @@
 //! instance, adapter, device, and queue (wrapped in a [`crate::gpu::WGPU`]
 //! struct), dimensions, and surface.
 
+use std::ops::RangeBounds;
+
 use crate::{sprites::SpriteRenderer, WGPU};
 
 pub use crate::meshes::{FlatRenderer, MeshRenderer};
@@ -17,9 +19,15 @@ pub struct Renderer {
     config: wgpu::SurfaceConfiguration,
     depth_texture: wgpu::Texture,
     depth_texture_view: wgpu::TextureView,
-    pub sprites: SpriteRenderer,
-    pub meshes: MeshRenderer,
-    pub flats: FlatRenderer,
+    // These ones are tracked for auto uploading of assets and automatic rendering.
+    // You can make your own renderers and use them for more control.
+    sprites: SpriteRenderer,
+    dirty_sprites: Vec<RangeSet>,
+    meshes: MeshRenderer,
+    dirty_meshes: Vec<Vec<RangeSet>>,
+    flats: FlatRenderer,
+    dirty_flats: Vec<Vec<RangeSet>>,
+    render_count: std::sync::atomic::AtomicUsize,
 }
 
 /// Initialize frenderer with default settings for the current target
@@ -125,6 +133,10 @@ impl Renderer {
             sprites,
             meshes,
             flats,
+            dirty_sprites: Vec::new(),
+            dirty_meshes: Vec::new(),
+            dirty_flats: Vec::new(),
+            render_count: 0.into(),
         }
     }
     /// Resize the internal surface and depth textures (typically called when the window or canvas size changes).
@@ -162,9 +174,10 @@ impl Renderer {
 
     /// Acquire the next frame, create a [`wgpu::RenderPass`], draw
     /// into it, and submit the encoder.
-    pub fn render(&self) {
+    pub fn render(&mut self) {
         let (frame, view, mut encoder) = self.render_setup();
         {
+            let prepared = self.upload_dirty_buffers();
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: None,
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -185,18 +198,64 @@ impl Renderer {
                 }),
                 ..Default::default()
             });
-            self.render_into(&mut rpass);
+            self.render_into(&mut rpass, &prepared);
         }
         self.render_finish(frame, encoder);
+    }
+    pub fn upload_dirty_buffers(&mut self) -> PerFrameData {
+        self.dirty_meshes
+            .iter_mut()
+            .enumerate()
+            .for_each(|(gidx, v)| {
+                v.iter_mut().enumerate().for_each(|(midx, vi)| {
+                    for r in vi.iter() {
+                        self.meshes.upload_meshes(&self.gpu, gidx.into(), midx, r);
+                    }
+                    vi.clear();
+                })
+            });
+        self.dirty_flats
+            .iter_mut()
+            .enumerate()
+            .for_each(|(gidx, v)| {
+                v.iter_mut().enumerate().for_each(|(midx, vi)| {
+                    for r in vi.iter() {
+                        self.flats.upload_meshes(&self.gpu, gidx.into(), midx, r);
+                    }
+                    vi.clear();
+                })
+            });
+        self.dirty_sprites
+            .iter_mut()
+            .enumerate()
+            .for_each(|(which, v)| {
+                for r in v.iter() {
+                    self.sprites.upload_sprites(&self.gpu, which, r);
+                }
+                v.clear();
+            });
+        PerFrameData {
+            marker: self.render_count.load(std::sync::atomic::Ordering::SeqCst),
+        }
     }
     /// Renders all the frenderer stuff into a given
     /// [`wgpu::RenderPass`].  Just does rendering of the built-in
     /// renderers, with no encoder submission or frame
     /// acquire/present.
-    pub fn render_into<'s, 'pass>(&'s self, rpass: &mut wgpu::RenderPass<'pass>)
-    where
+    pub fn render_into<'s, 'pass>(
+        &'s self,
+        rpass: &mut wgpu::RenderPass<'pass>,
+        per_frame: &'pass PerFrameData,
+    ) where
         's: 'pass,
     {
+        let prev_count = self
+            .render_count
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        assert_eq!(
+            per_frame.marker, prev_count,
+            "It's forbidden to reuse per-frame data across render calls"
+        );
         self.meshes.render(rpass, ..);
         self.flats.render(rpass, ..);
         self.sprites.render(rpass, ..);
@@ -298,4 +357,401 @@ impl Renderer {
     ) -> wgpu::Texture {
         self.create_array_texture(&[image], format, (width, height), label)
     }
+
+    /// Create a new sprite group sized to fit `world_transforms` and
+    /// `sheet_regions`, which should be the same size.  Returns the
+    /// sprite group index corresponding to this group.
+    pub fn sprite_group_add(
+        &mut self,
+        tex: &wgpu::Texture,
+        world_transforms: Vec<crate::sprites::Transform>,
+        sheet_regions: Vec<crate::sprites::SheetRegion>,
+        camera: crate::sprites::Camera2D,
+    ) -> usize {
+        let len = world_transforms.len();
+        let which =
+            self.sprites
+                .add_sprite_group(&self.gpu, tex, world_transforms, sheet_regions, camera);
+        if which > self.dirty_sprites.len() {
+            self.dirty_sprites.push(RangeSet::new(len));
+        } else {
+            self.dirty_sprites[which].clear();
+            self.dirty_sprites[which].set_max(len);
+        }
+        self.dirty_sprites[which].extend(..);
+        which
+    }
+    /// Returns the number of sprite groups (including placeholders for removed groups).
+    pub fn sprite_group_count(&self) -> usize {
+        self.sprites.sprite_group_count()
+    }
+    /// Deletes a sprite group, leaving an empty group slot behind (this might get recycled later).
+    pub fn sprite_group_remove(&mut self, which: usize) {
+        self.dirty_sprites[which].clear();
+        self.sprites.remove_sprite_group(which)
+    }
+    /// Reports the size of the given sprite group.  Panics if the given sprite group is not populated.
+    pub fn sprite_group_size(&self, which: usize) -> usize {
+        self.sprites.sprite_group_size(which)
+    }
+    /// Resizes a sprite group.  If the new size is smaller, this is
+    /// very cheap; if it's larger than it's ever been before, it
+    /// might involve reallocating the [`Vec<Transform>`],
+    /// [`Vec<SheetRegion>`], or the GPU buffer used to draw sprites,
+    /// so it could be expensive.
+    ///
+    /// Panics if the given sprite group is not populated.
+    pub fn sprite_group_resize(&mut self, which: usize, len: usize) -> usize {
+        self.dirty_sprites[which].set_max(len);
+        self.dirty_sprites[which].clear();
+        let ret = self.sprites.resize_sprite_group(&self.gpu, which, len);
+        if len > ret {
+            // maybe there was a reallocated buffer, it's hard to know for sure
+            self.dirty_sprites[which].extend(..);
+        } else {
+            // we can get away with not marking anything dirty in this case
+        }
+        ret
+    }
+    /// Set the given camera transform on a specific sprite group.  Uploads to the GPU.
+    /// Panics if the given sprite group is not populated.
+    pub fn sprite_group_set_camera(&mut self, which: usize, camera: crate::sprites::Camera2D) {
+        self.sprites.set_camera(&self.gpu, which, camera)
+    }
+    /// Get a mutable slice of a specified sprite group's world transforms and texture regions.
+    /// Marks these sprites for later upload.
+    ///
+    /// Panics if the given sprite group is not populated or the range is out of bounds.
+    pub fn sprites_mut(
+        &mut self,
+        which: usize,
+        range: impl RangeBounds<usize>,
+    ) -> (
+        &mut [crate::sprites::Transform],
+        &mut [crate::sprites::SheetRegion],
+    ) {
+        let count = self.sprite_group_size(which);
+        let range = crate::range(range, count);
+        self.dirty_sprites[which].extend(range.clone());
+        let (trfs, uvs) = self.sprites.get_sprites_mut(which);
+        (&mut trfs[range.clone()], &mut uvs[range])
+    }
+
+    /// Sets the given camera for all textured mesh groups.
+    pub fn mesh_set_camera(&mut self, camera: crate::meshes::Camera3D) {
+        self.meshes.set_camera(&self.gpu, camera)
+    }
+    /// Add a mesh group with the given array texture.
+    /// All meshes in the group pull from the same vertex buffer, and each submesh is defined in terms of a range of indices within that buffer.
+    /// When loading your mesh resources from whatever format they're stored in, fill out vertex and index vecs while tracking the beginning and end of each mesh and submesh (see [`crate::meshes::MeshEntry`] for details).
+    pub fn mesh_group_add(
+        &mut self,
+        texture: &wgpu::Texture,
+        vertices: Vec<crate::meshes::Vertex>,
+        indices: Vec<u32>,
+        mesh_info: Vec<crate::meshes::MeshEntry>,
+    ) -> crate::meshes::MeshGroup {
+        let which = self
+            .meshes
+            .add_mesh_group(&self.gpu, texture, vertices, indices, mesh_info);
+        let idx = which.index();
+        if idx > self.dirty_meshes.len() {
+            self.dirty_meshes.push(
+                (0..self.meshes.mesh_count(which))
+                    .map(|i| RangeSet::new(self.meshes.mesh_instance_count(which, i)))
+                    .collect(),
+            );
+        } else {
+            self.dirty_meshes[idx]
+                .iter_mut()
+                .enumerate()
+                .for_each(|(ri, rs)| {
+                    rs.clear();
+                    rs.set_max(self.meshes.mesh_instance_count(which, ri));
+                });
+        }
+        self.dirty_meshes[idx].iter_mut().for_each(|rs| {
+            rs.extend(..);
+        });
+        which
+    }
+    /// Deletes a mesh group, leaving an empty placeholder.
+    pub fn mesh_group_remove(&mut self, which: crate::meshes::MeshGroup) {
+        self.meshes.remove_mesh_group(which)
+    }
+    /// Returns how many mesh groups there are.
+    pub fn mesh_group_count(&self) -> usize {
+        self.meshes.mesh_group_count()
+    }
+    /// Returns how many meshes there are in the given mesh group.
+    pub fn mesh_group_size(&self, which: crate::meshes::MeshGroup) -> usize {
+        self.meshes.mesh_count(which)
+    }
+    /// Returns how many mesh instances there are in the given mesh of the given mesh group.
+    pub fn mesh_instance_count(
+        &self,
+        which: crate::meshes::MeshGroup,
+        mesh_number: usize,
+    ) -> usize {
+        self.meshes.mesh_instance_count(which, mesh_number)
+    }
+    /// Change the number of instances of the given mesh of the given mesh group.
+    pub fn mesh_instance_resize(
+        &mut self,
+        which: crate::meshes::MeshGroup,
+        idx: usize,
+        len: usize,
+    ) -> usize {
+        let widx = which.index();
+        self.dirty_meshes[widx][idx].set_max(len);
+        self.dirty_meshes[widx][idx].clear();
+        let ret = self.meshes.resize_group_mesh(&self.gpu, which, idx, len);
+        if len > ret {
+            // maybe there was a reallocated buffer, it's hard to know for sure
+            self.dirty_meshes[widx][idx].extend(..);
+        } else {
+            // we can get away with not marking anything dirty in this case
+        }
+        ret
+    }
+    /// Gets the (mutable) transforms of every instance of the given mesh of a mesh group.
+    pub fn meshes_mut(
+        &mut self,
+        which: crate::meshes::MeshGroup,
+        idx: usize,
+        range: impl RangeBounds<usize>,
+    ) -> &mut [crate::meshes::Transform3D] {
+        let count = self.mesh_group_size(which);
+        let range = crate::range(range, count);
+        let widx = which.index();
+        self.dirty_meshes[widx][idx].extend(range.clone());
+        let trfs = self.meshes.get_meshes_mut(which, idx);
+        &mut trfs[range]
+    }
+
+    /// Sets the given camera for all flat mesh groups.
+    pub fn flat_set_camera(&mut self, camera: crate::meshes::Camera3D) {
+        self.flats.set_camera(&self.gpu, camera)
+    }
+    /// Add a flat mesh group with the given color materials.
+    /// All meshes in the group pull from the same vertex buffer, and each submesh is defined in terms of a range of indices within that buffer.
+    /// When loading your mesh resources from whatever format they're stored in, fill out vertex and index vecs while tracking the beginning and end of each mesh and submesh (see [`crate::meshes::MeshEntry`] for details).
+    pub fn flat_group_add(
+        &mut self,
+        material_colors: &[[f32; 4]],
+        vertices: Vec<crate::meshes::FlatVertex>,
+        indices: Vec<u32>,
+        mesh_info: Vec<crate::meshes::MeshEntry>,
+    ) -> crate::meshes::MeshGroup {
+        let which =
+            self.flats
+                .add_mesh_group(&self.gpu, material_colors, vertices, indices, mesh_info);
+        let idx = which.index();
+        if idx > self.dirty_flats.len() {
+            self.dirty_flats.push(
+                (0..self.flats.mesh_count(which))
+                    .map(|i| RangeSet::new(self.flats.mesh_instance_count(which, i)))
+                    .collect(),
+            );
+        } else {
+            self.dirty_flats[idx]
+                .iter_mut()
+                .enumerate()
+                .for_each(|(ri, rs)| {
+                    rs.clear();
+                    rs.set_max(self.flats.mesh_instance_count(which, ri));
+                });
+        }
+        self.dirty_flats[idx].iter_mut().for_each(|rs| {
+            rs.extend(..);
+        });
+        which
+    }
+    /// Deletes a mesh group, leaving an empty placeholder.
+    pub fn flat_group_remove(&mut self, which: crate::meshes::MeshGroup) {
+        self.flats.remove_mesh_group(which)
+    }
+    /// Returns how many mesh groups there are.
+    pub fn flat_group_count(&self) -> usize {
+        self.flats.mesh_group_count()
+    }
+    /// Returns how many meshes there are in the given mesh group.
+    pub fn flat_group_size(&self, which: crate::meshes::MeshGroup) -> usize {
+        self.flats.mesh_count(which)
+    }
+    /// Returns how many mesh instances there are in the given mesh of the given mesh group.
+    pub fn flat_instance_count(
+        &self,
+        which: crate::meshes::MeshGroup,
+        mesh_number: usize,
+    ) -> usize {
+        self.flats.mesh_instance_count(which, mesh_number)
+    }
+    /// Change the number of instances of the given mesh of the given mesh group.
+    pub fn flat_instance_resize(
+        &mut self,
+        which: crate::meshes::MeshGroup,
+        idx: usize,
+        len: usize,
+    ) -> usize {
+        let widx = which.index();
+        self.dirty_flats[widx][idx].set_max(len);
+        self.dirty_flats[widx][idx].clear();
+        let ret = self.flats.resize_group_mesh(&self.gpu, which, idx, len);
+        if len > ret {
+            // maybe there was a reallocated buffer, it's hard to know for sure
+            self.dirty_flats[widx][idx].extend(..);
+        } else {
+            // we can get away with not marking anything dirty in this case
+        }
+        ret
+    }
+    /// Gets the (mutable) transforms of every instance of the given mesh of a mesh group.
+    pub fn flats_mut(
+        &mut self,
+        which: crate::meshes::MeshGroup,
+        idx: usize,
+        range: impl RangeBounds<usize>,
+    ) -> &mut [crate::meshes::Transform3D] {
+        let count = self.mesh_group_size(which);
+        let range = crate::range(range, count);
+        let widx = which.index();
+        self.dirty_flats[widx][idx].extend(range.clone());
+        let trfs = self.flats.get_meshes_mut(which, idx);
+        &mut trfs[range]
+    }
+}
+struct RangeSet {
+    max: usize,
+    ranges: Vec<(usize, usize)>,
+}
+impl RangeSet {
+    pub fn extend(&mut self, range: impl RangeBounds<usize>) {
+        let range = crate::range(range, self.max);
+        // insert range at the right start
+        // then merge ranges
+        if range.end <= range.start {
+            return;
+        }
+        let rng = (range.start, range.end);
+        let insert = self.ranges.partition_point(|(a, _b)| *a < rng.0);
+        self.ranges.insert(insert, rng);
+        // merge forward from insert - 1
+        self.merge_ranges(insert - 1);
+    }
+    fn merge_ranges(&mut self, start: usize) {
+        let mut i = start;
+        while i < self.ranges.len() {
+            let mut merged_any = false;
+            loop {
+                if (i + 1) == self.ranges.len() {
+                    break;
+                }
+                assert!(i < self.ranges.len());
+                assert!(i + 1 < self.ranges.len());
+                let rng_i = self.ranges[i];
+                let rng_j = self.ranges[i + 1];
+                //if rng_j starts after rng_i ends, remove it and expand rng_i
+                if rng_j.0 <= rng_i.1 {
+                    merged_any = true;
+                    self.ranges[i].1 = rng_j.1.max(rng_i.1);
+                } else {
+                    //otherwise, break
+                    break;
+                }
+            }
+            if !merged_any {
+                break;
+            }
+            i += 1;
+        }
+    }
+    pub fn set_max(&mut self, max: usize) {
+        if max < self.max {
+            self.remove(max..self.max);
+        }
+        self.max = max;
+    }
+    pub fn clear(&mut self) {
+        self.ranges.clear();
+    }
+    pub fn remove(&mut self, range: impl RangeBounds<usize>) {
+        let range = crate::range(range, self.max);
+        let del = (range.start, range.end);
+        // find all ranges which overlap with del.
+        // eliminate from each all the elements of range and if it's empty, remove it
+        let first_bigger = self.ranges.partition_point(|(a, _b)| *a < del.0);
+        let remove_from = if first_bigger == 0 {
+            first_bigger
+        } else {
+            first_bigger - 1
+        };
+        // remove forwards from remove_from until elt doesn't overlap del anymore
+        let mut i = remove_from;
+        while i < self.ranges.len() {
+            let ri = &self.ranges[i];
+            // ri.0 is past the end of del, break
+            if del.1 < ri.0 {
+                break;
+            }
+            // ri is either: contained within del, contains del, or overlaps del.
+            if ri.0 <= del.0 && del.1 <= ri.0 {
+                // ri contains del, it should split into two
+                let before = (ri.0, del.0);
+                let after = (ri.1, del.1);
+                // we know these don't overlap
+                if before.0 != before.1 {
+                    self.ranges[i] = before;
+                    if after.0 != after.1 {
+                        self.ranges.insert(i + 1, after);
+                    }
+                } else if after.0 != after.1 {
+                    self.ranges[i] = after;
+                    break;
+                } else {
+                    self.ranges.remove(i);
+                }
+                // ri contained del, so we're done
+                break;
+            } else if del.0 <= ri.0 && ri.1 <= del.1 {
+                // del contains ri, so ri should just be removed
+                self.ranges.remove(i);
+                // do not change i
+            } else if del.0 <= ri.0 && del.1 < ri.1 {
+                // del overlaps ri on ri's left but doesn't contain it
+                self.ranges[i].0 = del.1 + 1;
+                if self.ranges[i].0 >= self.ranges[i].1 {
+                    self.ranges.remove(i);
+                    // this interval became empty, keep i the same
+                } else {
+                    // this interval is still populated
+                }
+                // at this point, ri+1 definitely starts to the right of ri so to the right of del.
+                break;
+            } else if del.0 < ri.1 && ri.1 < del.1 {
+                // del overlaps ri on ri's right hand side, but not its left
+                self.ranges[i].1 = del.0;
+                if self.ranges[i].0 >= self.ranges[i].1 {
+                    self.ranges.remove(i);
+                    // this interval became empty, keep i the same
+                } else {
+                    // this interval is still populated, but we know ri.1 is bigger than del.1 or else it would have caught on the case above
+                    i += 1;
+                }
+                // continue to the next iteration, del might contain or overlap the next interval too
+            }
+        }
+    }
+    pub fn new(max: usize) -> Self {
+        Self {
+            max,
+            ranges: vec![],
+        }
+    }
+    pub fn iter(&self) -> impl Iterator<Item = std::ops::Range<usize>> + '_ {
+        self.ranges.iter().cloned().map(|(r0, r1)| r0..r1)
+    }
+}
+pub struct PerFrameData {
+    marker: usize,
 }
