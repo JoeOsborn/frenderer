@@ -145,7 +145,7 @@ impl<G: Game> Engine<G> {
                     let text_len: usize = self.texts.iter().map(|t| t.1.len()).sum();
                     self.ensure_spritegroup_size(0, chara_len + text_len);
 
-                    let (trfs, uvs) = self.renderer.sprites.get_sprites_mut(0);
+                    let (trfs, uvs) = self.renderer.sprites_mut(0, 0..(chara_len + text_len));
 
                     for ((_e, (trf, spr)), (out_trf, out_uv)) in self
                         .world_
@@ -160,9 +160,8 @@ impl<G: Game> Engine<G> {
                     let mut sprite_idx = chara_len;
                     for TextDraw(font, text, pos, sz) in self.texts.iter() {
                         font.draw_text(
-                            &mut self.renderer.sprites,
-                            0,
-                            sprite_idx,
+                            &mut trfs[chara_len..(chara_len + text_len)],
+                            &mut uvs[chara_len..(chara_len + text_len)],
                             text,
                             (*pos).into(),
                             *sz,
