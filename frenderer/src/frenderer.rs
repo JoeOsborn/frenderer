@@ -7,7 +7,7 @@
 //! instance, adapter, device, and queue (wrapped in a [`crate::gpu::WGPU`]
 //! struct), dimensions, and surface.
 
-use std::ops::RangeBounds;
+use std::ops::{Range, RangeBounds};
 
 use crate::{sprites::SpriteRenderer, WGPU};
 
@@ -24,6 +24,13 @@ pub struct Renderer {
     sprites: SpriteRenderer,
     meshes: MeshRenderer,
     flats: FlatRenderer,
+    queued_uploads: Vec<Upload>,
+}
+
+enum Upload {
+    Mesh(crate::meshes::MeshGroup, usize, Range<usize>),
+    Flat(crate::meshes::MeshGroup, usize, Range<usize>),
+    Sprite(usize, Range<usize>),
 }
 
 /// Initialize frenderer with default settings for the current target
@@ -129,6 +136,7 @@ impl Renderer {
             sprites,
             meshes,
             flats,
+            queued_uploads: Vec::with_capacity(16),
         }
     }
     /// Resize the internal surface and depth textures (typically called when the window or canvas size changes).
@@ -164,9 +172,25 @@ impl Renderer {
         (texture, view)
     }
 
+    /// Uploads sprite, mesh, and flat data accessed since the last
+    /// time [`do_uploads`] was called.  Call this manually if you
+    /// want, or let [`render`] call it automatically.
+    pub fn do_uploads(&mut self) {
+        for upload in self.queued_uploads.drain(..) {
+            match upload {
+                Upload::Mesh(mg, m, r) => self.meshes.upload_meshes(&self.gpu, mg, m, r),
+                Upload::Flat(mg, m, r) => self.flats.upload_meshes(&self.gpu, mg, m, r),
+                Upload::Sprite(s, r) => self.sprites.upload_sprites(&self.gpu, s, r),
+            }
+        }
+    }
+
     /// Acquire the next frame, create a [`wgpu::RenderPass`], draw
     /// into it, and submit the encoder.
+    /// This also queues uploads of mesh, sprite, or other instance data, so if you don't use render
+    /// in your code be sure to call [`do_uploads`] if you're using the built-in mesh, flat, or sprite renderers.
     pub fn render(&mut self) {
+        self.do_uploads();
         let (frame, view, mut encoder) = self.render_setup();
         {
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -345,6 +369,8 @@ impl Renderer {
     }
     /// Get a mutable slice of a specified sprite group's world transforms and texture regions.
     /// Marks these sprites for later upload.
+    /// Since this causes an upload later on, call it as few times as possible per frame.
+    /// Most importantly, don't call it with lots of tiny regions or overlapped regions.
     ///
     /// Panics if the given sprite group is not populated or the range is out of bounds.
     pub fn sprites_mut(
@@ -357,7 +383,8 @@ impl Renderer {
     ) {
         let count = self.sprite_group_size(which);
         let range = crate::range(range, count);
-        self.sprites.upload_sprites(&self.gpu, which, range.clone());
+        self.queued_uploads
+            .push(Upload::Sprite(which, range.clone()));
         let (trfs, uvs) = self.sprites.get_sprites_mut(which);
         (&mut trfs[range.clone()], &mut uvs[range])
     }
@@ -409,16 +436,18 @@ impl Renderer {
         self.meshes.resize_group_mesh(&self.gpu, which, idx, len)
     }
     /// Gets the (mutable) transforms of every instance of the given mesh of a mesh group.
+    /// Since this causes an upload later on, call it as few times as possible per frame.
+    /// Most importantly, don't call it with lots of tiny regions or overlapped regions.
     pub fn meshes_mut(
         &mut self,
         which: crate::meshes::MeshGroup,
         idx: usize,
         range: impl RangeBounds<usize>,
     ) -> &mut [crate::meshes::Transform3D] {
-        let count = self.mesh_group_size(which);
+        let count = self.meshes.mesh_instance_count(which, idx);
         let range = crate::range(range, count);
-        self.meshes
-            .upload_meshes(&self.gpu, which, idx, range.clone());
+        self.queued_uploads
+            .push(Upload::Mesh(which, idx, range.clone()));
         let trfs = self.meshes.get_meshes_mut(which, idx);
         &mut trfs[range]
     }
@@ -470,16 +499,18 @@ impl Renderer {
         self.flats.resize_group_mesh(&self.gpu, which, idx, len)
     }
     /// Gets the (mutable) transforms of every instance of the given mesh of a mesh group.
+    /// Since this causes an upload later on, call it as few times as possible per frame.
+    /// Most importantly, don't call it with lots of tiny regions or overlapped regions.
     pub fn flats_mut(
         &mut self,
         which: crate::meshes::MeshGroup,
         idx: usize,
         range: impl RangeBounds<usize>,
     ) -> &mut [crate::meshes::Transform3D] {
-        let count = self.mesh_group_size(which);
+        let count = self.flats.mesh_instance_count(which, idx);
         let range = crate::range(range, count);
-        self.flats
-            .upload_meshes(&self.gpu, which, idx, range.clone());
+        self.queued_uploads
+            .push(Upload::Flat(which, idx, range.clone()));
         let trfs = self.flats.get_meshes_mut(which, idx);
         &mut trfs[range]
     }

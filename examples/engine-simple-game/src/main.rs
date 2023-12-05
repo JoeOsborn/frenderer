@@ -183,6 +183,15 @@ impl engine::Game for Game {
         self.apples.retain(|apple| apple.pos.y > -8.0)
     }
     fn render(&mut self, engine: &mut Engine) {
+        let score_str = self.score.to_string();
+        let text_len = score_str.len();
+        const WALL_START: usize = 1;
+        let guy_idx = WALL_START + self.walls.len();
+        let apple_start = guy_idx + 1;
+        let sprite_count = apple_start + self.apples.len();
+        engine
+            .renderer
+            .sprite_group_resize(0, sprite_count + text_len);
         // set bg image
         let (trfs, uvs) = engine.renderer.sprites_mut(0, ..);
         trfs[0] = AABB {
@@ -195,8 +204,6 @@ impl engine::Game for Game {
         .into();
         uvs[0] = SheetRegion::new(0, 0, 0, 16, 640, 480);
         // set walls
-        const WALL_START: usize = 1;
-        let guy_idx = WALL_START + self.walls.len();
         for (wall, (trf, uv)) in self.walls.iter().zip(
             trfs[WALL_START..guy_idx]
                 .iter_mut()
@@ -214,7 +221,6 @@ impl engine::Game for Game {
         // TODO animation frame
         uvs[guy_idx] = SheetRegion::new(0, 16, 480, 8, 16, 16);
         // set apple
-        let apple_start = guy_idx + 1;
         for (apple, (trf, uv)) in self.apples.iter().zip(
             trfs[apple_start..]
                 .iter_mut()
@@ -227,9 +233,6 @@ impl engine::Game for Game {
             .into();
             *uv = SheetRegion::new(0, 0, 496, 4, 16, 16);
         }
-        let sprite_count = apple_start + self.apples.len();
-        let score_str = self.score.to_string();
-        let text_len = score_str.len();
         self.font.draw_text(
             &mut trfs[sprite_count..],
             &mut uvs[sprite_count..],
@@ -241,9 +244,6 @@ impl engine::Game for Game {
             .into(),
             16.0,
         );
-        engine
-            .renderer
-            .sprite_group_resize(0, sprite_count + text_len);
         engine.renderer.sprite_group_set_camera(0, self.camera);
     }
 }

@@ -123,7 +123,7 @@ impl Engine {
 
 impl Engine {
     fn ensure_spritegroup_size(&mut self, group: usize, count: usize) {
-        if count > self.renderer.sprite_group_size(group) {
+        if count > self.sprite_renderer.sprite_group_size(group) {
             // grow big enough to get enough capacity (and limit number of reallocations)
             self.sprite_renderer.resize_sprite_group(
                 &self.renderer.gpu,

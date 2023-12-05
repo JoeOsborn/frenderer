@@ -26,13 +26,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         translation: Vec3 {
             x: 0.0,
             y: 0.0,
-            z: -100.0,
+            z: -10.0,
         }
         .into(),
         rotation: Rotor3::from_rotation_xz(0.0).into_quaternion_array(),
         // 90 degrees is typical
         fov: std::f32::consts::FRAC_PI_2,
-        near: 10.0,
+        near: 1.0,
         far: 1000.0,
         aspect: 1024.0 / 768.0,
     };
@@ -45,9 +45,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for trf in frend.meshes_mut(fox, 0, ..) {
         *trf = Transform3D {
             translation: Vec3 {
-                x: rng.gen_range(-800.0..800.0),
-                y: rng.gen_range(-600.0..600.0),
-                z: rng.gen_range(-500.0..-100.0),
+                x: rng.gen_range(-80.0..80.0),
+                y: rng.gen_range(-60.0..60.0),
+                z: rng.gen_range(-50.0..50.0),
             }
             .into(),
             rotation: Rotor3::from_euler_angles(
@@ -56,16 +56,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 rng.gen_range(0.0..std::f32::consts::TAU),
             )
             .into_quaternion_array(),
-            scale: rng.gen_range(0.5..1.0),
+            scale: rng.gen_range(0.01..0.10),
         };
     }
     let raccoon = load_gltf_flat(&mut frend, &raccoon.read(), COUNT as u32);
     for trf in frend.flats_mut(raccoon, 0, ..) {
         *trf = Transform3D {
             translation: Vec3 {
-                x: rng.gen_range(-800.0..800.0),
-                y: rng.gen_range(-600.0..600.0),
-                z: rng.gen_range(-500.0..-100.0),
+                x: rng.gen_range(-80.0..80.0),
+                y: rng.gen_range(-60.0..60.0),
+                z: rng.gen_range(-50.0..50.0),
             }
             .into(),
             rotation: Rotor3::from_euler_angles(
@@ -74,7 +74,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 rng.gen_range(0.0..std::f32::consts::TAU),
             )
             .into_quaternion_array(),
-            scale: rng.gen_range(24.0..32.0),
+            scale: rng.gen_range(3.0..6.0),
         };
     }
 
@@ -124,11 +124,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 rng.gen_range(0.0..(std::f32::consts::TAU * DT)),
                             ))
                         .into_quaternion_array();
-                        trf.translation[1] += 50.0 * DT;
+                        trf.translation[1] += 5.0 * DT;
                     }
-                    let (mx, _my): (f32, f32) = input.mouse_delta().into();
+                    let (mx, my): (f32, f32) = input.mouse_delta().into();
                     let mut rot = Rotor3::from_quaternion_array(camera.rotation)
-                        * Rotor3::from_rotation_xz(mx * std::f32::consts::FRAC_PI_4 * DT);
+                        * Rotor3::from_rotation_xz(mx * std::f32::consts::FRAC_PI_4 * DT)
+                        * Rotor3::from_rotation_yz(my * std::f32::consts::FRAC_PI_4 * DT);
                     rot.normalize();
                     camera.rotation = rot.into_quaternion_array();
                     let dx = input.key_axis(Key::KeyA, Key::KeyD);
@@ -140,12 +141,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     };
                     let here = if dir.mag_sq() > 0.0 {
                         dir.normalize();
-                        Vec3::from(camera.translation) + rot * dir * 200.0 * DT
+                        Vec3::from(camera.translation) + rot * dir * 80.0 * DT
                     } else {
                         Vec3::from(camera.translation)
                     };
-                    dbg!(rot.into_angle_plane().0);
-                    dbg!(dir, here);
                     camera.translation = here.into();
                     //println!("tick");
                     //update_game();
