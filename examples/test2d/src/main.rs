@@ -100,7 +100,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 //             },
                 //         })],
                 //         depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                //             view: &frend.gpu.depth_texture_view,
+                //             view: frend.depth_texture_view(),
                 //             depth_ops: Some(wgpu::Operations {
                 //                 load: wgpu::LoadOp::Clear(1.0),
                 //                 store: true,

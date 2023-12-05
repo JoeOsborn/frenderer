@@ -446,7 +446,10 @@ impl SpriteRenderer {
     /// very cheap; if it's larger than it's ever been before, it
     /// might involve reallocating the [`Vec<Transform>`],
     /// [`Vec<SheetRegion>`], or the GPU buffer used to draw sprites,
-    /// so it could be expensive.
+    /// so it could be expensive.  If this happens, the buffer will
+    /// also be uploaded to prevent garbage data from being used in
+    /// the shader.  To avoid redundant work, resize upwards as few
+    /// times as possible.
     ///
     /// Panics if the given sprite group is not populated.
     pub fn resize_sprite_group(&mut self, gpu: &WGPU, which: usize, len: usize) -> usize {
