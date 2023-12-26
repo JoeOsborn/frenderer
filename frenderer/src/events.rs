@@ -44,7 +44,7 @@ impl<T> FrendererEvents<T> for crate::Renderer {
                 event: winit::event::WindowEvent::Resized(size),
                 ..
             } => {
-                self.resize(size.width, size.height);
+                self.resize_surface(size.width, size.height);
                 window.request_redraw();
                 EventPhase::Wait
             }

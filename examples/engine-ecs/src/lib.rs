@@ -52,7 +52,7 @@ impl<G: Game> Engine<G> {
     pub fn new(builder: winit::window::WindowBuilder) -> Result<Self, Box<dyn std::error::Error>> {
         let event_loop = winit::event_loop::EventLoop::new()?;
         let window = Arc::new(builder.build(&event_loop)?);
-        let renderer = frenderer::with_default_runtime(window.clone())?;
+        let renderer = frenderer::with_default_runtime(window.clone(), None)?;
         let input = Input::default();
         let camera = Camera {
             screen_pos: [0.0, 0.0],

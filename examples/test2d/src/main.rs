@@ -7,7 +7,7 @@ use rand::Rng;
 fn main() -> Result<(), Box<dyn Error>> {
     let event_loop = winit::event_loop::EventLoop::new()?;
     let window = std::sync::Arc::new(winit::window::Window::new(&event_loop)?);
-    let mut frend = frenderer::with_default_runtime(window.clone())?;
+    let mut frend = frenderer::with_default_runtime(window.clone(), None)?;
     let mut input = input::Input::default();
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -72,7 +72,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 event: WindowEvent::Resized(size),
                 ..
             } => {
-                frend.resize(size.width, size.height);
+                frend.resize_surface(size.width, size.height);
                 window.request_redraw();
             }
             Event::WindowEvent {

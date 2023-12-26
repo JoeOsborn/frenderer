@@ -9,21 +9,27 @@
 
 use std::ops::{Range, RangeBounds};
 
-use crate::{sprites::SpriteRenderer, WGPU};
+use crate::{postprocess::PostRenderer, sprites::SpriteRenderer, WGPU};
 
 pub use crate::meshes::{FlatRenderer, MeshRenderer};
 /// A wrapper over GPU state, surface, depth texture, and some renderers.
+#[allow(dead_code)]
 pub struct Renderer {
     pub gpu: WGPU,
+    render_width: u32,
+    render_height: u32,
     surface: wgpu::Surface<'static>,
     config: wgpu::SurfaceConfiguration,
     depth_texture: wgpu::Texture,
     depth_texture_view: wgpu::TextureView,
+    color_texture: wgpu::Texture,
+    color_texture_view: wgpu::TextureView,
     // These ones are tracked for auto uploading of assets and automatic rendering.
     // You can make your own renderers and use them for more control.
     sprites: SpriteRenderer,
     meshes: MeshRenderer,
     flats: FlatRenderer,
+    postprocess: PostRenderer,
     queued_uploads: Vec<Upload>,
 }
 
@@ -40,13 +46,17 @@ enum Upload {
 #[cfg(all(not(target_arch = "wasm32"), feature = "winit"))]
 pub fn with_default_runtime(
     window: std::sync::Arc<winit::window::Window>,
+    render_size: Option<(u32, u32)>,
 ) -> Result<Renderer, Box<dyn std::error::Error>> {
     env_logger::init();
-    let sz = window.inner_size();
+    let wsz = window.inner_size();
+    let sz = render_size.unwrap_or_else(|| (wsz.width, wsz.height));
     let instance = wgpu::Instance::default();
     Renderer::with_runtime(
-        sz.width,
-        sz.height,
+        sz.0,
+        sz.1,
+        wsz.width,
+        wsz.height,
         &instance,
         instance.create_surface(window)?,
         super::PollsterRuntime(0),
@@ -55,7 +65,10 @@ pub fn with_default_runtime(
 #[cfg(all(target_arch = "wasm32", feature = "winit"))]
 pub fn with_default_runtime(
     window: std::sync::Arc<winit::window::Window>,
+    render_size: Option<(u32, u32)>,
 ) -> Result<super::Frenderer, Box<dyn std::error::Error>> {
+    let wsz = window.inner_size();
+    let sz = render_size.unwrap_or_else(|| (wsz.width, wsz.height));
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
     console_log::init_with_level(log::Level::Trace).expect("could not initialize logger");
     use winit::platform::web::WindowExtWebSys;
@@ -70,8 +83,10 @@ pub fn with_default_runtime(
         .expect("couldn't append canvas to document body");
     let instance = wgpu::Instance::default();
     Renderer::with_runtime(
-        sz.width,
-        sz.height,
+        sz.0,
+        sz.1,
+        wsz.width,
+        wsz.height,
         instance,
         instance.create_surface(window)?,
         super::WebRuntime(0),
@@ -85,17 +100,28 @@ impl Renderer {
     pub fn with_runtime<RT: crate::Runtime>(
         width: u32,
         height: u32,
+        surf_width: u32,
+        surf_height: u32,
         instance: &wgpu::Instance,
         surface: wgpu::Surface<'static>,
         runtime: RT,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let gpu = runtime.run_future(WGPU::new(instance, Some(&surface)))?;
-        Ok(Self::with_gpu(width, height, gpu, surface))
+        Ok(Self::with_gpu(
+            width,
+            height,
+            surf_width,
+            surf_height,
+            gpu,
+            surface,
+        ))
     }
     /// Create a new Renderer with a full set of GPU resources, a size, and a surface.
     pub fn with_gpu(
         width: u32,
         height: u32,
+        surf_width: u32,
+        surf_height: u32,
         gpu: crate::gpu::WGPU,
         surface: wgpu::Surface<'static>,
     ) -> Self {
@@ -114,47 +140,83 @@ impl Renderer {
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: swapchain_format,
-            width,
-            height,
+            width: surf_width,
+            height: surf_height,
             present_mode: wgpu::PresentMode::AutoNoVsync,
             alpha_mode: swapchain_capabilities.alpha_modes[0],
             view_formats: vec![],
         };
 
         surface.configure(gpu.device(), &config);
-        let (depth_texture, depth_texture_view) = Self::create_depth_texture(gpu.device(), &config);
+        let (color_texture, color_texture_view) =
+            Self::create_color_texture(gpu.device(), width, height, swapchain_format);
+        let postprocess = PostRenderer::new(&gpu, &color_texture, config.format.into());
+        let (depth_texture, depth_texture_view) =
+            Self::create_depth_texture(gpu.device(), width, height);
 
-        let sprites = SpriteRenderer::new(&gpu, config.format.into(), depth_texture.format());
-        let meshes = MeshRenderer::new(&gpu, config.format.into(), depth_texture.format());
-        let flats = FlatRenderer::new(&gpu, config.format.into(), depth_texture.format());
+        let intermediate_color_state = wgpu::ColorTargetState {
+            format: color_texture.format(),
+            blend: Some(wgpu::BlendState {
+                color: wgpu::BlendComponent::OVER,
+                alpha: wgpu::BlendComponent::OVER,
+            }),
+            write_mask: wgpu::ColorWrites::ALL,
+        };
+        let sprites = SpriteRenderer::new(
+            &gpu,
+            intermediate_color_state.clone(),
+            depth_texture.format(),
+        );
+        let meshes = MeshRenderer::new(
+            &gpu,
+            intermediate_color_state.clone(),
+            depth_texture.format(),
+        );
+        let flats = FlatRenderer::new(&gpu, intermediate_color_state, depth_texture.format());
         Self {
             gpu,
+            render_width: width,
+            render_height: height,
             surface,
             config,
             depth_texture,
             depth_texture_view,
+            postprocess,
             sprites,
             meshes,
             flats,
             queued_uploads: Vec::with_capacity(16),
+            color_texture,
+            color_texture_view,
         }
     }
     /// Resize the internal surface and depth textures (typically called when the window or canvas size changes).
-    pub fn resize(&mut self, w: u32, h: u32) {
+    pub fn resize_surface(&mut self, w: u32, h: u32) {
         self.config.width = w;
         self.config.height = h;
         self.surface.configure(self.gpu.device(), &self.config);
-        let (depth_tex, depth_view) = Self::create_depth_texture(self.gpu.device(), &self.config);
+    }
+    pub fn resize_render(&mut self, w: u32, h: u32) {
+        self.render_width = w;
+        self.render_height = h;
+        let (color_texture, color_texture_view) =
+            Self::create_color_texture(self.gpu.device(), w, h, self.config.format);
+        self.color_texture = color_texture;
+        self.color_texture_view = color_texture_view;
+        self.postprocess
+            .replace_color_texture(&self.gpu, &self.color_texture);
+        let (depth_tex, depth_view) = Self::create_depth_texture(self.gpu.device(), w, h);
         self.depth_texture = depth_tex;
         self.depth_texture_view = depth_view;
     }
     fn create_depth_texture(
         device: &wgpu::Device,
-        config: &wgpu::SurfaceConfiguration,
+        width: u32,
+        height: u32,
     ) -> (wgpu::Texture, wgpu::TextureView) {
         let size = wgpu::Extent3d {
-            width: config.width,
-            height: config.height,
+            width,
+            height,
             depth_or_array_layers: 1,
         };
         let desc = wgpu::TextureDescriptor {
@@ -164,6 +226,31 @@ impl Renderer {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: Self::DEPTH_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        };
+        let texture = device.create_texture(&desc);
+        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+        (texture, view)
+    }
+    fn create_color_texture(
+        device: &wgpu::Device,
+        width: u32,
+        height: u32,
+        format: wgpu::TextureFormat,
+    ) -> (wgpu::Texture, wgpu::TextureView) {
+        let size = wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        };
+        let desc = wgpu::TextureDescriptor {
+            label: Some("color"),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         };
@@ -196,7 +283,7 @@ impl Renderer {
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: None,
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
+                    view: &self.color_texture_view,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
@@ -214,6 +301,22 @@ impl Renderer {
                 ..Default::default()
             });
             self.render_into(&mut rpass);
+        }
+        {
+            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: None,
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                ..Default::default()
+            });
+            self.postprocess.render(&mut rpass);
         }
         self.render_finish(frame, encoder);
     }

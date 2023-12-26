@@ -17,7 +17,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(target_arch = "wasm32")]
     let source = assets_manager::source::Embedded::from(source::embed!("content"));
     let cache = assets_manager::AssetCache::with_source(source);
-    let mut frend = frenderer::with_default_runtime(window.clone())?;
+    let mut frend = frenderer::with_default_runtime(window.clone(), None)?;
     let mut input = input::Input::default();
     let fox = cache.load::<assets_manager::asset::Gltf>("khronos.Fox.glTF-Binary.Fox")?;
     let raccoon = cache.load::<assets_manager::asset::Gltf>("low_poly_raccoon.scene")?;
@@ -168,7 +168,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 event: winit::event::WindowEvent::Resized(size),
                 ..
             } => {
-                frend.resize(size.width, size.height);
+                frend.resize_surface(size.width, size.height);
                 window.request_redraw();
             }
             event => {

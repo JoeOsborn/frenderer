@@ -26,7 +26,7 @@ impl Engine {
     ) -> Result<Engine, Box<dyn std::error::Error>> {
         let event_loop = winit::event_loop::EventLoop::new()?;
         let window = Arc::new(builder.build(&event_loop)?);
-        let renderer = frenderer::with_default_runtime(window.clone())?;
+        let renderer = frenderer::with_default_runtime(window.clone(), None)?;
         let input = Input::default();
         Ok(Self {
             renderer,
