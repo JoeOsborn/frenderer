@@ -1,6 +1,6 @@
 use std::{any::Any, ops::Range};
 
-pub use frenderer::{input::Input, Frenderer, Camera2D, Region, Transform};
+pub use frenderer::{input::Input, Camera2D, Frenderer, Region, Transform};
 pub struct Engine {
     pub renderer: Frenderer,
     pub input: Input,
@@ -13,7 +13,7 @@ impl Engine {
     pub fn new(builder: winit::window::WindowBuilder) -> Self {
         let event_loop = winit::event_loop::EventLoop::new();
         let window = builder.build(&event_loop).unwrap();
-        let renderer = frenderer::with_default_runtime(&window);
+        let renderer = frenderer::with_default_runtime(&window, None);
         let camera = geom::Rect {
             pos: geom::Vec2 { x: 0.0, y: 0.0 },
             size: geom::Vec2 {

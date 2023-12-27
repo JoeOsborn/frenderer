@@ -112,7 +112,8 @@ impl engine::Game for Game {
             spritesheet,
             '0'..='9',
             SheetRegion::new(0, 0, 512, 0, 80, 8),
-            10,
+            8,
+            8,
         );
         Game {
             apple_timer: 0,
@@ -123,7 +124,9 @@ impl engine::Game for Game {
         }
     }
     fn update(&mut self, engine: &mut Engine) {
-        let dir = engine.input.key_axis(engine::Key::Left, engine::Key::Right);
+        let dir = engine
+            .input
+            .key_axis(engine::Key::ArrowLeft, engine::Key::ArrowRight);
         engine[self.guy].set_vel(Vec2 {
             x: dir * GUY_SPEED,
             y: 0.0,
@@ -191,6 +194,6 @@ impl engine::Game for Game {
         );
     }
 }
-fn main() {
-    Engine::new(winit::window::WindowBuilder::new()).run();
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    Engine::new(winit::window::WindowBuilder::new())?.run()
 }

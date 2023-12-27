@@ -105,6 +105,6 @@ var s_diffuse: sampler;
 fn fs_main(in:VertexOutput) -> @location(0) vec4<f32> {
     // And we use the tex coords from the vertex output to sample from the texture.
     let color:vec4<f32> = textureSample(t_diffuse, s_diffuse, in.tex_coords, in.tex_index);
-    if color.w < 0.2 { discard; }
+    if color.w < 0.05 { discard; }
     return color;
 }

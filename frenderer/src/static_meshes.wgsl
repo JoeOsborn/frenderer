@@ -101,7 +101,7 @@ fn fs_main(in:VertexOutput) -> @location(0) vec4<f32> {
 }
 
 // Now our fragment shader needs a global uniform of colors.
-// Without storage buffers we can't support more than 4096KB i.e. 256 colors (4*4*256=4096)
+// Without storage buffers we can't support more than 4096KB i.e. 256 colors.
 @group(1) @binding(0)
 var<uniform> mat_diffuse: array<vec4<f32>, 256>;
 

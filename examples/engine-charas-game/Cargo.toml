@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 engine-charas = {path="../engine-charas"}
-winit = "0.28"
+winit = "0.29"
 rand = "0.8"
 image = {version="0.24.7", features=["png"]}
 

@@ -1,35 +1,28 @@
+use assets_manager::asset::Png;
+use std::error::Error;
+
 use frenderer::{input, wgpu, Camera2D, SheetRegion, Transform};
 use rand::Rng;
 
-fn main() {
-    let event_loop = winit::event_loop::EventLoop::new();
-    let window = winit::window::Window::new(&event_loop).unwrap();
-    let mut frend = frenderer::with_default_runtime(&window);
+fn main() -> Result<(), Box<dyn Error>> {
+    let event_loop = winit::event_loop::EventLoop::new()?;
+    let window = std::sync::Arc::new(winit::window::Window::new(&event_loop)?);
+    let mut frend = frenderer::with_default_runtime(window.clone(), Some((1024, 768)))?;
     let mut input = input::Input::default();
-    // init game code here
-    #[cfg(target_arch = "wasm32")]
-    let sprite_img = {
-        let img_bytes = include_bytes!("content/king.png");
-        image::load_from_memory_with_format(&img_bytes, image::ImageFormat::Png)
-            .map_err(|e| e.to_string())
-            .unwrap()
-            .into_rgba8()
-    };
-    #[cfg(not(target_arch = "wasm32"))]
-    let sprite_img = image::open("content/king.png").unwrap().into_rgba8();
 
-    #[cfg(target_arch = "wasm32")]
-    let sprite_invert_img = {
-        let img_bytes = include_bytes!("content/king_invert.png");
-        image::load_from_memory_with_format(&img_bytes, image::ImageFormat::Png)
-            .map_err(|e| e.to_string())
-            .unwrap()
-            .into_rgba8()
-    };
     #[cfg(not(target_arch = "wasm32"))]
-    let sprite_invert_img = image::open("content/king_invert.png").unwrap().into_rgba8();
+    let source = assets_manager::source::FileSystem::new("content")?;
+    #[cfg(target_arch = "wasm32")]
+    let source = assets_manager::source::Embedded::from(source::embed!("content"));
+    let cache = assets_manager::AssetCache::with_source(source);
 
-    let sprite_tex = frend.gpu.create_array_texture(
+    let sprite_img_handle = cache.load::<Png>("king")?;
+    let sprite_img = sprite_img_handle.read().0.to_rgba8();
+
+    let sprite_invert_img_handle = cache.load::<Png>("king_invert")?;
+    let sprite_invert_img = sprite_invert_img_handle.read().0.to_rgba8();
+
+    let sprite_tex = frend.create_array_texture(
         &[&sprite_img, &sprite_invert_img],
         wgpu::TextureFormat::Rgba8UnormSrgb,
         sprite_img.dimensions(),
@@ -42,8 +35,7 @@ fn main() {
 
     let mut rng = rand::thread_rng();
     const COUNT: usize = 100_000;
-    frend.sprites.add_sprite_group(
-        &frend.gpu,
+    frend.sprite_group_add(
         &sprite_tex,
         (0..COUNT)
             .map(|_n| Transform {
@@ -66,17 +58,63 @@ fn main() {
     const TIME_SNAPS: [f32; 5] = [15.0, 30.0, 60.0, 120.0, 144.0];
     let mut acc = 0.0;
     let mut now = std::time::Instant::now();
-    event_loop.run(move |event, _, control_flow| {
+    Ok(event_loop.run(move |event, target| {
         use winit::event::{Event, WindowEvent};
-        control_flow.set_poll();
+        target.set_control_flow(winit::event_loop::ControlFlow::Poll);
         match event {
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
                 ..
             } => {
-                *control_flow = winit::event_loop::ControlFlow::Exit;
+                target.exit();
             }
-            Event::MainEventsCleared => {
+            Event::WindowEvent {
+                event: WindowEvent::Resized(size),
+                ..
+            } => {
+                frend.resize_surface(size.width, size.height);
+                window.request_redraw();
+            }
+            Event::WindowEvent {
+                event: WindowEvent::RedrawRequested,
+                ..
+            } => {
+                // Render prep
+                frend.sprite_group_set_camera(0, camera);
+                // update sprite positions and sheet regions
+                // ok now render.
+                frend.render();
+                // Or we could do this to integrate frenderer into a larger system.
+                // (This first call isn't necessary if we make our own framebuffer/view and encoder)
+                // let (frame, view, mut encoder) = frend.render_setup();
+                // {
+                //     // This is us manually making a renderpass
+                //     let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                //         label: None,
+                //         color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                //             view: &view,
+                //             resolve_target: None,
+                //             ops: frenderer::wgpu::Operations {
+                //                 load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                //                 store: true,
+                //             },
+                //         })],
+                //         depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                //             view: frend.depth_texture_view(),
+                //             depth_ops: Some(wgpu::Operations {
+                //                 load: wgpu::LoadOp::Clear(1.0),
+                //                 store: true,
+                //             }),
+                //             stencil_ops: None,
+                //         }),
+                //     });
+                //     // frend has render_into to do the actual rendering
+                //     frend.render_into(&mut rpass);
+                // }
+                // // This just submits the command encoder and presents the frame, we wouldn't need it if we did that some other way.
+                // frend.render_finish(frame, encoder);
+            }
+            Event::AboutToWait => {
                 // compute elapsed time since last frame
                 let mut elapsed = now.elapsed().as_secs_f32();
                 println!("{elapsed}");
@@ -102,48 +140,11 @@ fn main() {
                     camera.screen_pos[0] += 0.01;
                     input.next_frame();
                 }
-                // Render prep
-                frend.sprites.set_camera_all(&frend.gpu, camera);
-                // update sprite positions and sheet regions
-                // ok now render.
-                frend.render();
-                // Or we could do this to integrate frenderer into a larger system.
-                // (This first call isn't necessary if we make our own framebuffer/view and encoder)
-                // let (frame, view, mut encoder) = frend.render_setup();
-                // {
-                //     // This is us manually making a renderpass
-                //     let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                //         label: None,
-                //         color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                //             view: &view,
-                //             resolve_target: None,
-                //             ops: frenderer::wgpu::Operations {
-                //                 load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                //                 store: true,
-                //             },
-                //         })],
-                //         depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                //             view: &frend.gpu.depth_texture_view,
-                //             depth_ops: Some(wgpu::Operations {
-                //                 load: wgpu::LoadOp::Clear(1.0),
-                //                 store: true,
-                //             }),
-                //             stencil_ops: None,
-                //         }),
-                //     });
-                //     // frend has render_into to do the actual rendering
-                //     frend.render_into(&mut rpass);
-                // }
-                // // This just submits the command encoder and presents the frame, we wouldn't need it if we did that some other way.
-                // frend.render_finish(frame, encoder);
                 window.request_redraw();
             }
             event => {
-                if frend.process_window_event(&event) {
-                    window.request_redraw();
-                }
                 input.process_input_event(&event);
             }
         }
-    });
+    })?)
 }

@@ -45,14 +45,13 @@ impl engine::Game for Game {
         };
         #[cfg(not(target_arch = "wasm32"))]
         let sprite_img = image::open("content/demo.png").unwrap().into_rgba8();
-        let sprite_tex = engine.renderer.gpu.create_texture(
+        let sprite_tex = engine.renderer.create_texture(
             &sprite_img,
             wgpu::TextureFormat::Rgba8UnormSrgb,
             sprite_img.dimensions(),
             Some("spr-demo.png"),
         );
-        engine.renderer.sprites.add_sprite_group(
-            &engine.renderer.gpu,
+        engine.renderer.sprite_group_add(
             &sprite_tex,
             vec![Transform::zeroed(); SPRITE_MAX], //bg, three walls, guy, a few apples
             vec![SheetRegion::zeroed(); SPRITE_MAX],
@@ -83,7 +82,8 @@ impl engine::Game for Game {
         let font = engine::BitFont::with_sheet_region(
             '0'..='9',
             SheetRegion::new(0, 0, 512, 0, 80, 8),
-            10,
+            8,
+            8,
         );
         Game {
             camera,
@@ -96,7 +96,9 @@ impl engine::Game for Game {
         }
     }
     fn update(&mut self, engine: &mut Engine) {
-        let dir = engine.input.key_axis(engine::Key::Left, engine::Key::Right);
+        let dir = engine
+            .input
+            .key_axis(engine::Key::ArrowLeft, engine::Key::ArrowRight);
         self.guy.pos.x += dir * GUY_SPEED;
         let mut contacts = Vec::with_capacity(self.walls.len());
         // TODO: for multiple guys this might be better as flags on the guy for what side he's currently colliding with stuff on
@@ -181,8 +183,17 @@ impl engine::Game for Game {
         self.apples.retain(|apple| apple.pos.y > -8.0)
     }
     fn render(&mut self, engine: &mut Engine) {
+        let score_str = self.score.to_string();
+        let text_len = score_str.len();
+        const WALL_START: usize = 1;
+        let guy_idx = WALL_START + self.walls.len();
+        let apple_start = guy_idx + 1;
+        let sprite_count = apple_start + self.apples.len();
+        engine
+            .renderer
+            .sprite_group_resize(0, sprite_count + text_len);
         // set bg image
-        let (trfs, uvs) = engine.renderer.sprites.get_sprites_mut(0);
+        let (trfs, uvs) = engine.renderer.sprites_mut(0, ..);
         trfs[0] = AABB {
             center: Vec2 {
                 x: W / 2.0,
@@ -193,8 +204,6 @@ impl engine::Game for Game {
         .into();
         uvs[0] = SheetRegion::new(0, 0, 0, 16, 640, 480);
         // set walls
-        const WALL_START: usize = 1;
-        let guy_idx = WALL_START + self.walls.len();
         for (wall, (trf, uv)) in self.walls.iter().zip(
             trfs[WALL_START..guy_idx]
                 .iter_mut()
@@ -212,7 +221,6 @@ impl engine::Game for Game {
         // TODO animation frame
         uvs[guy_idx] = SheetRegion::new(0, 16, 480, 8, 16, 16);
         // set apple
-        let apple_start = guy_idx + 1;
         for (apple, (trf, uv)) in self.apples.iter().zip(
             trfs[apple_start..]
                 .iter_mut()
@@ -225,18 +233,9 @@ impl engine::Game for Game {
             .into();
             *uv = SheetRegion::new(0, 0, 496, 4, 16, 16);
         }
-        let sprite_count = apple_start + self.apples.len();
-        let score_str = self.score.to_string();
-        let text_len = score_str.len();
-        engine.renderer.sprites.resize_sprite_group(
-            &engine.renderer.gpu,
-            0,
-            sprite_count + text_len,
-        );
         self.font.draw_text(
-            &mut engine.renderer.sprites,
-            0,
-            sprite_count,
+            &mut trfs[sprite_count..],
+            &mut uvs[sprite_count..],
             &score_str,
             Vec2 {
                 x: 16.0,
@@ -245,16 +244,15 @@ impl engine::Game for Game {
             .into(),
             16.0,
         );
-        engine
-            .renderer
-            .sprites
-            .upload_sprites(&engine.renderer.gpu, 0, 0..sprite_count + text_len);
-        engine
-            .renderer
-            .sprites
-            .set_camera_all(&engine.renderer.gpu, self.camera);
+        engine.renderer.sprite_group_set_camera(0, self.camera);
+        // engine.renderer.post_set_transform([
+        //     1.0, 0.0, 0.0, 0.0, //x col
+        //     0.0, 1.0, 0.0, 0.0, //y col
+        //     0.0, 0.0, 1.0, 0.0, //z col
+        //     0.0, 0.0, 0.0, 1.0, //w col
+        // ]);
     }
 }
-fn main() {
-    Engine::new(winit::window::WindowBuilder::new()).run::<Game>();
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    Engine::new(winit::window::WindowBuilder::new())?.run::<Game>()
 }

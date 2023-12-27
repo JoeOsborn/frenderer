@@ -1,5 +1,7 @@
 //! A sprite renderer with multiple layers ("sprite groups") which can
-//! be independently transformed.
+//! be independently translated; each layer can have several
+//! spritesheets and numerous sprites.  For efficiency, it's best to
+//! minimize the number of groups.
 
 use std::{borrow::Cow, ops::Range};
 
@@ -43,14 +45,14 @@ impl SheetRegion {
         Self::new(0, x, y, 0, w, h)
     }
     /// Produce a new [`SheetRegion`] on a different spritesheet layer.
-    pub const fn sheet(self, which: u16) -> Self {
+    pub const fn with_sheet(self, which: u16) -> Self {
         Self {
             sheet: which,
             ..self
         }
     }
     /// Produce a new [`SheetRegion`] drawn at a different depth level.
-    pub const fn depth(self, depth: u16) -> Self {
+    pub const fn with_depth(self, depth: u16) -> Self {
         Self { depth, ..self }
     }
 }
@@ -77,8 +79,13 @@ pub struct Transform {
 }
 
 impl Transform {
+    /// Returns the Transform's translation as a pair of `f32`.
     pub fn translation(&self) -> [f32; 2] {
         [self.x, self.y]
+    }
+    /// Returns the Transform's scale as a pair of `f32`.
+    pub fn scale(&self) -> [f32; 2] {
+        [self.w as f32, self.h as f32]
     }
 }
 
@@ -107,26 +114,32 @@ struct SpriteGroup {
 /// SpriteRenderer hosts a number of sprite groups.  Each group has a
 /// specified spritesheet texture array, parallel vectors of
 /// [`Transform`]s and [`SheetRegion`]s, and a [`Camera2D`] to define
-/// its transform.  Currently, all groups render into the same depth
-/// buffer so their outputs are interleaved.
+/// its transform.  All groups render into the same depth
+/// buffer, so their outputs are interleaved.
 pub struct SpriteRenderer {
     pipeline: wgpu::RenderPipeline,
     sprite_bind_group_layout: wgpu::BindGroupLayout,
     texture_bind_group_layout: wgpu::BindGroupLayout,
-    groups: Vec<SpriteGroup>,
+    groups: Vec<Option<SpriteGroup>>,
+    free_groups: Vec<usize>,
 }
 
 impl SpriteRenderer {
-    pub(crate) fn new(gpu: &WGPU) -> Self {
+    /// Create a new [`SpriteRenderer`] meant to draw into the given color target and with the given depth texture format.
+    pub fn new(
+        gpu: &WGPU,
+        color_target: wgpu::ColorTargetState,
+        depth_format: wgpu::TextureFormat,
+    ) -> Self {
         let shader = gpu
-            .device
+            .device()
             .create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: None,
                 source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("sprites.wgsl"))),
             });
 
         let texture_bind_group_layout =
-            gpu.device
+            gpu.device()
                 .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                     label: None,
                     // It needs the first entry for the texture and the second for the sampler.
@@ -177,7 +190,7 @@ impl SpriteRenderer {
             count: None,
         };
         let sprite_bind_group_layout = if USE_STORAGE {
-            gpu.device
+            gpu.device()
                 .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                     label: None,
                     entries: &[
@@ -213,24 +226,24 @@ impl SpriteRenderer {
                     ],
                 })
         } else {
-            gpu.device
+            gpu.device()
                 .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                     label: None,
                     entries: &[camera_layout_entry],
                 })
         };
-        let pipeline_layout = gpu
-            .device
-            .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: None,
-                bind_group_layouts: &[&sprite_bind_group_layout, &texture_bind_group_layout],
-                push_constant_ranges: &[],
-            });
+        let pipeline_layout =
+            gpu.device()
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: None,
+                    bind_group_layouts: &[&sprite_bind_group_layout, &texture_bind_group_layout],
+                    push_constant_ranges: &[],
+                });
 
         assert_eq!(std::mem::size_of::<Transform>(), 4 * 4);
         assert_eq!(std::mem::size_of::<SheetRegion>(), 4 * 4);
         let pipeline = gpu
-            .device
+            .device()
             .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: None,
                 layout: Some(&pipeline_layout),
@@ -275,11 +288,11 @@ impl SpriteRenderer {
                 fragment: Some(wgpu::FragmentState {
                     module: &shader,
                     entry_point: "fs_main",
-                    targets: &[Some(gpu.config.format.into())],
+                    targets: &[Some(color_target)],
                 }),
                 primitive: wgpu::PrimitiveState::default(),
                 depth_stencil: Some(wgpu::DepthStencilState {
-                    format: wgpu::TextureFormat::Depth32Float,
+                    format: depth_format,
                     depth_write_enabled: true,
                     depth_compare: wgpu::CompareFunction::Less,
                     stencil: wgpu::StencilState::default(),
@@ -291,13 +304,15 @@ impl SpriteRenderer {
 
         Self {
             pipeline,
-            groups: Vec::default(),
+            free_groups: Vec::new(),
+            groups: Vec::with_capacity(4),
             sprite_bind_group_layout,
             texture_bind_group_layout,
         }
     }
-    /// Create a new sprite group sized to fit `sprites`.  Returns a
-    /// sprite group identifier (for now, a usize).
+    /// Create a new sprite group sized to fit `world_transforms` and
+    /// `sheet_regions`, which should be the same size.  Returns the
+    /// sprite group index corresponding to this group.
     pub fn add_sprite_group(
         &mut self,
         gpu: &WGPU,
@@ -306,6 +321,12 @@ impl SpriteRenderer {
         sheet_regions: Vec<SheetRegion>,
         camera: Camera2D,
     ) -> usize {
+        let group_idx = if let Some(idx) = self.free_groups.pop() {
+            idx
+        } else {
+            self.groups.push(None);
+            self.groups.len() - 1
+        };
         let view_sprite = tex.create_view(&wgpu::TextureViewDescriptor {
             dimension: Some(wgpu::TextureViewDimension::D2Array),
             base_array_layer: 0,
@@ -316,9 +337,9 @@ impl SpriteRenderer {
             ..Default::default()
         });
         let sampler_sprite = gpu
-            .device
+            .device()
             .create_sampler(&wgpu::SamplerDescriptor::default());
-        let tex_bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+        let tex_bind_group = gpu.device().create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
             layout: &self.texture_bind_group_layout,
             entries: &[
@@ -333,7 +354,7 @@ impl SpriteRenderer {
                 },
             ],
         });
-        let buffer_world = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+        let buffer_world = gpu.device().create_buffer(&wgpu::BufferDescriptor {
             label: None,
             size: world_transforms.len() as u64 * std::mem::size_of::<Transform>() as u64,
             usage: if USE_STORAGE {
@@ -343,7 +364,7 @@ impl SpriteRenderer {
             } | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let buffer_sheet = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+        let buffer_sheet = gpu.device().create_buffer(&wgpu::BufferDescriptor {
             label: None,
             size: sheet_regions.len() as u64 * std::mem::size_of::<SheetRegion>() as u64,
             usage: if USE_STORAGE {
@@ -353,14 +374,14 @@ impl SpriteRenderer {
             } | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let camera_buffer = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+        let camera_buffer = gpu.device().create_buffer(&wgpu::BufferDescriptor {
             label: None,
             size: std::mem::size_of::<Camera2D>() as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         let sprite_bind_group = if USE_STORAGE {
-            gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            gpu.device().create_bind_group(&wgpu::BindGroupDescriptor {
                 label: None,
                 layout: &self.sprite_bind_group_layout,
                 entries: &[
@@ -379,7 +400,7 @@ impl SpriteRenderer {
                 ],
             })
         } else {
-            gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            gpu.device().create_bind_group(&wgpu::BindGroupDescriptor {
                 label: None,
                 layout: &self.sprite_bind_group_layout,
                 entries: &[wgpu::BindGroupEntry {
@@ -388,13 +409,13 @@ impl SpriteRenderer {
                 }],
             })
         };
-        gpu.queue
+        gpu.queue()
             .write_buffer(&buffer_world, 0, bytemuck::cast_slice(&world_transforms));
-        gpu.queue
+        gpu.queue()
             .write_buffer(&buffer_sheet, 0, bytemuck::cast_slice(&sheet_regions));
-        gpu.queue
+        gpu.queue()
             .write_buffer(&camera_buffer, 0, bytemuck::bytes_of(&camera));
-        self.groups.push(SpriteGroup {
+        self.groups[group_idx] = Some(SpriteGroup {
             world_buffer: buffer_world,
             sheet_buffer: buffer_sheet,
             world_transforms,
@@ -404,29 +425,35 @@ impl SpriteRenderer {
             camera,
             camera_buffer,
         });
-        self.groups.len() - 1
+        group_idx
     }
-    /// Returns the number of sprite groups
+    /// Returns the number of sprite groups (including placeholders for removed groups).
     pub fn sprite_group_count(&self) -> usize {
         self.groups.len()
     }
-    /// Deletes a sprite group.  Note that this currently invalidates
-    /// all the old handles, which is not great.  Only use it on the
-    /// last sprite group if that matters to you.
+    /// Deletes a sprite group, leaving an empty group slot behind (this might get recycled later).
     pub fn remove_sprite_group(&mut self, which: usize) {
-        self.groups.remove(which);
+        if self.groups[which].is_some() {
+            self.groups[which] = None;
+            self.free_groups.push(which);
+        }
     }
-    /// Reports the size of the given sprite group.
+    /// Reports the size of the given sprite group.  Panics if the given sprite group is not populated.
     pub fn sprite_group_size(&self, which: usize) -> usize {
-        self.groups[which].world_transforms.len()
+        self.groups[which].as_ref().unwrap().world_transforms.len()
     }
     /// Resizes a sprite group.  If the new size is smaller, this is
     /// very cheap; if it's larger than it's ever been before, it
     /// might involve reallocating the [`Vec<Transform>`],
     /// [`Vec<SheetRegion>`], or the GPU buffer used to draw sprites,
-    /// so it could be expensive.
+    /// so it could be expensive.  If this happens, the buffer will
+    /// also be uploaded to prevent garbage data from being used in
+    /// the shader.  To avoid redundant work, resize upwards as few
+    /// times as possible.
+    ///
+    /// Panics if the given sprite group is not populated.
     pub fn resize_sprite_group(&mut self, gpu: &WGPU, which: usize, len: usize) -> usize {
-        let group = &mut self.groups[which];
+        let group = &mut self.groups[which].as_mut().unwrap();
         let old_len = group.world_transforms.len();
         if old_len == len {
             return old_len;
@@ -438,7 +465,7 @@ impl SpriteRenderer {
         // realloc buffer if needed, remake sprite_bind_group if using storage buffers
         let new_size = len * std::mem::size_of::<Transform>();
         if new_size > group.world_buffer.size() as usize {
-            group.world_buffer = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+            group.world_buffer = gpu.device().create_buffer(&wgpu::BufferDescriptor {
                 label: None,
                 size: new_size as u64,
                 usage: if USE_STORAGE {
@@ -448,7 +475,7 @@ impl SpriteRenderer {
                 } | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
-            group.sheet_buffer = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+            group.sheet_buffer = gpu.device().create_buffer(&wgpu::BufferDescriptor {
                 label: None,
                 size: new_size as u64,
                 usage: if USE_STORAGE {
@@ -460,7 +487,7 @@ impl SpriteRenderer {
             });
             if USE_STORAGE {
                 group.sprite_bind_group =
-                    gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    gpu.device().create_bind_group(&wgpu::BindGroupDescriptor {
                         label: None,
                         layout: &self.sprite_bind_group_layout,
                         entries: &[
@@ -479,12 +506,12 @@ impl SpriteRenderer {
                         ],
                     });
             };
-            gpu.queue.write_buffer(
+            gpu.queue().write_buffer(
                 &group.world_buffer,
                 0,
                 bytemuck::cast_slice(&group.world_transforms),
             );
-            gpu.queue.write_buffer(
+            gpu.queue().write_buffer(
                 &group.sheet_buffer,
                 0,
                 bytemuck::cast_slice(&group.sheet_regions),
@@ -495,48 +522,56 @@ impl SpriteRenderer {
     /// Set the given camera transform on all sprite groups.  Uploads to the GPU.
     pub fn set_camera_all(&mut self, gpu: &WGPU, camera: Camera2D) {
         for sg_index in 0..self.groups.len() {
-            self.set_camera(gpu, sg_index, camera);
+            if self.groups[sg_index].is_some() {
+                self.set_camera(gpu, sg_index, camera);
+            }
         }
     }
     /// Set the given camera transform on a specific sprite group.  Uploads to the GPU.
+    /// Panics if the given sprite group is not populated.
     pub fn set_camera(&mut self, gpu: &WGPU, which: usize, camera: Camera2D) {
-        let sg = &mut self.groups[which];
+        let sg = &mut self.groups[which].as_mut().unwrap();
         sg.camera = camera;
-        gpu.queue
+        gpu.queue()
             .write_buffer(&sg.camera_buffer, 0, bytemuck::bytes_of(&sg.camera));
     }
     /// Send a range of stored sprite data for a particular group to the GPU.
     /// You must call this yourself after modifying sprite data.
+    /// Panics if the given sprite group is not populated.
     pub fn upload_sprites(&mut self, gpu: &WGPU, which: usize, range: Range<usize>) {
         self.upload_world_transforms(gpu, which, range.clone());
         self.upload_sheet_regions(gpu, which, range);
     }
-    /// Upload only position changes to the GPU
+    /// Upload only position changes to the GPU.
+    /// Panics if the given sprite group is not populated.
     pub fn upload_world_transforms(&mut self, gpu: &WGPU, which: usize, range: Range<usize>) {
-        gpu.queue.write_buffer(
-            &self.groups[which].world_buffer,
+        let group = self.groups[which].as_ref().unwrap();
+        gpu.queue().write_buffer(
+            &group.world_buffer,
             (range.start * std::mem::size_of::<Transform>()) as u64,
-            bytemuck::cast_slice(&self.groups[which].world_transforms[range]),
+            bytemuck::cast_slice(&group.world_transforms[range]),
         );
     }
-    /// Upload only visual changes to the GPU
+    /// Upload only visual changes to the GPU.
+    /// Panics if the given sprite group is not populated.
     pub fn upload_sheet_regions(&mut self, gpu: &WGPU, which: usize, range: Range<usize>) {
-        gpu.queue.write_buffer(
-            &self.groups[which].sheet_buffer,
+        let group = self.groups[which].as_ref().unwrap();
+        gpu.queue().write_buffer(
+            &group.sheet_buffer,
             (range.start * std::mem::size_of::<SheetRegion>()) as u64,
-            bytemuck::cast_slice(&self.groups[which].sheet_regions[range]),
+            bytemuck::cast_slice(&group.sheet_regions[range]),
         );
     }
     /// Get a read-only slice of a specified sprite group's world transforms and texture regions.
+    /// Panics if the given sprite group is not populated.
     pub fn get_sprites(&self, which: usize) -> (&[Transform], &[SheetRegion]) {
-        (
-            &self.groups[which].world_transforms,
-            &self.groups[which].sheet_regions,
-        )
+        let group = self.groups[which].as_ref().unwrap();
+        (&group.world_transforms, &group.sheet_regions)
     }
     /// Get a mutable slice of a specified sprite group's world transforms and texture regions.
+    /// Panics if the given sprite group is not populated.
     pub fn get_sprites_mut(&mut self, which: usize) -> (&mut [Transform], &mut [SheetRegion]) {
-        let group = &mut self.groups[which];
+        let group = self.groups[which].as_mut().unwrap();
         (&mut group.world_transforms, &mut group.sheet_regions)
     }
     /// Render the given range of sprite groups into the given pass.
@@ -552,7 +587,7 @@ impl SpriteRenderer {
         }
         rpass.set_pipeline(&self.pipeline);
         let which = crate::range(which, self.groups.len());
-        for group in self.groups[which].iter() {
+        for group in self.groups[which].iter().filter_map(|o| o.as_ref()) {
             if !USE_STORAGE {
                 rpass.set_vertex_buffer(0, group.world_buffer.slice(..));
                 rpass.set_vertex_buffer(1, group.sheet_buffer.slice(..));
