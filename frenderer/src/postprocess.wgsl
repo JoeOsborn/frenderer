@@ -68,12 +68,13 @@ var s_lut: sampler;
 */
 @fragment
 fn fs_main(in:VertexOutput) -> @location(0) vec4<f32> {
-    var color:vec4<f32> = textureSample(t_diffuse, s_diffuse, in.tex_coords, in.tex_index);
+    var color:vec4<f32> = textureSample(t_diffuse, s_diffuse, in.tex_coords);
     // apply colormod matrix
     color = mat4x4<f32>(u_color.a, u_color.b, u_color.c, u_color.d) * color;
     // apply saturation/desaturation
-    let intensity:f32 = (color.x, color.y, color.z) / 3.0;
-    let dev:vec3<f32> = vec3<f32>(intensity-color.x, intensity-color.y, intensity-color.z);
-    color.xyz += dev * -u_color.saturation;
+    let intensity:f32 = (color.x + color.y + color.z) / 3.0;
+    let dev:vec4<f32> = vec4<f32>(intensity-color.x, intensity-color.y, intensity-color.z, 1.0);
+    color += dev * -u_color.saturation_padding.x;
+    color.a = 1.0;
     return color;
 }

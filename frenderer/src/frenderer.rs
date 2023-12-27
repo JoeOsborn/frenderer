@@ -617,6 +617,27 @@ impl Renderer {
         let trfs = self.flats.get_meshes_mut(which, idx);
         &mut trfs[range]
     }
+    pub fn post_transform(&self) -> [f32; 16] {
+        self.postprocess.transform()
+    }
+    pub fn post_color_transform(&self) -> [f32; 16] {
+        self.postprocess.color_transform()
+    }
+    pub fn post_saturation(&self) -> f32 {
+        self.postprocess.saturation()
+    }
+    pub fn post_set(&mut self, trf: [f32; 16], color_trf: [f32; 16], sat: f32) {
+        self.postprocess.set_post(&self.gpu, trf, color_trf, sat);
+    }
+    pub fn post_set_transform(&mut self, trf: [f32; 16]) {
+        self.postprocess.set_transform(&self.gpu, trf);
+    }
+    pub fn post_set_color_transform(&mut self, trf: [f32; 16]) {
+        self.postprocess.set_color_transform(&self.gpu, trf);
+    }
+    pub fn post_set_saturation(&mut self, sat: f32) {
+        self.postprocess.set_saturation(&self.gpu, sat);
+    }
     pub fn config(&self) -> &wgpu::SurfaceConfiguration {
         &self.config
     }

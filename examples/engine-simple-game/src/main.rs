@@ -245,6 +245,12 @@ impl engine::Game for Game {
             16.0,
         );
         engine.renderer.sprite_group_set_camera(0, self.camera);
+        // engine.renderer.post_set_transform([
+        //     1.0, 0.0, 0.0, 0.0, //x col
+        //     0.0, 1.0, 0.0, 0.0, //y col
+        //     0.0, 0.0, 1.0, 0.0, //z col
+        //     0.0, 0.0, 0.0, 1.0, //w col
+        // ]);
     }
 }
 fn main() -> Result<(), Box<dyn std::error::Error>> {

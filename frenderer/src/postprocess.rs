@@ -22,8 +22,7 @@ struct Transform {
 #[derive(Clone, Copy, bytemuck::Zeroable, bytemuck::Pod)]
 struct ColorTransform {
     mat: [f32; 16],
-    saturation: f32,
-    _padding: [f32; 3],
+    saturation_padding: [f32; 4],
 }
 
 impl PostRenderer {
@@ -86,7 +85,7 @@ impl PostRenderer {
                                 // We can use it with float samplers
                                 sample_type: wgpu::TextureSampleType::Float { filterable: true },
                                 // It's being used as a 2D texture
-                                view_dimension: wgpu::TextureViewDimension::D2Array,
+                                view_dimension: wgpu::TextureViewDimension::D2,
                                 // This is not a multisampled texture
                                 multisampled: false,
                             },
@@ -121,22 +120,21 @@ impl PostRenderer {
             mat: [
                 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
             ],
-            saturation: 0.0,
-            _padding: [0.0; 3],
+            saturation_padding: [0.0; 4],
         };
         let transform_buf = gpu
             .device()
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("post:transform_buffer"),
                 contents: bytemuck::bytes_of(&transform),
-                usage: wgpu::BufferUsages::UNIFORM,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             });
         let colormod_buf = gpu
             .device()
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some("post:colormod_buffer"),
                 contents: bytemuck::bytes_of(&colormod),
-                usage: wgpu::BufferUsages::UNIFORM,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             });
         let transform_bind_group = gpu.device().create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("post:transform_bg"),
@@ -226,7 +224,7 @@ impl PostRenderer {
         // update buffers
         self.transform.mat = trf;
         self.colormod.mat = color_trf;
-        self.colormod.saturation = sat;
+        self.colormod.saturation_padding = [sat, 0.0, 0.0, 0.0];
         gpu.queue()
             .write_buffer(&self.transform_buf, 0, bytemuck::bytes_of(&self.transform));
         gpu.queue()
@@ -277,5 +275,34 @@ impl PostRenderer {
         rpass.set_bind_group(1, &self.texture_bind_group, &[]);
         // todo future: rpass.set_bind_group(2, self.lut_bind_group);
         rpass.draw(0..6, 0..1);
+    }
+
+    pub fn transform(&self) -> [f32; 16] {
+        self.transform.mat
+    }
+    pub fn color_transform(&self) -> [f32; 16] {
+        self.colormod.mat
+    }
+    pub fn saturation(&self) -> f32 {
+        self.colormod.saturation_padding[0]
+    }
+    pub fn set_transform(&mut self, gpu: &crate::gpu::WGPU, mat: [f32; 16]) {
+        self.set_post(
+            gpu,
+            mat,
+            self.colormod.mat,
+            self.colormod.saturation_padding[0],
+        );
+    }
+    pub fn set_color_transform(&mut self, gpu: &crate::gpu::WGPU, mat: [f32; 16]) {
+        self.set_post(
+            gpu,
+            self.transform.mat,
+            mat,
+            self.colormod.saturation_padding[0],
+        );
+    }
+    pub fn set_saturation(&mut self, gpu: &crate::gpu::WGPU, sat: f32) {
+        self.set_post(gpu, self.transform.mat, self.colormod.mat, sat);
     }
 }
