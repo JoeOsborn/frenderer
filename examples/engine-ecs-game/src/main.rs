@@ -27,16 +27,17 @@ struct DecoBundle(Sprite, Transform);
 
 const W: f32 = 320.0;
 const H: f32 = 240.0;
-const GUY_SPEED: f32 = 2.0;
+const GUY_SPEED: f32 = 120.0;
 const GUY_SIZE: Vec2 = Vec2 { x: 16.0, y: 16.0 };
 const APPLE_SIZE: Vec2 = Vec2 { x: 16.0, y: 16.0 };
 const APPLE_MAX: usize = 128;
-const APPLE_INTERVAL: std::ops::Range<u32> = 1..10;
+const APPLE_INTERVAL: std::ops::Range<f32> = 0.5..1.0;
 const WALL_UVS: SheetRegion = SheetRegion::new(0, 0, 480, 12, 8, 8);
-const APPLE_SPEED_RANGE: std::ops::Range<f32> = (-2.0)..(-0.5);
+const APPLE_SPEED_RANGE: std::ops::Range<f32> = (-120.0)..(-30.0);
+const G_ACC: f32 = -60.0;
 
 struct Game {
-    apple_timer: u32,
+    apple_timer: f32,
     score: u32,
     guy: Entity,
     spritesheet: engine::Spritesheet,
@@ -44,7 +45,7 @@ struct Game {
 }
 
 impl engine::Game for Game {
-    const DT: f32 = 1.0 / 120.0;
+    const DT: f32 = 1.0 / 60.0;
     fn new(engine: &mut Engine) -> Self {
         engine.set_camera(Camera {
             screen_pos: [0.0, 0.0],
@@ -85,7 +86,10 @@ impl engine::Game for Game {
                 center: Vec2::zero(),
                 size: GUY_SIZE,
             }),
-            Physics { vel: Vec2::zero() },
+            Physics {
+                vel: Vec2::zero(),
+                acc: Vec2 { x: 0.0, y: G_ACC },
+            },
             Guy(),
         ));
         // floor
@@ -102,7 +106,7 @@ impl engine::Game for Game {
             8,
         );
         Game {
-            apple_timer: 0,
+            apple_timer: 0.0,
             score: 0,
             font,
             spritesheet,
@@ -136,8 +140,8 @@ impl engine::Game for Game {
         for apple in to_remove {
             engine.despawn(apple).unwrap();
         }
-        if self.apple_timer > 0 {
-            self.apple_timer -= 1;
+        if self.apple_timer > 0.0 {
+            self.apple_timer -= Self::DT;
         } else if apple_count < APPLE_MAX {
             let _apple = engine.spawn(AppleBundle(
                 Sprite(self.spritesheet, SheetRegion::new(0, 0, 496, 4, 16, 16)),
@@ -158,6 +162,7 @@ impl engine::Game for Game {
                         x: 0.0,
                         y: rng.gen_range(APPLE_SPEED_RANGE),
                     },
+                    acc: Vec2 { x: 0.0, y: G_ACC },
                 },
                 Apple(),
             ));

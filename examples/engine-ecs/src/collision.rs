@@ -214,11 +214,11 @@ impl Contacts {
                 continue;
             }
             let (disp_i, disp_j) = compute_disp(aabb_i, aabb_j, weights, disp);
-            {
+            if weights.0.abs() > std::f32::EPSILON {
                 let (trf_i,) = world.query_one_mut::<(&mut Transform,)>(ci).unwrap();
                 displace(ci, cj, trf_i, disp_i, displacements);
             }
-            {
+            if weights.1.abs() > std::f32::EPSILON {
                 let (trf_j,) = world.query_one_mut::<(&mut Transform,)>(cj).unwrap();
                 displace(cj, ci, trf_j, disp_j, displacements);
             }

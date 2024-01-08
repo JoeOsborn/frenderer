@@ -21,8 +21,10 @@ pub mod geom;
 pub mod components {
     pub use super::Transform;
     pub use crate::collision::{BoxCollision, Pushable, Solid, SolidPushable, Trigger};
+    #[derive(Default)]
     pub struct Physics {
         pub vel: crate::geom::Vec2,
+        pub acc: crate::geom::Vec2,
     }
     pub struct Sprite(pub crate::Spritesheet, pub crate::SheetRegion);
 }
@@ -106,10 +108,11 @@ impl<G: Game> Engine<G> {
                         game.update(&mut self);
                         for (_e, (trf, phys)) in self
                             .world_
-                            .query_mut::<(&mut Transform, &components::Physics)>()
+                            .query_mut::<(&mut Transform, &mut components::Physics)>()
                         {
-                            trf.x += phys.vel.x;
-                            trf.y += phys.vel.y;
+                            phys.vel += phys.acc * G::DT;
+                            trf.x += phys.vel.x * G::DT;
+                            trf.y += phys.vel.y * G::DT;
                             // TODO could we call contacts.update_entity here?
                         }
                         self.contacts.frame_update_index(&mut self.world_);
@@ -117,8 +120,27 @@ impl<G: Game> Engine<G> {
                             self.contacts.do_collisions(&mut self.world_);
                             self.contacts.step_update_index(&mut self.world_);
                         }
+                        // any displacement should clear velocity in the opposing direction
+                        for Contact(e1, _e2, v) in self.contacts.displacements.iter() {
+                            // if e1 is pushable, maybe reset its vel
+                            // we also might have a contact for e2, e1 for the opposite push
+                            if let Ok(phys) =
+                                self.world_.query_one_mut::<(&mut components::Physics)>(*e1)
+                            {
+                                if v.x.abs() > std::f32::EPSILON {
+                                    if v.x.signum() != phys.vel.x.signum() {
+                                        phys.vel.x = 0.0;
+                                    }
+                                }
+                                if v.y.abs() > std::f32::EPSILON {
+                                    if v.y.signum() != phys.vel.y.signum() {
+                                        phys.vel.y = 0.0;
+                                    }
+                                }
+                            }
+                        }
                         self.contacts.gather_triggers();
-                        // we can response to collision displacements and triggers of the frame all at once
+                        // we can respond to collision displacements and triggers of the frame all at once
                         displacements.append(&mut self.contacts.displacements);
                         triggers.append(&mut self.contacts.triggers);
                         game.handle_collisions(
