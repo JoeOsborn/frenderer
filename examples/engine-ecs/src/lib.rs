@@ -125,7 +125,7 @@ impl<G: Game> Engine<G> {
                             // if e1 is pushable, maybe reset its vel
                             // we also might have a contact for e2, e1 for the opposite push
                             if let Ok(phys) =
-                                self.world_.query_one_mut::<(&mut components::Physics)>(*e1)
+                                self.world_.query_one_mut::<&mut components::Physics>(*e1)
                             {
                                 if v.x.abs() > std::f32::EPSILON {
                                     if v.x.signum() != phys.vel.x.signum() {

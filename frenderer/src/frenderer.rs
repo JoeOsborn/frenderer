@@ -9,7 +9,11 @@
 
 use std::ops::{Range, RangeBounds};
 
-use crate::{postprocess::PostRenderer, sprites::SpriteRenderer, WGPU};
+use crate::{
+    colorgeo::{self, ColorGeo},
+    sprites::SpriteRenderer,
+    WGPU,
+};
 
 pub use crate::meshes::{FlatRenderer, MeshRenderer};
 /// A wrapper over GPU state, surface, depth texture, and some renderers.
@@ -29,7 +33,7 @@ pub struct Renderer {
     sprites: SpriteRenderer,
     meshes: MeshRenderer,
     flats: FlatRenderer,
-    postprocess: PostRenderer,
+    postprocess: ColorGeo,
     queued_uploads: Vec<Upload>,
 }
 
@@ -150,7 +154,8 @@ impl Renderer {
         surface.configure(gpu.device(), &config);
         let (color_texture, color_texture_view) =
             Self::create_color_texture(gpu.device(), width, height, swapchain_format);
-        let postprocess = PostRenderer::new(&gpu, &color_texture, config.format.into());
+        let lut = colorgeo::lut_identity(&gpu);
+        let postprocess = ColorGeo::new(&gpu, &color_texture, &lut, config.format.into());
         let (depth_texture, depth_texture_view) =
             Self::create_depth_texture(gpu.device(), width, height);
 

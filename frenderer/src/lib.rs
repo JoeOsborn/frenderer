@@ -41,8 +41,8 @@ mod sprites;
 pub use sprites::{Camera2D, SheetRegion, SpriteRenderer, Transform};
 pub mod meshes;
 pub use meshes::{Camera3D, Transform3D};
+pub mod colorgeo;
 pub mod frenderer;
-pub mod postprocess;
 pub use frenderer::*;
 
 /// A runtime for frenderer; mainly wraps an async runtime, but can also set up logging, etc.
