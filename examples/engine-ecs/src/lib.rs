@@ -127,15 +127,15 @@ impl<G: Game> Engine<G> {
                             if let Ok(phys) =
                                 self.world_.query_one_mut::<&mut components::Physics>(*e1)
                             {
-                                if v.x.abs() > std::f32::EPSILON {
-                                    if v.x.signum() != phys.vel.x.signum() {
-                                        phys.vel.x = 0.0;
-                                    }
+                                if v.x.abs() > std::f32::EPSILON
+                                    && v.x.signum() != phys.vel.x.signum()
+                                {
+                                    phys.vel.x = 0.0;
                                 }
-                                if v.y.abs() > std::f32::EPSILON {
-                                    if v.y.signum() != phys.vel.y.signum() {
-                                        phys.vel.y = 0.0;
-                                    }
+                                if v.y.abs() > std::f32::EPSILON
+                                    && v.y.signum() != phys.vel.y.signum()
+                                {
+                                    phys.vel.y = 0.0;
                                 }
                             }
                         }

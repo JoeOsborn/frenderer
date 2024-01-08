@@ -54,7 +54,7 @@ pub fn with_default_runtime(
 ) -> Result<Renderer, Box<dyn std::error::Error>> {
     env_logger::init();
     let wsz = window.inner_size();
-    let sz = render_size.unwrap_or_else(|| (wsz.width, wsz.height));
+    let sz = render_size.unwrap_or((wsz.width, wsz.height));
     let instance = wgpu::Instance::default();
     Renderer::with_runtime(
         sz.0,
