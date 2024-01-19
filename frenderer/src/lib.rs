@@ -45,30 +45,6 @@ pub mod colorgeo;
 pub mod frenderer;
 pub use frenderer::*;
 
-/// A runtime for frenderer; mainly wraps an async runtime, but can also set up logging, etc.
-pub trait Runtime {
-    /// Run a future to completion, blocking until finished.
-    fn run_future<F: std::future::Future>(&self, f: F) -> F::Output;
-}
-#[cfg(not(target_arch = "wasm32"))]
-/// A runtime using [`pollster`] for native builds
-pub struct PollsterRuntime(u8);
-#[cfg(not(target_arch = "wasm32"))]
-impl Runtime for PollsterRuntime {
-    fn run_future<F: std::future::Future>(&self, f: F) -> F::Output {
-        pollster::block_on(f)
-    }
-}
-#[cfg(target_arch = "wasm32")]
-/// A runtime using [`wasm_bindgen_futures`] for web builds
-pub struct WebRuntime(u8);
-#[cfg(target_arch = "wasm32")]
-impl Runtime for WebRuntime {
-    fn run_future<F: std::future::Future>(&self, f: F) -> F::Output {
-        wasm_bindgen_futures::spawn_local(f)
-    }
-}
-
 fn range<R: std::ops::RangeBounds<usize>>(r: R, hi: usize) -> std::ops::Range<usize> {
     let low = match r.start_bound() {
         std::ops::Bound::Included(&x) => x,

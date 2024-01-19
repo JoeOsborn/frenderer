@@ -13,6 +13,10 @@ rand = "0.8.5"
 image = {version="0.24.7", features=["png"]}
 assets_manager = { version = "0.10.2", features = ["png", "hot-reloading", "embedded"] }
 
+[target.'cfg(target_arch = "wasm32")'.dependencies.getrandom]
+features=["js"]
+version="0.2.12"
+
 [features]
 default = []
 webgl = ["frenderer/webgl"]

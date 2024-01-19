@@ -7,13 +7,12 @@
 //! instance, adapter, device, and queue (wrapped in a [`crate::gpu::WGPU`]
 //! struct), dimensions, and surface.
 
-use std::ops::{Range, RangeBounds};
-
 use crate::{
     colorgeo::{self, ColorGeo},
     sprites::SpriteRenderer,
     WGPU,
 };
+use std::ops::{Range, RangeBounds};
 
 pub use crate::meshes::{FlatRenderer, MeshRenderer};
 /// A wrapper over GPU state, surface, depth texture, and some renderers.
@@ -49,28 +48,44 @@ enum Upload {
 /// consider using your own [`super::Runtime`].
 #[cfg(all(not(target_arch = "wasm32"), feature = "winit"))]
 pub fn with_default_runtime(
-    window: std::sync::Arc<winit::window::Window>,
+    builder: winit::window::WindowBuilder,
     render_size: Option<(u32, u32)>,
-) -> Result<Renderer, Box<dyn std::error::Error>> {
+    callback: impl FnOnce(
+        winit::event_loop::EventLoop<()>,
+        std::sync::Arc<winit::window::Window>,
+        Renderer,
+    ),
+) -> Result<(), Box<dyn std::error::Error>> {
+    use std::sync::Arc;
+
+    let event_loop = winit::event_loop::EventLoop::new()?;
+    let window = Arc::new(builder.build(&event_loop)?);
+
     env_logger::init();
     let wsz = window.inner_size();
     let sz = render_size.unwrap_or((wsz.width, wsz.height));
     let instance = wgpu::Instance::default();
-    Renderer::with_runtime(
-        sz.0,
-        sz.1,
-        wsz.width,
-        wsz.height,
-        &instance,
-        instance.create_surface(window)?,
-        super::PollsterRuntime(0),
-    )
+    let surface = instance.create_surface(window.clone())?;
+    let gpu = pollster::block_on(WGPU::new(&instance, Some(&surface)))?;
+    callback(
+        event_loop,
+        window,
+        Renderer::with_gpu(sz.0, sz.1, wsz.width, wsz.height, gpu, surface),
+    );
+    Ok(())
 }
 #[cfg(all(target_arch = "wasm32", feature = "winit"))]
 pub fn with_default_runtime(
-    window: std::sync::Arc<winit::window::Window>,
+    builder: winit::window::WindowBuilder,
     render_size: Option<(u32, u32)>,
-) -> Result<super::Frenderer, Box<dyn std::error::Error>> {
+    callback: impl FnOnce(winit::event_loop::EventLoop<()>, std::sync::Arc<winit::window::Window>, Renderer)
+        + 'static,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use std::sync::Arc;
+
+    use wgpu::web_sys;
+    let event_loop = winit::event_loop::EventLoop::new()?;
+    let window = Arc::new(builder.build(&event_loop)?);
     let wsz = window.inner_size();
     let sz = render_size.unwrap_or_else(|| (wsz.width, wsz.height));
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
@@ -81,45 +96,44 @@ pub fn with_default_runtime(
         .and_then(|win| win.document())
         .and_then(|doc| doc.body())
         .and_then(|body| {
-            body.append_child(&web_sys::Element::from(window.canvas()))
-                .ok()
+            window
+                .canvas()
+                .and_then(|canvas| body.append_child(&web_sys::Element::from(canvas)).ok())
         })
         .expect("couldn't append canvas to document body");
     let instance = wgpu::Instance::default();
-    Renderer::with_runtime(
-        sz.0,
-        sz.1,
-        wsz.width,
-        wsz.height,
-        instance,
-        instance.create_surface(window)?,
-        super::WebRuntime(0),
-    )
+    let surface = instance.create_surface(window.clone())?;
+    async fn with_default_runtime_inner(
+        event_loop: winit::event_loop::EventLoop<()>,
+        window: Arc<winit::window::Window>,
+        width: u32,
+        height: u32,
+        surf_width: u32,
+        surf_height: u32,
+        instance: wgpu::Instance,
+        surface: wgpu::Surface<'static>,
+        callback: impl FnOnce(
+            winit::event_loop::EventLoop<()>,
+            std::sync::Arc<winit::window::Window>,
+            Renderer,
+        ),
+    ) {
+        let gpu = WGPU::new(&instance, Some(&surface)).await.unwrap();
+        callback(
+            event_loop,
+            window,
+            Renderer::with_gpu(width, height, surf_width, surf_height, gpu, surface),
+        );
+    }
+    wasm_bindgen_futures::spawn_local(with_default_runtime_inner(
+        event_loop, window, sz.0, sz.1, wsz.width, wsz.height, instance, surface, callback,
+    ));
+    Ok(())
 }
 
 impl Renderer {
     /// The format used for depth textures within frenderer.
     pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
-    /// Create a new Renderer with the given size, surface, and runtime.
-    pub fn with_runtime<RT: crate::Runtime>(
-        width: u32,
-        height: u32,
-        surf_width: u32,
-        surf_height: u32,
-        instance: &wgpu::Instance,
-        surface: wgpu::Surface<'static>,
-        runtime: RT,
-    ) -> Result<Self, Box<dyn std::error::Error>> {
-        let gpu = runtime.run_future(WGPU::new(instance, Some(&surface)))?;
-        Ok(Self::with_gpu(
-            width,
-            height,
-            surf_width,
-            surf_height,
-            gpu,
-            surface,
-        ))
-    }
     /// Create a new Renderer with a full set of GPU resources, a size, and a surface.
     pub fn with_gpu(
         width: u32,
@@ -149,6 +163,7 @@ impl Renderer {
             present_mode: wgpu::PresentMode::AutoNoVsync,
             alpha_mode: swapchain_capabilities.alpha_modes[0],
             view_formats: vec![],
+            desired_maximum_frame_latency: 2,
         };
 
         surface.configure(gpu.device(), &config);
