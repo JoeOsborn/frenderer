@@ -1,4 +1,6 @@
 Todo:
 
-- [ ] Make it take wgpu initialization/stuff as parameters, so it can fit into existing programs
-- [ ] More types of renderers, including text and 3D
+- Update docs
+- Frenderer works under webgl2 and webgpu as well as native...
+  - but none of the engines work under webgl2.  Why?
+- Tile renderer for frenderer

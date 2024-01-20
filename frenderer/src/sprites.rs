@@ -290,7 +290,12 @@ impl SpriteRenderer {
                     entry_point: "fs_main",
                     targets: &[Some(color_target)],
                 }),
-                primitive: wgpu::PrimitiveState::default(),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: Some(wgpu::Face::Back),
+                    ..Default::default()
+                },
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: depth_format,
                     depth_write_enabled: true,

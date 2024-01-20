@@ -71,3 +71,4 @@ pub use bitfont::BitFont;
 
 mod clock;
 pub use clock::Clock;
+pub use clock::Instant;

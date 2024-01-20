@@ -1,4 +1,7 @@
-use std::time::Instant;
+#[cfg(not(target_arch = "wasm32"))]
+pub use std::time::Instant;
+#[cfg(target_arch = "wasm32")]
+pub use web_time::Instant;
 
 const TIME_SNAPS: [f32; 5] = [15.0, 30.0, 60.0, 120.0, 144.0];
 
@@ -59,7 +62,7 @@ impl Clock {
             elapsed = self.dt;
         }
         self.acc += elapsed;
-        self.last_t = std::time::Instant::now();
+        self.last_t = Instant::now();
         // While we have time to spend
 
         let steps = (self.acc / self.dt) as usize;

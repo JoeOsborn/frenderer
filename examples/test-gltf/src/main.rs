@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use assets_manager::asset::Gltf;
 use frenderer::{
     input::{self, Key},
@@ -9,18 +11,30 @@ use ultraviolet::*;
 
 //mod obj_loader;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let event_loop = winit::event_loop::EventLoop::new()?;
-    let window = std::sync::Arc::new(winit::window::Window::new(&event_loop)?);
-    #[cfg(not(target_arch = "wasm32"))]
-    let source = assets_manager::source::FileSystem::new("content")?;
-    #[cfg(target_arch = "wasm32")]
-    let source = assets_manager::source::Embedded::from(source::embed!("content"));
-    let cache = assets_manager::AssetCache::with_source(source);
-    let mut frend = frenderer::with_default_runtime(window.clone(), None)?;
+fn main() {
+    frenderer::with_default_runtime(winit::window::WindowBuilder::new(), Some((1024, 768)), run)
+        .unwrap();
+    // instead of the above, we could have created the wgpu device/adapter ourselves, made a frenderer::WGPU, and then made a frenderer with that and the window.
+}
+
+fn run(
+    event_loop: winit::event_loop::EventLoop<()>,
+    window: Arc<winit::window::Window>,
+    mut frend: frenderer::Renderer,
+) {
     let mut input = input::Input::default();
-    let fox = cache.load::<assets_manager::asset::Gltf>("khronos.Fox.glTF-Binary.Fox")?;
-    let raccoon = cache.load::<assets_manager::asset::Gltf>("low_poly_raccoon.scene")?;
+    #[cfg(not(target_arch = "wasm32"))]
+    let source =
+        assets_manager::source::FileSystem::new("content").expect("Couldn't build asset source");
+    #[cfg(target_arch = "wasm32")]
+    let source = assets_manager::source::Embedded::from(assets_manager::source::embed!("content"));
+    let cache = assets_manager::AssetCache::with_source(source);
+    let fox = cache
+        .load::<assets_manager::asset::Gltf>("khronos.Fox.glTF-Binary.Fox")
+        .expect("Couldn't get fox asset");
+    let raccoon = cache
+        .load::<assets_manager::asset::Gltf>("low_poly_raccoon.scene")
+        .expect("Couldn't get raccoon asset");
 
     let mut camera = Camera3D {
         translation: Vec3 {
@@ -83,99 +97,101 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     const DT_MAX: f32 = DT * 5.0;
     const TIME_SNAPS: [f32; 5] = [15.0, 30.0, 60.0, 120.0, 144.0];
     let mut acc = 0.0;
-    let mut now = std::time::Instant::now();
-    Ok(event_loop.run(move |event, target| {
-        use winit::event::{Event, WindowEvent};
-        target.set_control_flow(winit::event_loop::ControlFlow::Poll);
-        match event {
-            Event::WindowEvent {
-                event: WindowEvent::CloseRequested,
-                ..
-            } => {
-                target.exit();
-            }
-            Event::AboutToWait => {
-                // compute elapsed time since last frame
-                let mut elapsed = now.elapsed().as_secs_f32();
-                // println!("{elapsed}");
-                // snap time to nearby vsync framerate
-                TIME_SNAPS.iter().for_each(|s| {
-                    if (elapsed - 1.0 / s).abs() < DT_FUDGE_AMOUNT {
-                        elapsed = 1.0 / s;
-                    }
-                });
-                // Death spiral prevention
-                if elapsed > DT_MAX {
-                    acc = 0.0;
-                    elapsed = DT;
+    let mut now = frenderer::Instant::now();
+    event_loop
+        .run(move |event, target| {
+            use winit::event::{Event, WindowEvent};
+            target.set_control_flow(winit::event_loop::ControlFlow::Poll);
+            match event {
+                Event::WindowEvent {
+                    event: WindowEvent::CloseRequested,
+                    ..
+                } => {
+                    target.exit();
                 }
-                acc += elapsed;
-                now = std::time::Instant::now();
-                // While we have time to spend
-                while acc >= DT {
-                    // simulate a frame
-                    acc -= DT;
-                    // rotate every fox a random amount
-                    for trf in frend.meshes_mut(fox, 0, ..) {
-                        trf.rotation = (Rotor3::from_quaternion_array(trf.rotation)
-                            * Rotor3::from_euler_angles(
-                                rng.gen_range(0.0..(std::f32::consts::TAU * DT)),
-                                rng.gen_range(0.0..(std::f32::consts::TAU * DT)),
-                                rng.gen_range(0.0..(std::f32::consts::TAU * DT)),
-                            ))
-                        .into_quaternion_array();
-                        trf.translation[1] += 5.0 * DT;
+                Event::AboutToWait => {
+                    // compute elapsed time since last frame
+                    let mut elapsed = now.elapsed().as_secs_f32();
+                    // println!("{elapsed}");
+                    // snap time to nearby vsync framerate
+                    TIME_SNAPS.iter().for_each(|s| {
+                        if (elapsed - 1.0 / s).abs() < DT_FUDGE_AMOUNT {
+                            elapsed = 1.0 / s;
+                        }
+                    });
+                    // Death spiral prevention
+                    if elapsed > DT_MAX {
+                        acc = 0.0;
+                        elapsed = DT;
                     }
-                    let (mx, my): (f32, f32) = input.mouse_delta().into();
-                    let mut rot = Rotor3::from_quaternion_array(camera.rotation)
-                        * Rotor3::from_rotation_xz(mx * std::f32::consts::FRAC_PI_4 * DT)
-                        * Rotor3::from_rotation_yz(my * std::f32::consts::FRAC_PI_4 * DT);
-                    rot.normalize();
-                    camera.rotation = rot.into_quaternion_array();
-                    let dx = input.key_axis(Key::KeyA, Key::KeyD);
-                    let dz = input.key_axis(Key::KeyW, Key::KeyS);
-                    let mut dir = Vec3 {
-                        x: dx,
-                        y: 0.0,
-                        z: dz,
-                    };
-                    let here = if dir.mag_sq() > 0.0 {
-                        dir.normalize();
-                        Vec3::from(camera.translation) + rot * dir * 80.0 * DT
-                    } else {
-                        Vec3::from(camera.translation)
-                    };
-                    camera.translation = here.into();
-                    //println!("tick");
-                    //update_game();
-                    // camera.screen_pos[0] += 0.01;
-                    input.next_frame();
+                    acc += elapsed;
+                    now = frenderer::Instant::now();
+                    // While we have time to spend
+                    while acc >= DT {
+                        // simulate a frame
+                        acc -= DT;
+                        // rotate every fox a random amount
+                        for trf in frend.meshes_mut(fox, 0, ..) {
+                            trf.rotation = (Rotor3::from_quaternion_array(trf.rotation)
+                                * Rotor3::from_euler_angles(
+                                    rng.gen_range(0.0..(std::f32::consts::TAU * DT)),
+                                    rng.gen_range(0.0..(std::f32::consts::TAU * DT)),
+                                    rng.gen_range(0.0..(std::f32::consts::TAU * DT)),
+                                ))
+                            .into_quaternion_array();
+                            trf.translation[1] += 5.0 * DT;
+                        }
+                        let (mx, my): (f32, f32) = input.mouse_delta().into();
+                        let mut rot = Rotor3::from_quaternion_array(camera.rotation)
+                            * Rotor3::from_rotation_xz(mx * std::f32::consts::FRAC_PI_4 * DT)
+                            * Rotor3::from_rotation_yz(my * std::f32::consts::FRAC_PI_4 * DT);
+                        rot.normalize();
+                        camera.rotation = rot.into_quaternion_array();
+                        let dx = input.key_axis(Key::KeyA, Key::KeyD);
+                        let dz = input.key_axis(Key::KeyW, Key::KeyS);
+                        let mut dir = Vec3 {
+                            x: dx,
+                            y: 0.0,
+                            z: dz,
+                        };
+                        let here = if dir.mag_sq() > 0.0 {
+                            dir.normalize();
+                            Vec3::from(camera.translation) + rot * dir * 80.0 * DT
+                        } else {
+                            Vec3::from(camera.translation)
+                        };
+                        camera.translation = here.into();
+                        //println!("tick");
+                        //update_game();
+                        // camera.screen_pos[0] += 0.01;
+                        input.next_frame();
+                    }
+                    window.request_redraw();
                 }
-                window.request_redraw();
+                Event::WindowEvent {
+                    event: winit::event::WindowEvent::RedrawRequested,
+                    ..
+                } => {
+                    // Render prep
+                    frend.mesh_set_camera(camera);
+                    frend.flat_set_camera(camera);
+                    // update sprite positions and sheet regions
+                    // ok now render.
+                    frend.render();
+                }
+                Event::WindowEvent {
+                    event: winit::event::WindowEvent::Resized(size),
+                    ..
+                } => {
+                    frend.resize_surface(size.width, size.height);
+                    window.request_redraw();
+                }
+                event => {
+                    input.process_input_event(&event);
+                }
             }
-            Event::WindowEvent {
-                event: winit::event::WindowEvent::RedrawRequested,
-                ..
-            } => {
-                // Render prep
-                frend.mesh_set_camera(camera);
-                frend.flat_set_camera(camera);
-                // update sprite positions and sheet regions
-                // ok now render.
-                frend.render();
-            }
-            Event::WindowEvent {
-                event: winit::event::WindowEvent::Resized(size),
-                ..
-            } => {
-                frend.resize_surface(size.width, size.height);
-                window.request_redraw();
-            }
-            event => {
-                input.process_input_event(&event);
-            }
-        }
-    })?)
+        })
+        .unwrap();
 }
 
 fn load_gltf_single_textured(
@@ -253,6 +269,7 @@ fn load_gltf_flat(frend: &mut frenderer::Renderer, asset: &Gltf, instance_count:
                 None => indices.extend(0..(verts.len() - vtx_old_len) as u32),
                 Some(index_reader) => indices.extend(index_reader.into_u32()),
             };
+            // TODO: use 0 as vertex_base always, modify the indices above to start from old len to new len
             entry.submeshes.push(frenderer::meshes::SubmeshData {
                 indices: idx_old_len as u32..(indices.len() as u32),
                 vertex_base: vtx_old_len as i32,

@@ -366,6 +366,7 @@ impl FlatRenderer {
         indices: Vec<u32>,
         mesh_info: Vec<MeshEntry>,
     ) -> MeshGroup {
+        // TODO: extend material_colors to 4096 bytes
         use wgpu::util::BufferInitDescriptor;
         let uniforms = gpu.device().create_buffer_init(&BufferInitDescriptor {
             label: None,
@@ -826,7 +827,7 @@ impl<Vtx: bytemuck::Pod + bytemuck::Zeroable + Copy> MeshRendererInner<Vtx> {
 }
 
 /// An opaque identifier for a mesh group.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct MeshGroup(usize);
 impl MeshGroup {
     pub fn index(&self) -> usize {

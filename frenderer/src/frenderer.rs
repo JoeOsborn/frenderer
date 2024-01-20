@@ -36,6 +36,7 @@ pub struct Renderer {
     queued_uploads: Vec<Upload>,
 }
 
+#[derive(Debug)]
 enum Upload {
     Mesh(crate::meshes::MeshGroup, usize, Range<usize>),
     Flat(crate::meshes::MeshGroup, usize, Range<usize>),
@@ -85,49 +86,37 @@ pub fn with_default_runtime(
 
     use wgpu::web_sys;
     let event_loop = winit::event_loop::EventLoop::new()?;
-    let window = Arc::new(builder.build(&event_loop)?);
-    let wsz = window.inner_size();
-    let sz = render_size.unwrap_or_else(|| (wsz.width, wsz.height));
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
     console_log::init_with_level(log::Level::Trace).expect("could not initialize logger");
-    use winit::platform::web::WindowExtWebSys;
+    use wasm_bindgen_futures::wasm_bindgen::JsCast;
+    use winit::platform::web::WindowBuilderExtWebSys;
     // On wasm, append the canvas to the document body
-    web_sys::window()
+    let canvas = web_sys::window()
         .and_then(|win| win.document())
-        .and_then(|doc| doc.body())
-        .and_then(|body| {
-            window
-                .canvas()
-                .and_then(|canvas| body.append_child(&web_sys::Element::from(canvas)).ok())
+        .and_then(|doc| {
+            let canvas = doc.create_element("canvas").unwrap();
+            doc.body()
+                .unwrap()
+                .append_child(&canvas)
+                .ok()
+                .map(|_| canvas)
         })
-        .expect("couldn't append canvas to document body");
+        .expect("couldn't append canvas to document body")
+        .dyn_into::<web_sys::HtmlCanvasElement>()
+        .ok();
+    let window = Arc::new(builder.with_canvas(canvas).build(&event_loop)?);
+    let wsz = window.inner_size();
+    let sz = render_size.unwrap_or_else(|| (wsz.width, wsz.height));
     let instance = wgpu::Instance::default();
     let surface = instance.create_surface(window.clone())?;
-    async fn with_default_runtime_inner(
-        event_loop: winit::event_loop::EventLoop<()>,
-        window: Arc<winit::window::Window>,
-        width: u32,
-        height: u32,
-        surf_width: u32,
-        surf_height: u32,
-        instance: wgpu::Instance,
-        surface: wgpu::Surface<'static>,
-        callback: impl FnOnce(
-            winit::event_loop::EventLoop<()>,
-            std::sync::Arc<winit::window::Window>,
-            Renderer,
-        ),
-    ) {
+    wasm_bindgen_futures::spawn_local(async move {
         let gpu = WGPU::new(&instance, Some(&surface)).await.unwrap();
         callback(
             event_loop,
             window,
-            Renderer::with_gpu(width, height, surf_width, surf_height, gpu, surface),
+            Renderer::with_gpu(sz.0, sz.1, wsz.width, wsz.height, gpu, surface),
         );
-    }
-    wasm_bindgen_futures::spawn_local(with_default_runtime_inner(
-        event_loop, window, sz.0, sz.1, wsz.width, wsz.height, instance, surface, callback,
-    ));
+    });
     Ok(())
 }
 
@@ -143,6 +132,8 @@ impl Renderer {
         gpu: crate::gpu::WGPU,
         surface: wgpu::Surface<'static>,
     ) -> Self {
+        let width = if width == 0 { 320 } else { width };
+        let height = if height == 0 { 240 } else { height };
         if crate::USE_STORAGE {
             let supports_storage_resources = gpu
                 .adapter()
@@ -158,11 +149,15 @@ impl Renderer {
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: swapchain_format,
-            width: surf_width,
-            height: surf_height,
+            width: if surf_width == 0 { width } else { surf_width },
+            height: if surf_height == 0 {
+                height
+            } else {
+                surf_height
+            },
             present_mode: wgpu::PresentMode::AutoNoVsync,
             alpha_mode: swapchain_capabilities.alpha_modes[0],
-            view_formats: vec![],
+            view_formats: vec![swapchain_format],
             desired_maximum_frame_latency: 2,
         };
 
@@ -247,7 +242,7 @@ impl Renderer {
             dimension: wgpu::TextureDimension::D2,
             format: Self::DEPTH_FORMAT,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
+            view_formats: &[Self::DEPTH_FORMAT],
         };
         let texture = device.create_texture(&desc);
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
@@ -272,7 +267,7 @@ impl Renderer {
             dimension: wgpu::TextureDimension::D2,
             format,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
+            view_formats: &[format],
         };
         let texture = device.create_texture(&desc);
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
@@ -284,6 +279,7 @@ impl Renderer {
     /// want, or let [`render`] call it automatically.
     pub fn do_uploads(&mut self) {
         for upload in self.queued_uploads.drain(..) {
+            log::info!("upload: {upload:?}");
             match upload {
                 Upload::Mesh(mg, m, r) => self.meshes.upload_meshes(&self.gpu, mg, m, r),
                 Upload::Flat(mg, m, r) => self.flats.upload_meshes(&self.gpu, mg, m, r),
@@ -365,9 +361,10 @@ impl Renderer {
             .surface
             .get_current_texture()
             .expect("Failed to acquire next swap chain texture");
-        let view = frame
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
+        let view = frame.texture.create_view(&wgpu::TextureViewDescriptor {
+            format: Some(self.config.view_formats[0]),
+            ..Default::default()
+        });
         let encoder = self
             .gpu
             .device()

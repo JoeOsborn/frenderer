@@ -23,29 +23,35 @@ pub struct Engine {
 }
 
 impl Engine {
-    pub fn new(builder: winit::window::WindowBuilder) -> Result<Self, Box<dyn std::error::Error>> {
-        let event_loop = winit::event_loop::EventLoop::new()?;
-        let window = Arc::new(builder.build(&event_loop)?);
-        let renderer = frenderer::with_default_runtime(window.clone(), None)?;
-        let input = Input::default();
-        let camera = Camera {
-            screen_pos: [0.0, 0.0],
-            screen_size: window.inner_size().into(),
-        };
-        Ok(Self {
-            sprite_renderer: SpriteRenderer::new(
-                &renderer.gpu,
-                renderer.config().format.into(),
-                renderer.depth_texture().format(),
-            ),
-            renderer,
-            input,
-            window,
-            event_loop: Some(event_loop),
-            camera,
-        })
+    pub fn run<G: Game>(
+        builder: winit::window::WindowBuilder,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        frenderer::with_default_runtime(
+            builder,
+            Some((1024, 768)),
+            |event_loop, window, renderer| {
+                let camera = Camera {
+                    screen_pos: [0.0, 0.0],
+                    screen_size: window.inner_size().into(),
+                };
+                let input = Input::default();
+                let this = Self {
+                    sprite_renderer: SpriteRenderer::new(
+                        &renderer.gpu,
+                        renderer.config().format.into(),
+                        renderer.depth_texture().format(),
+                    ),
+                    renderer,
+                    input,
+                    window,
+                    event_loop: Some(event_loop),
+                    camera,
+                };
+                this.go::<G>().unwrap();
+            },
+        )
     }
-    pub fn run<G: Game>(mut self) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn go<G: Game>(mut self) -> Result<(), Box<dyn std::error::Error>> {
         let mut clock = Clock::new(1.0 / 60.0, 0.0002, 5);
         let mut game = G::new(&mut self);
         Ok(self.event_loop.take().unwrap().run(move |event, target| {
@@ -89,6 +95,14 @@ impl Engine {
                     target.exit();
                 }
                 frenderer::EventPhase::Wait => {}
+            }
+            if let winit::event::Event::WindowEvent {
+                event: winit::event::WindowEvent::Resized(size),
+                ..
+            } = event
+            {
+                self.renderer.resize_render(size.width, size.height);
+                self.window.request_redraw();
             }
         })?)
     }

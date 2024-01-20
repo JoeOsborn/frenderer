@@ -51,28 +51,33 @@ pub struct CharaID(
 );
 
 impl<G: Game> Engine<G> {
-    pub fn new(builder: winit::window::WindowBuilder) -> Result<Self, Box<dyn std::error::Error>> {
-        let event_loop = winit::event_loop::EventLoop::new()?;
-        let renderer = frenderer::with_default_runtime(builder, None)?;
-        let input = Input::default();
-        let camera = Camera {
-            screen_pos: [0.0, 0.0],
-            screen_size: window.inner_size().into(),
-        };
-        let contacts = collision::Contacts::new();
-        let world = hecs::World::new();
-        Ok(Self {
-            renderer,
-            input,
-            contacts,
-            window,
-            world_: world,
-            event_loop: Some(event_loop),
-            camera,
-            texts: Vec::with_capacity(128),
-            sim_frame: 0,
-            _game: std::marker::PhantomData,
-        })
+    pub fn run(builder: winit::window::WindowBuilder) -> Result<(), Box<dyn std::error::Error>> {
+        frenderer::with_default_runtime(
+            builder,
+            Some((1024, 768)),
+            |event_loop, window, renderer| {
+                let input = Input::default();
+                let camera = Camera {
+                    screen_pos: [0.0, 0.0],
+                    screen_size: window.inner_size().into(),
+                };
+                let contacts = collision::Contacts::new();
+                let world = hecs::World::new();
+                let this = Self {
+                    renderer,
+                    input,
+                    contacts,
+                    window,
+                    world_: world,
+                    event_loop: Some(event_loop),
+                    camera,
+                    texts: Vec::with_capacity(128),
+                    sim_frame: 0,
+                    _game: std::marker::PhantomData,
+                };
+                this.go().unwrap();
+            },
+        )
     }
     pub fn world(&self) -> &hecs::World {
         &self.world_
@@ -88,7 +93,7 @@ impl<G: Game> Engine<G> {
         self.contacts.remove_entity(entity, &mut self.world_);
         self.world_.despawn(entity)
     }
-    pub fn run(mut self) -> Result<(), Box<dyn std::error::Error>> {
+    fn go(mut self) -> Result<(), Box<dyn std::error::Error>> {
         let mut clock = Clock::new(G::DT, 0.0002, 5);
         let mut game = G::new(&mut self);
         let mut displacements: Vec<Contact> = Vec::with_capacity(128);

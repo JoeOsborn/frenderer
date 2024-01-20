@@ -1,5 +1,6 @@
 // TODO: use AABB instead of Rect for centered box, so collision checking doesn't have to offset by half size
 
+use assets_manager::asset::Png;
 use engine_simple as engine;
 use engine_simple::wgpu;
 use engine_simple::{geom::*, Camera, Engine, SheetRegion, Transform, Zeroable};
@@ -35,16 +36,18 @@ impl engine::Game for Game {
             screen_pos: [0.0, 0.0],
             screen_size: [W, H],
         };
-        #[cfg(target_arch = "wasm32")]
-        let sprite_img = {
-            let img_bytes = include_bytes!("content/demo.png");
-            image::load_from_memory_with_format(&img_bytes, image::ImageFormat::Png)
-                .map_err(|e| e.to_string())
-                .unwrap()
-                .into_rgba8()
-        };
         #[cfg(not(target_arch = "wasm32"))]
-        let sprite_img = image::open("content/demo.png").unwrap().into_rgba8();
+        let source =
+            assets_manager::source::FileSystem::new("content").expect("Couldn't load resources");
+        #[cfg(target_arch = "wasm32")]
+        let source =
+            assets_manager::source::Embedded::from(assets_manager::source::embed!("content"));
+        let cache = assets_manager::AssetCache::with_source(source);
+
+        let sprite_img_handle = cache
+            .load::<Png>("demo")
+            .expect("Couldn't load demo spritesheet");
+        let sprite_img = sprite_img_handle.read().0.to_rgba8();
         let sprite_tex = engine.renderer.create_texture(
             &sprite_img,
             wgpu::TextureFormat::Rgba8UnormSrgb,
@@ -254,5 +257,5 @@ impl engine::Game for Game {
     }
 }
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    Engine::new(winit::window::WindowBuilder::new())?.run::<Game>()
+    Engine::run::<Game>(winit::window::WindowBuilder::new())
 }

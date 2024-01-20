@@ -21,23 +21,28 @@ pub struct Engine {
 }
 
 impl Engine {
-    pub fn new(
+    pub fn run<G: Game>(
         builder: winit::window::WindowBuilder,
-    ) -> Result<Engine, Box<dyn std::error::Error>> {
-        let event_loop = winit::event_loop::EventLoop::new()?;
-        let window = Arc::new(builder.build(&event_loop)?);
-        let renderer = frenderer::with_default_runtime(window.clone(), None)?;
-        let input = Input::default();
-        Ok(Self {
-            renderer,
-            input,
-            window,
-            event_loop: Some(event_loop),
-        })
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        frenderer::with_default_runtime(
+            builder,
+            Some((1024, 768)),
+            |event_loop, window, renderer| {
+                let input = Input::default();
+                let this = Self {
+                    renderer,
+                    input,
+                    window,
+                    event_loop: Some(event_loop),
+                };
+                this.go::<G>().unwrap();
+            },
+        )
     }
-    pub fn run<G: Game>(mut self) -> Result<(), Box<dyn std::error::Error>> {
+    fn go<G: Game>(mut self) -> Result<(), Box<dyn std::error::Error>> {
         let mut clock = Clock::new(1.0 / 60.0, 0.0002, 5);
         let mut game = G::new(&mut self);
+
         Ok(self.event_loop.take().unwrap().run(move |event, target| {
             match self.renderer.handle_event(
                 &mut clock,
@@ -51,10 +56,12 @@ impl Engine {
                         game.update(&mut self);
                         self.input.next_frame();
                     }
+                    self.window.request_redraw();
                 }
                 EventPhase::Draw => {
                     game.render(&mut self);
                     self.renderer.render();
+                    self.window.request_redraw();
                 }
                 EventPhase::Quit => {
                     target.exit();

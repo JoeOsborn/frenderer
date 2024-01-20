@@ -7,6 +7,7 @@ use rand::Rng;
 fn main() {
     frenderer::with_default_runtime(winit::window::WindowBuilder::new(), Some((1024, 768)), run)
         .unwrap();
+    // instead of the above, we could have created the wgpu device/adapter ourselves, made a frenderer::WGPU, and then made a frenderer with that and the window.
 }
 
 fn run(
@@ -66,7 +67,7 @@ fn run(
     const DT_MAX: f32 = DT * 5.0;
     const TIME_SNAPS: [f32; 5] = [15.0, 30.0, 60.0, 120.0, 144.0];
     let mut acc = 0.0;
-    let mut now = std::time::Instant::now();
+    let mut now = frenderer::Instant::now();
     event_loop
         .run(move |event, target| {
             use winit::event::{Event, WindowEvent};
@@ -140,7 +141,7 @@ fn run(
                         elapsed = DT;
                     }
                     acc += elapsed;
-                    now = std::time::Instant::now();
+                    now = frenderer::Instant::now();
                     // While we have time to spend
                     while acc >= DT {
                         // simulate a frame

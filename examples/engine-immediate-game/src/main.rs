@@ -37,8 +37,8 @@ impl engine::Game for Game {
         });
         #[cfg(target_arch = "wasm32")]
         let sprite_img = {
-            let img_bytes = include_bytes!("content/demo.png");
-            image::load_from_memory_with_format(&img_bytes, image::ImageFormat::Png)
+            let img_bytes = include_bytes!("../../../content/demo.png");
+            image::load_from_memory_with_format(img_bytes, image::ImageFormat::Png)
                 .map_err(|e| e.to_string())
                 .unwrap()
                 .into_rgba8()
@@ -224,6 +224,7 @@ impl engine::Game for Game {
         );
     }
 }
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    Engine::new(winit::window::WindowBuilder::new())?.run::<Game>()
+    Engine::run::<Game>(winit::window::WindowBuilder::new())
 }
