@@ -290,8 +290,8 @@ impl Renderer {
     }
 
     /// Uploads sprite, mesh, and flat data accessed since the last
-    /// time [`do_uploads`] was called.  Call this manually if you
-    /// want, or let [`render`] call it automatically.
+    /// time [`Renderer::do_uploads`] was called.  Call this manually if you
+    /// want, or let [`Renderer::render`] call it automatically.
     pub fn do_uploads(&mut self) {
         for upload in self.queued_uploads.drain(..) {
             log::info!("upload: {upload:?}");
@@ -306,7 +306,7 @@ impl Renderer {
     /// Acquire the next frame, create a [`wgpu::RenderPass`], draw
     /// into it, and submit the encoder.  This also queues uploads of
     /// mesh, sprite, or other instance data, so if you don't use
-    /// [`render`] in your code be sure to call [`do_uploads`] if you're
+    /// [`Renderer::render`] in your code be sure to call [`Renderer::do_uploads`] if you're
     /// using the built-in mesh, flat, or sprite renderers.
     pub fn render(&mut self) {
         self.do_uploads();

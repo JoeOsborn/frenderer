@@ -9,7 +9,7 @@
 //! for use case (1), you can initialize a [`WGPU`] struct yourself
 //! with an adapter, device, and queue, and proceed to use the
 //! built-in [`SpriteRenderer`], [`MeshRenderer`], [`FlatRenderer`],
-//! or [`colorgeo::Colorgeo`] color-geometry postprocessing transform
+//! or [`colorgeo::ColorGeo`] color-geometry postprocessing transform
 //! with your own renderpass. In use case (2), you can initialize a
 //! [`Renderer`] with a given runtime, size, and GPU surface, and call
 //! [`Renderer::render`] to handle all the drawing.  Finally, in use
