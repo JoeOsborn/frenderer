@@ -87,7 +87,7 @@ pub fn with_default_runtime(
     use wgpu::web_sys;
     let event_loop = winit::event_loop::EventLoop::new()?;
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
-    console_log::init_with_level(log::Level::Trace).expect("could not initialize logger");
+    console_log::init_with_level(log::Level::Warn).expect("could not initialize logger");
     use wasm_bindgen_futures::wasm_bindgen::JsCast;
     use winit::platform::web::WindowBuilderExtWebSys;
     // On wasm, append the canvas to the document body
@@ -385,10 +385,20 @@ impl Renderer {
         (width, height): (u32, u32),
         label: Option<&str>,
     ) -> wgpu::Texture {
+        let is_gl = self.gpu.adapter().get_info().backend == wgpu::Backend::Gl;
         let size = wgpu::Extent3d {
             width,
             height,
-            depth_or_array_layers: images.len() as u32,
+            depth_or_array_layers: if is_gl {
+                // Workaround for opengl: If len is 1, this array texture is just initialized and treated as a regular single texture.  So we lie and say we have at least two (and if we have 6, we lie and say we have 7 so it isn't treated as a cubemap)
+                match images.len() {
+                    1 => 2,
+                    6 => 7,
+                    l => l,
+                }
+            } else {
+                images.len()
+            } as u32,
         };
         let texture = self.gpu.device().create_texture(&wgpu::TextureDescriptor {
             label,
@@ -400,38 +410,59 @@ impl Renderer {
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
-        if images.len() == 1 {
+        for (layer, img) in images.iter().enumerate() {
+            assert_eq!(
+                img.len(),
+                images[0].len(),
+                "Can't create an array texture with images of different dimensions"
+            );
             self.gpu.queue().write_texture(
-                texture.as_image_copy(),
+                wgpu::ImageCopyTexture {
+                    texture: &texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d {
+                        x: 0,
+                        y: 0,
+                        z: layer as u32,
+                    },
+                    aspect: wgpu::TextureAspect::All,
+                },
+                img,
+                wgpu::ImageDataLayout {
+                    offset: 0,
+                    bytes_per_row: Some(4 * width),
+                    rows_per_image: Some(height),
+                },
+                wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
+        if size.depth_or_array_layers > images.len() as u32 {
+            self.gpu.queue().write_texture(
+                wgpu::ImageCopyTexture {
+                    texture: &texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d {
+                        x: 0,
+                        y: 0,
+                        z: images.len() as u32,
+                    },
+                    aspect: wgpu::TextureAspect::All,
+                },
                 images[0],
                 wgpu::ImageDataLayout {
                     offset: 0,
                     bytes_per_row: Some(4 * width),
                     rows_per_image: Some(height),
                 },
-                size,
-            );
-        } else {
-            let image_combined_len: usize = images.iter().map(|img| img.len()).sum();
-            let mut staging = Vec::with_capacity(image_combined_len);
-            for img in images {
-                assert_eq!(
-                    img.len(),
-                    images[0].len(),
-                    "Can't create an array texture with images of different dimensions"
-                );
-                staging.extend_from_slice(img);
-            }
-            // TODO Fixme this will also make a copy, it might be better to do multiple write_texture calls or else take an images[] slice which is already dense in memory
-            self.gpu.queue().write_texture(
-                texture.as_image_copy(),
-                &staging,
-                wgpu::ImageDataLayout {
-                    offset: 0,
-                    bytes_per_row: Some(4 * width),
-                    rows_per_image: Some(height),
+                wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
                 },
-                size,
             );
         }
         texture
@@ -444,7 +475,32 @@ impl Renderer {
         (width, height): (u32, u32),
         label: Option<&str>,
     ) -> wgpu::Texture {
-        self.create_array_texture(&[image], format, (width, height), label)
+        let size = wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        };
+        let texture = self.gpu.device().create_texture(&wgpu::TextureDescriptor {
+            label,
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        self.gpu.queue().write_texture(
+            texture.as_image_copy(),
+            image,
+            wgpu::ImageDataLayout {
+                offset: 0,
+                bytes_per_row: Some(4 * width),
+                rows_per_image: Some(height),
+            },
+            size,
+        );
+        texture
     }
 
     /// Create a new sprite group sized to fit `world_transforms` and

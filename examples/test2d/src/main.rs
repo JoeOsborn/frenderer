@@ -57,7 +57,7 @@ fn run(
             })
             .collect(),
         (0..COUNT)
-            .map(|_n| SheetRegion::new(rng.gen_range(0..=1), 0, 16, 0, 11, 16))
+            .map(|_n| SheetRegion::new(0, 0, 16, 0, 11, 16))
             .collect(),
         camera,
     );

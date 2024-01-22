@@ -48,8 +48,8 @@ impl engine::Game for Game {
             .load::<Png>("demo")
             .expect("Couldn't load demo spritesheet");
         let sprite_img = sprite_img_handle.read().0.to_rgba8();
-        let sprite_tex = engine.renderer.create_texture(
-            &sprite_img,
+        let sprite_tex = engine.renderer.create_array_texture(
+            &[&sprite_img],
             wgpu::TextureFormat::Rgba8UnormSrgb,
             sprite_img.dimensions(),
             Some("spr-demo.png"),
