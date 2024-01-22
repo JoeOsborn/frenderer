@@ -205,6 +205,12 @@ impl MeshRenderer {
         indices: Vec<u32>,
         mesh_info: Vec<MeshEntry>,
     ) -> MeshGroup {
+        if gpu.is_gl()
+            && (texture.depth_or_array_layers() == 1 || texture.depth_or_array_layers() == 6)
+        {
+            panic!("Array textures with 1 or 6 layers aren't supported in webgl or other GL backends {:?}", texture);
+        }
+
         let view_mesh = texture.create_view(&wgpu::TextureViewDescriptor {
             dimension: Some(wgpu::TextureViewDimension::D2Array),
             base_array_layer: 0,
@@ -366,13 +372,18 @@ impl FlatRenderer {
         indices: Vec<u32>,
         mesh_info: Vec<MeshEntry>,
     ) -> MeshGroup {
-        // TODO: extend material_colors to 4096 bytes
-        use wgpu::util::BufferInitDescriptor;
-        let uniforms = gpu.device().create_buffer_init(&BufferInitDescriptor {
-            label: None,
-            contents: bytemuck::cast_slice(material_colors),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        let mat_count = material_colors.len();
+        if mat_count > 256 {
+            panic!("Can't support >256 materials in one group (got {mat_count})");
+        }
+        let uniforms = gpu.device().create_buffer(&wgpu::BufferDescriptor {
+            label: Some("flat mesh group"),
+            size: 4096,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
+            mapped_at_creation: false,
         });
+        gpu.queue()
+            .write_buffer(&uniforms, 0, bytemuck::cast_slice(material_colors));
         let bind_group = gpu.device().create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
             layout: &self.data.bind_group_layout,
@@ -639,6 +650,13 @@ impl<Vtx: bytemuck::Pod + bytemuck::Zeroable + Copy> MeshRendererInner<Vtx> {
             .map(|me| {
                 let instance = next_instance;
                 next_instance += me.instance_count;
+                if (gpu.is_gl() || gpu.is_web())
+                    && me.submeshes.iter().any(|sm| sm.vertex_base != 0)
+                {
+                    panic!(
+                        "Meshes with non-zero vertex base are not supported in GL or web backends"
+                    );
+                }
                 MeshData {
                     instances: instance..next_instance,
                     submeshes: me.submeshes,

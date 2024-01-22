@@ -81,6 +81,19 @@ impl WGPU {
             Arc::new(queue),
         ))
     }
+    /// Returns true if this GPU interface is using a GL backend, important to work around some bugs
+    pub fn is_gl(&self) -> bool {
+        self.adapter.get_info().backend == wgpu::Backend::Gl
+    }
+    /// Returns true if this GPU interface is in web mode
+    #[cfg(target_arch = "wasm32")]
+    pub fn is_web(&self) -> bool {
+        true
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn is_web(&self) -> bool {
+        false
+    }
     /// Returns this GPU wrapper's [`wgpu::Adapter`].
     pub fn adapter(&self) -> &wgpu::Adapter {
         &self.adapter

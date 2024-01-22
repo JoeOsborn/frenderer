@@ -326,6 +326,9 @@ impl SpriteRenderer {
         sheet_regions: Vec<SheetRegion>,
         camera: Camera2D,
     ) -> usize {
+        if gpu.is_gl() && (tex.depth_or_array_layers() == 1 || tex.depth_or_array_layers() == 6) {
+            panic!("Array textures with 1 or 6 layers aren't supported in webgl or other GL backends {:?}", tex);
+        }
         let group_idx = if let Some(idx) = self.free_groups.pop() {
             idx
         } else {

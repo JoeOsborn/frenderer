@@ -385,11 +385,10 @@ impl Renderer {
         (width, height): (u32, u32),
         label: Option<&str>,
     ) -> wgpu::Texture {
-        let is_gl = self.gpu.adapter().get_info().backend == wgpu::Backend::Gl;
         let size = wgpu::Extent3d {
             width,
             height,
-            depth_or_array_layers: if is_gl {
+            depth_or_array_layers: if self.gpu.is_gl() {
                 // Workaround for opengl: If len is 1, this array texture is just initialized and treated as a regular single texture.  So we lie and say we have at least two (and if we have 6, we lie and say we have 7 so it isn't treated as a cubemap)
                 match images.len() {
                     1 => 2,
@@ -440,6 +439,7 @@ impl Renderer {
                 },
             );
         }
+        // again, if it's opengl we may need to copy our first texture again to the last (bonus) layer index.
         if size.depth_or_array_layers > images.len() as u32 {
             self.gpu.queue().write_texture(
                 wgpu::ImageCopyTexture {

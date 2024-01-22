@@ -265,14 +265,31 @@ fn load_gltf_flat(frend: &mut frenderer::Renderer, asset: &Gltf, instance_count:
                 )
             }));
             let idx_old_len = indices.len();
+            let vtx_base_supported = !(frend.gpu.is_gl() || frend.gpu.is_web());
             match reader.read_indices() {
-                None => indices.extend(0..(verts.len() - vtx_old_len) as u32),
-                Some(index_reader) => indices.extend(index_reader.into_u32()),
+                None if vtx_base_supported => indices.extend(0..(verts.len() - vtx_old_len) as u32),
+                Some(index_reader) if vtx_base_supported => indices.extend(index_reader.into_u32()),
+                None => indices.extend((vtx_old_len as u32)..verts.len() as u32),
+                Some(index_reader) => {
+                    indices.extend(index_reader.into_u32());
+                    if indices[idx_old_len..]
+                        .iter()
+                        .any(|&idx| idx < vtx_old_len as u32)
+                    {
+                        for idx in indices[idx_old_len..].iter_mut() {
+                            *idx += vtx_old_len as u32;
+                        }
+                    }
+                }
             };
-            // TODO: use 0 as vertex_base always, modify the indices above to start from old len to new len
+            let vertex_base = if vtx_base_supported {
+                vtx_old_len as i32
+            } else {
+                0
+            };
             entry.submeshes.push(frenderer::meshes::SubmeshData {
                 indices: idx_old_len as u32..(indices.len() as u32),
-                vertex_base: vtx_old_len as i32,
+                vertex_base,
             })
         }
         assert!(!entry.submeshes.is_empty());
