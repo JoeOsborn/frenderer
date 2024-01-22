@@ -203,11 +203,21 @@ impl Renderer {
     }
     /// Resize the internal surface and depth textures (typically called when the window or canvas size changes).
     pub fn resize_surface(&mut self, w: u32, h: u32) {
+        log::warn!(
+            "resizing display {:?} -> {:?}",
+            (self.config.width, self.config.height),
+            (w, h)
+        );
         self.config.width = w;
         self.config.height = h;
         self.surface.configure(self.gpu.device(), &self.config);
     }
     pub fn resize_render(&mut self, w: u32, h: u32) {
+        log::warn!(
+            "resizing render {:?} -> {:?}",
+            (self.render_width, self.render_height),
+            (w, h)
+        );
         self.render_width = w;
         self.render_height = h;
         let (color_texture, color_texture_view) =

@@ -38,7 +38,7 @@ impl Engine {
                 let this = Self {
                     sprite_renderer: SpriteRenderer::new(
                         &renderer.gpu,
-                        renderer.config().format.into(),
+                        renderer.config().view_formats[1].into(),
                         renderer.depth_texture().format(),
                     ),
                     renderer,
@@ -101,7 +101,7 @@ impl Engine {
                 ..
             } = event
             {
-                self.renderer.resize_render(size.width, size.height);
+                //self.renderer.resize_render(size.width, size.height);
                 self.window.request_redraw();
             }
         })?)
@@ -155,8 +155,8 @@ impl Engine {
     pub fn add_spritesheet(&mut self, img: image::RgbaImage, label: Option<&str>) -> Spritesheet {
         let ret = Spritesheet(self.sprite_renderer.add_sprite_group(
             &self.renderer.gpu,
-            &self.renderer.create_texture(
-                &img,
+            &self.renderer.create_array_texture(
+                &[&img],
                 wgpu::TextureFormat::Rgba8UnormSrgb,
                 img.dimensions(),
                 label,

@@ -44,7 +44,10 @@ impl<T> FrendererEvents<T> for crate::Renderer {
                 event: winit::event::WindowEvent::Resized(size),
                 ..
             } => {
-                self.resize_surface(size.width, size.height);
+                // For some reason on web this causes repeated increases in size.
+                if !self.gpu.is_web() {
+                    self.resize_surface(size.width, size.height);
+                }
                 window.request_redraw();
                 EventPhase::Wait
             }
