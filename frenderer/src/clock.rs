@@ -1,3 +1,7 @@
+//! [`Clock`] provides a convenience for managing a game loop's
+//! fixed-timestep simulation tick rate according to standards set out
+//! by Glenn Fiedler and Tyler Glaiel.
+
 #[cfg(not(target_arch = "wasm32"))]
 pub use std::time::Instant;
 #[cfg(target_arch = "wasm32")]

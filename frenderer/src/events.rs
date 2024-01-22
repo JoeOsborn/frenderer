@@ -1,4 +1,7 @@
-/// Phase in the game event loop lifecycle
+//! This extension trait simplifies the connection between winit's
+//! event loop stages and a game rendering/simulation lifecycle.
+
+/// Phase in the game event loop
 pub enum EventPhase {
     /// The game should simulate time forward by the given number of steps
     Simulate(usize),
@@ -9,6 +12,7 @@ pub enum EventPhase {
     /// There's nothing in particular the game should do right now.
     Wait,
 }
+
 /// This extension trait is used under the `winit` feature to simplify event-loop handling.
 pub trait FrendererEvents<T> {
     /// Call `handle_event` on your [`crate::frenderer::Renderer`]

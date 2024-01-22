@@ -1,13 +1,9 @@
 //! A wrapper for WGPU state.
-//!
-//! In a future version of frenderer, this type will be fully public
-//! so that it can be provided by client code rather than initialized
-//! solely within frenderer.
 
 use std::sync::Arc;
 
 #[derive(Debug)]
-enum FrendererError {
+pub enum FrendererError {
     NoUsableAdapter,
 }
 impl std::fmt::Display for FrendererError {

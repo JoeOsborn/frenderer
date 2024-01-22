@@ -101,8 +101,10 @@ impl Engine {
                 ..
             } = event
             {
-                //self.renderer.resize_render(size.width, size.height);
-                self.window.request_redraw();
+                if !self.renderer.gpu.is_web() {
+                    self.renderer.resize_render(size.width, size.height);
+                    self.window.request_redraw();
+                }
             }
         })?)
     }

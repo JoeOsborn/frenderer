@@ -1,11 +1,28 @@
 //! [`Renderer`] is the main user-facing type of this crate.  You can
-//! make one using [`with_default_runtime()`] or provide your own
-//! [`super::Runtime`] implementor via [`Renderer::with_runtime()`].
-//! If you don't need frenderer to intiialize `wgpu` for you, you
-//! don't need to provide any runtime but can instead use
-//! [`Renderer::with_gpu`] to construct a renderer with a given
-//! instance, adapter, device, and queue (wrapped in a [`crate::gpu::WGPU`]
-//! struct), dimensions, and surface.
+//! make one using [`with_default_runtime()`].  If you don't need
+//! frenderer to initialize `wgpu` or windowing for you, you can
+//! instead use [`Renderer::with_gpu`] to construct a renderer with a
+//! given instance, adapter, device, and queue (wrapped in a
+//! [`crate::gpu::WGPU`] struct), dimensions, and surface.
+//! [`Renderer`]'s built-in rendering scheme uses off-screen rendering
+//! at a given resolution, then a color postprocessing step to produce
+//! output on the [`wgpu::Surface`].
+//!
+//! Besides managing the swapchain, [`Renderer`] also offers
+//! facilities for accessing the internal data of a sprite renderer, a
+//! textured unlit mesh renderer, and a flat-colored unlit mesh
+//! renderer, as well as a color postprocessing step.  Accesses to
+//! subsets of their data through [`Renderer`] are recorded for upload
+//! before rendering starts; so, any sprite transform data or mesh
+//! data accessed through [`Renderer`] will be marked for upload
+//! automatically.  This won't always be the most efficient strategy,
+//! but you can always create your own
+//! [`crate::sprites::SpriteRenderer`] for example and use your own
+//! scheme.
+//!
+//! It is also important to note that you don't actually need to
+//! create a [`Renderer`] to use the rendering strategies in this
+//! crate.  It's just a convenience.
 
 use crate::{
     colorgeo::{self, ColorGeo},
@@ -46,7 +63,7 @@ enum Upload {
 /// Initialize frenderer with default settings for the current target
 /// architecture, including logging via `env_logger` on native or `console_log` on web.
 /// On web, this also adds a canvas to the given window.  If you don't need all that behavior,
-/// consider using your own [`super::Runtime`].
+/// consider creating a [`crate::gpu::WGPU`] yourself and calling [`Renderer::with_gpu`].
 #[cfg(all(not(target_arch = "wasm32"), feature = "winit"))]
 pub fn with_default_runtime(
     builder: winit::window::WindowBuilder,
@@ -123,7 +140,8 @@ pub fn with_default_runtime(
 impl Renderer {
     /// The format used for depth textures within frenderer.
     pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
-    /// Create a new Renderer with a full set of GPU resources, a size, and a surface.
+    /// Create a new Renderer with a full set of GPU resources, a
+    /// render size, a surface size, and a surface.
     pub fn with_gpu(
         width: u32,
         height: u32,
@@ -201,23 +219,14 @@ impl Renderer {
             color_texture_view,
         }
     }
-    /// Resize the internal surface and depth textures (typically called when the window or canvas size changes).
+    /// Resize the internal surface texture (typically called when the window or canvas size changes).
     pub fn resize_surface(&mut self, w: u32, h: u32) {
-        log::warn!(
-            "resizing display {:?} -> {:?}",
-            (self.config.width, self.config.height),
-            (w, h)
-        );
         self.config.width = w;
         self.config.height = h;
         self.surface.configure(self.gpu.device(), &self.config);
     }
+    /// Resize the internal color and depth targets (the actual rendering resolution).
     pub fn resize_render(&mut self, w: u32, h: u32) {
-        log::warn!(
-            "resizing render {:?} -> {:?}",
-            (self.render_width, self.render_height),
-            (w, h)
-        );
         self.render_width = w;
         self.render_height = h;
         let (color_texture, color_texture_view) =
@@ -295,9 +304,10 @@ impl Renderer {
     }
 
     /// Acquire the next frame, create a [`wgpu::RenderPass`], draw
-    /// into it, and submit the encoder.
-    /// This also queues uploads of mesh, sprite, or other instance data, so if you don't use render
-    /// in your code be sure to call [`do_uploads`] if you're using the built-in mesh, flat, or sprite renderers.
+    /// into it, and submit the encoder.  This also queues uploads of
+    /// mesh, sprite, or other instance data, so if you don't use
+    /// [`render`] in your code be sure to call [`do_uploads`] if you're
+    /// using the built-in mesh, flat, or sprite renderers.
     pub fn render(&mut self) {
         self.do_uploads();
         let (frame, view, mut encoder) = self.render_setup();
@@ -344,7 +354,7 @@ impl Renderer {
     }
     /// Renders all the frenderer stuff into a given
     /// [`wgpu::RenderPass`].  Just does rendering of the built-in
-    /// renderers, with no encoder submission or frame
+    /// renderers, with no data uploads, encoder submission, or frame
     /// acquire/present.
     pub fn render_into<'s, 'pass>(&'s self, rpass: &mut wgpu::RenderPass<'pass>)
     where
@@ -355,7 +365,7 @@ impl Renderer {
         self.sprites.render(rpass, ..);
     }
     /// Convenience method for acquiring a surface texture, view, and
-    /// command encoder
+    /// command encoder.
     pub fn render_setup(
         &self,
     ) -> (
@@ -508,9 +518,8 @@ impl Renderer {
         );
         texture
     }
-
     /// Create a new sprite group sized to fit `world_transforms` and
-    /// `sheet_regions`, which should be the same size.  Returns the
+    /// `sheet_regions`, which should be the same length.  Returns the
     /// sprite group index corresponding to this group.
     pub fn sprite_group_add(
         &mut self,
@@ -552,7 +561,7 @@ impl Renderer {
     /// Get a mutable slice of a specified sprite group's world transforms and texture regions.
     /// Marks these sprites for later upload.
     /// Since this causes an upload later on, call it as few times as possible per frame.
-    /// Most importantly, don't call it with lots of tiny regions or overlapped regions.
+    /// Most importantly, don't call it with lots of tiny or overlapped regions.
     ///
     /// Panics if the given sprite group is not populated or the range is out of bounds.
     pub fn sprites_mut(
@@ -575,9 +584,13 @@ impl Renderer {
     pub fn mesh_set_camera(&mut self, camera: crate::meshes::Camera3D) {
         self.meshes.set_camera(&self.gpu, camera)
     }
-    /// Add a mesh group with the given array texture.
-    /// All meshes in the group pull from the same vertex buffer, and each submesh is defined in terms of a range of indices within that buffer.
-    /// When loading your mesh resources from whatever format they're stored in, fill out vertex and index vecs while tracking the beginning and end of each mesh and submesh (see [`crate::meshes::MeshEntry`] for details).
+    /// Add a mesh group with the given array texture.  All meshes in
+    /// the group pull from the same vertex buffer, and each submesh
+    /// is defined in terms of a range of indices within that buffer.
+    /// When loading your mesh resources from whatever format they're
+    /// stored in, fill out vertex and index vecs while tracking the
+    /// beginning and end of each mesh and submesh (see
+    /// [`crate::meshes::MeshEntry`] for details).
     pub fn mesh_group_add(
         &mut self,
         texture: &wgpu::Texture,
@@ -638,9 +651,13 @@ impl Renderer {
     pub fn flat_set_camera(&mut self, camera: crate::meshes::Camera3D) {
         self.flats.set_camera(&self.gpu, camera)
     }
-    /// Add a flat mesh group with the given color materials.
-    /// All meshes in the group pull from the same vertex buffer, and each submesh is defined in terms of a range of indices within that buffer.
-    /// When loading your mesh resources from whatever format they're stored in, fill out vertex and index vecs while tracking the beginning and end of each mesh and submesh (see [`crate::meshes::MeshEntry`] for details).
+    /// Add a flat mesh group with the given color materials.  All
+    /// meshes in the group pull from the same vertex buffer, and each
+    /// submesh is defined in terms of a range of indices within that
+    /// buffer.  When loading your mesh resources from whatever format
+    /// they're stored in, fill out vertex and index vecs while
+    /// tracking the beginning and end of each mesh and submesh (see
+    /// [`crate::meshes::MeshEntry`] for details).
     pub fn flat_group_add(
         &mut self,
         material_colors: &[[f32; 4]],
@@ -696,33 +713,47 @@ impl Renderer {
         let trfs = self.flats.get_meshes_mut(which, idx);
         &mut trfs[range]
     }
+    /// Returns the current geometric transform used in postprocessing (a 4x4 column-major homogeneous matrix)
     pub fn post_transform(&self) -> [f32; 16] {
         self.postprocess.transform()
     }
+    /// Returns the current color transform used in postprocessing (a 4x4 column-major homogeneous matrix)
     pub fn post_color_transform(&self) -> [f32; 16] {
         self.postprocess.color_transform()
     }
+    /// Returns the current saturation value in postprocessing (a value between -1 and 1, with 0.0 meaning an identity transformation)
     pub fn post_saturation(&self) -> f32 {
         self.postprocess.saturation()
     }
+    /// Sets all postprocessing parameters
     pub fn post_set(&mut self, trf: [f32; 16], color_trf: [f32; 16], sat: f32) {
         self.postprocess.set_post(&self.gpu, trf, color_trf, sat);
     }
+    /// Sets the postprocessing geometric transform (a 4x4 column-major homogeneous matrix)
     pub fn post_set_transform(&mut self, trf: [f32; 16]) {
         self.postprocess.set_transform(&self.gpu, trf);
     }
+    /// Sets the postprocessing color transform (a 4x4 column-major homogeneous matrix)
     pub fn post_set_color_transform(&mut self, trf: [f32; 16]) {
         self.postprocess.set_color_transform(&self.gpu, trf);
     }
+    /// Sets the postprocessing saturation value (a number between -1 and 1, with 0.0 meaning an identity transformation)
     pub fn post_set_saturation(&mut self, sat: f32) {
         self.postprocess.set_saturation(&self.gpu, sat);
     }
+    /// Sets the postprocessing color lookup table texture
+    pub fn post_set_lut(&mut self, lut: &wgpu::Texture) {
+        self.postprocess.replace_lut(&self.gpu, lut);
+    }
+    /// Gets the surface configuration
     pub fn config(&self) -> &wgpu::SurfaceConfiguration {
         &self.config
     }
+    /// Gets a reference to the active depth texture
     pub fn depth_texture(&self) -> &wgpu::Texture {
         &self.depth_texture
     }
+    /// Gets a view on the active depth texture
     pub fn depth_texture_view(&self) -> &wgpu::TextureView {
         &self.depth_texture_view
     }

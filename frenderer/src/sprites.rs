@@ -319,7 +319,7 @@ impl SpriteRenderer {
         }
     }
     /// Create a new sprite group sized to fit `world_transforms` and
-    /// `sheet_regions`, which should be the same size.  Returns the
+    /// `sheet_regions`, which should be the same length.  Returns the
     /// sprite group index corresponding to this group.
     pub fn add_sprite_group(
         &mut self,

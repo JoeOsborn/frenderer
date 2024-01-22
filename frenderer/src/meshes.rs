@@ -91,7 +91,9 @@ struct MeshData {
 pub struct SubmeshData {
     /// A range of indices within the mesh group's index buffer
     pub indices: Range<u32>,
-    /// The base vertex to be added to the value of each index in the submesh
+    /// The base vertex to be added to the value of each index in the
+    /// submesh.  Warning: `vertex_base` values greater than 0 are not
+    /// supported on some targets (notably web).
     pub vertex_base: i32,
 }
 
@@ -194,9 +196,13 @@ impl MeshRenderer {
     pub fn set_camera(&mut self, gpu: &crate::WGPU, camera: Camera3D) {
         self.data.set_camera(gpu, camera)
     }
-    /// Add a mesh group with the given array texture.
-    /// All meshes in the group pull from the same vertex buffer, and each submesh is defined in terms of a range of indices within that buffer.
-    /// When loading your mesh resources from whatever format they're stored in, fill out vertex and index vecs while tracking the beginning and end of each mesh and submesh (see [`MeshEntry`] for details).
+    /// Add a mesh group with the given array texture.  All meshes in
+    /// the group pull from the same vertex buffer, and each submesh
+    /// is defined in terms of a range of indices within that buffer.
+    /// When loading your mesh resources from whatever format they're
+    /// stored in, fill out vertex and index vecs while tracking the
+    /// beginning and end of each mesh and submesh (see [`MeshEntry`]
+    /// for details).
     pub fn add_mesh_group(
         &mut self,
         gpu: &crate::WGPU,
@@ -303,7 +309,7 @@ impl MeshRenderer {
 }
 
 impl FlatRenderer {
-    /// Creates a new `FlatRenderer` meant to draw into the given color target state with the given depth texture format..
+    /// Creates a new `FlatRenderer` meant to draw into the given color target state with the given depth texture format.
     pub fn new(
         gpu: &crate::WGPU,
         color_target: wgpu::ColorTargetState,
@@ -360,9 +366,13 @@ impl FlatRenderer {
     pub fn set_camera(&mut self, gpu: &crate::WGPU, camera: Camera3D) {
         self.data.set_camera(gpu, camera)
     }
-    /// Add a mesh group with the given array of material colors.
-    /// All meshes in the group pull from the same vertex buffer, and each submesh is defined in terms of a range of indices within that buffer.
-    /// When loading your mesh resources from whatever format they're stored in, fill out vertex and index vecs while tracking the beginning and end of each mesh and submesh (see [`MeshEntry`] for details).
+    /// Add a mesh group with the given array of material colors.  All
+    /// meshes in the group pull from the same vertex buffer, and each
+    /// submesh is defined in terms of a range of indices within that
+    /// buffer.  When loading your mesh resources from whatever format
+    /// they're stored in, fill out vertex and index vecs while
+    /// tracking the beginning and end of each mesh and submesh (see
+    /// [`MeshEntry`] for details).
     pub fn add_mesh_group(
         &mut self,
         gpu: &crate::WGPU,

@@ -1,8 +1,13 @@
+//! Color and geometry postprocessing step.
+
 use std::borrow::Cow;
 
 use crate::gpu::WGPU;
 use wgpu::util::DeviceExt;
 
+/// Includes a 4x4 homogeneous geometry transformation, a 4x4
+/// homogenous color transformation, a saturation modifier, and a
+/// color lookup table (LUT).
 pub struct ColorGeo {
     pipeline: wgpu::RenderPipeline,
     transform_bind_group: wgpu::BindGroup,
@@ -28,6 +33,7 @@ struct ColorTransform {
     saturation_padding: [f32; 4],
 }
 
+/// Returns an identity lut, for convenience in constructing a [`ColorGeo`].
 pub fn lut_identity(gpu: &WGPU) -> wgpu::Texture {
     const CUBE: u32 = 64;
     gpu.device().create_texture_with_data(
@@ -66,6 +72,7 @@ pub fn lut_identity(gpu: &WGPU) -> wgpu::Texture {
 }
 
 impl ColorGeo {
+    /// Creates a new [`ColorGeo`] phase.
     pub fn new(
         gpu: &WGPU,
         color_texture: &wgpu::Texture,
@@ -262,6 +269,7 @@ impl ColorGeo {
             lut_texture_view,
         }
     }
+    /// Updates simple parameters for color-geometry transforms.  To replace the lut, call [`ColorGeo::replace_lut`].
     pub fn set_post(&mut self, gpu: &WGPU, trf: [f32; 16], color_trf: [f32; 16], sat: f32) {
         // update buffers
         self.transform.mat = trf;
@@ -272,6 +280,9 @@ impl ColorGeo {
         gpu.queue()
             .write_buffer(&self.colormod_buf, 0, bytemuck::bytes_of(&self.colormod));
     }
+    /// Replaces the color texture resource used by this
+    /// postprocessing stage (for example, because the color target
+    /// has changed size).
     pub fn replace_color_texture(&mut self, gpu: &WGPU, color: &wgpu::Texture) {
         self.color_texture_view = color.create_view(&wgpu::TextureViewDescriptor::default());
         self.texture_bind_group = Self::create_bind_group(
@@ -282,6 +293,8 @@ impl ColorGeo {
             gpu,
         );
     }
+    /// Replaces the lookup table used by this postprocessing stage.
+    /// The LUT should be a 3D texture.
     pub fn replace_lut(&mut self, gpu: &WGPU, lut: &wgpu::Texture) {
         self.lut_texture_view = lut.create_view(&wgpu::TextureViewDescriptor::default());
         self.texture_bind_group = Self::create_bind_group(
@@ -349,27 +362,30 @@ impl ColorGeo {
             ],
         })
     }
+    /// Renders onto the given renderpass.
     pub fn render<'s, 'pass>(&'s self, rpass: &mut wgpu::RenderPass<'pass>)
     where
         's: 'pass,
     {
         rpass.set_pipeline(&self.pipeline);
-        // todo future: subdivide quad according to params
+        // todo future: subdivide quad according to params, for cool visual effects
         rpass.set_bind_group(0, &self.transform_bind_group, &[]);
         rpass.set_bind_group(1, &self.texture_bind_group, &[]);
-        // todo future: rpass.set_bind_group(2, self.lut_bind_group);
         rpass.draw(0..6, 0..1);
     }
-
+    /// Returns the current geometric transform (a 4x4 homogeneous column-major matrix).
     pub fn transform(&self) -> [f32; 16] {
         self.transform.mat
     }
+    /// Returns the current color transform (a 4x4 homogeneous column-major matrix).
     pub fn color_transform(&self) -> [f32; 16] {
         self.colormod.mat
     }
+    /// Returns the current saturation modifier (0.0 means identity, negative decreases and positive increases saturation).
     pub fn saturation(&self) -> f32 {
         self.colormod.saturation_padding[0]
     }
+    /// Sets the geometric transform (a 4x4 homogeneous column-major matrix).
     pub fn set_transform(&mut self, gpu: &WGPU, mat: [f32; 16]) {
         self.set_post(
             gpu,
@@ -378,6 +394,7 @@ impl ColorGeo {
             self.colormod.saturation_padding[0],
         );
     }
+    /// Sets the color transform (a 4x4 homogeneous column-major matrix).
     pub fn set_color_transform(&mut self, gpu: &WGPU, mat: [f32; 16]) {
         self.set_post(
             gpu,
@@ -386,6 +403,7 @@ impl ColorGeo {
             self.colormod.saturation_padding[0],
         );
     }
+    /// Sets the saturation modifier (0.0 means identity, negative decreases and positive increases saturation).
     pub fn set_saturation(&mut self, gpu: &WGPU, sat: f32) {
         self.set_post(gpu, self.transform.mat, self.colormod.mat, sat);
     }
