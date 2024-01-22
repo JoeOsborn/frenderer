@@ -46,28 +46,32 @@ impl<G: Game> Engine<G> {
     const C_TR: u8 = 1;
     const C_PH: u8 = 2;
 
-    pub fn new(builder: winit::window::WindowBuilder) -> Result<Self, Box<dyn std::error::Error>> {
-        let event_loop = winit::event_loop::EventLoop::new()?;
-        let window = Arc::new(builder.build(&event_loop)?);
-        let renderer = frenderer::with_default_runtime(window.clone(), None)?;
-        let input = Input::default();
-        let camera = Camera {
-            screen_pos: [0.0, 0.0],
-            screen_size: window.inner_size().into(),
-        };
-        Ok(Self {
-            renderer,
-            input,
-            window,
-            event_loop: Some(event_loop),
-            camera,
-            charas_nocollide: vec![],
-            charas_trigger: vec![],
-            charas_physical: vec![],
-            texts: Vec::with_capacity(128),
-        })
+    pub fn run(builder: winit::window::WindowBuilder) -> Result<(), Box<dyn std::error::Error>> {
+        frenderer::with_default_runtime(
+            builder,
+            Some((1024, 768)),
+            |event_loop, window, renderer| {
+                let input = Input::default();
+                let camera = Camera {
+                    screen_pos: [0.0, 0.0],
+                    screen_size: window.inner_size().into(),
+                };
+                let this = Self {
+                    renderer,
+                    input,
+                    window,
+                    event_loop: Some(event_loop),
+                    camera,
+                    charas_nocollide: vec![],
+                    charas_trigger: vec![],
+                    charas_physical: vec![],
+                    texts: Vec::with_capacity(128),
+                };
+                this.go().unwrap();
+            },
+        )
     }
-    pub fn run(mut self) -> Result<(), Box<dyn std::error::Error>> {
+    fn go(mut self) -> Result<(), Box<dyn std::error::Error>> {
         let mut clock = Clock::new(1.0 / 60.0, 0.0002, 5);
         let mut game = G::new(&mut self);
         let mut contacts = collision::Contacts::new();
