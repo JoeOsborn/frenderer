@@ -134,15 +134,6 @@ impl Renderer {
     ) -> Self {
         let width = if width == 0 { 320 } else { width };
         let height = if height == 0 { 240 } else { height };
-        if crate::USE_STORAGE {
-            let supports_storage_resources = gpu
-                .adapter()
-                .get_downlevel_capabilities()
-                .flags
-                .contains(wgpu::DownlevelFlags::VERTEX_STORAGE)
-                && gpu.device().limits().max_storage_buffers_per_shader_stage > 0;
-            assert!(supports_storage_resources, "Storage buffers not supported");
-        }
         let swapchain_capabilities = surface.get_capabilities(gpu.adapter());
         let swapchain_format = swapchain_capabilities.formats[0];
 

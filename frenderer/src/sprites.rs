@@ -5,7 +5,7 @@
 
 use std::{borrow::Cow, ops::Range};
 
-use crate::{USE_STORAGE, WGPU};
+use crate::WGPU;
 use bytemuck::{Pod, Zeroable};
 
 /// A SheetRegion defines the visual appearance of a sprite: which spritesheet (of an array of spritesheets), its pixel region within the spritesheet, and its visual depth (larger meaning further away).
@@ -122,6 +122,7 @@ pub struct SpriteRenderer {
     texture_bind_group_layout: wgpu::BindGroupLayout,
     groups: Vec<Option<SpriteGroup>>,
     free_groups: Vec<usize>,
+    use_storage: bool,
 }
 
 impl SpriteRenderer {
@@ -189,7 +190,8 @@ impl SpriteRenderer {
             // No count, not a buffer array binding
             count: None,
         };
-        let sprite_bind_group_layout = if USE_STORAGE {
+        let use_storage = gpu.supports_storage();
+        let sprite_bind_group_layout = if use_storage {
             gpu.device()
                 .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                     label: None,
@@ -249,12 +251,12 @@ impl SpriteRenderer {
                 layout: Some(&pipeline_layout),
                 vertex: wgpu::VertexState {
                     module: &shader,
-                    entry_point: if USE_STORAGE {
+                    entry_point: if use_storage {
                         "vs_storage_main"
                     } else {
                         "vs_vbuf_main"
                     },
-                    buffers: if USE_STORAGE {
+                    buffers: if use_storage {
                         &[]
                     } else {
                         &[
@@ -309,6 +311,7 @@ impl SpriteRenderer {
 
         Self {
             pipeline,
+            use_storage,
             free_groups: Vec::new(),
             groups: Vec::with_capacity(4),
             sprite_bind_group_layout,
@@ -365,7 +368,7 @@ impl SpriteRenderer {
         let buffer_world = gpu.device().create_buffer(&wgpu::BufferDescriptor {
             label: None,
             size: world_transforms.len() as u64 * std::mem::size_of::<Transform>() as u64,
-            usage: if USE_STORAGE {
+            usage: if self.use_storage {
                 wgpu::BufferUsages::STORAGE
             } else {
                 wgpu::BufferUsages::VERTEX
@@ -375,7 +378,7 @@ impl SpriteRenderer {
         let buffer_sheet = gpu.device().create_buffer(&wgpu::BufferDescriptor {
             label: None,
             size: sheet_regions.len() as u64 * std::mem::size_of::<SheetRegion>() as u64,
-            usage: if USE_STORAGE {
+            usage: if self.use_storage {
                 wgpu::BufferUsages::STORAGE
             } else {
                 wgpu::BufferUsages::VERTEX
@@ -388,7 +391,7 @@ impl SpriteRenderer {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let sprite_bind_group = if USE_STORAGE {
+        let sprite_bind_group = if self.use_storage {
             gpu.device().create_bind_group(&wgpu::BindGroupDescriptor {
                 label: None,
                 layout: &self.sprite_bind_group_layout,
@@ -476,7 +479,7 @@ impl SpriteRenderer {
             group.world_buffer = gpu.device().create_buffer(&wgpu::BufferDescriptor {
                 label: None,
                 size: new_size as u64,
-                usage: if USE_STORAGE {
+                usage: if self.use_storage {
                     wgpu::BufferUsages::STORAGE
                 } else {
                     wgpu::BufferUsages::VERTEX
@@ -486,14 +489,14 @@ impl SpriteRenderer {
             group.sheet_buffer = gpu.device().create_buffer(&wgpu::BufferDescriptor {
                 label: None,
                 size: new_size as u64,
-                usage: if USE_STORAGE {
+                usage: if self.use_storage {
                     wgpu::BufferUsages::STORAGE
                 } else {
                     wgpu::BufferUsages::VERTEX
                 } | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             });
-            if USE_STORAGE {
+            if self.use_storage {
                 group.sprite_bind_group =
                     gpu.device().create_bind_group(&wgpu::BindGroupDescriptor {
                         label: None,
@@ -596,7 +599,7 @@ impl SpriteRenderer {
         rpass.set_pipeline(&self.pipeline);
         let which = crate::range(which, self.groups.len());
         for group in self.groups[which].iter().filter_map(|o| o.as_ref()) {
-            if !USE_STORAGE {
+            if !self.use_storage {
                 rpass.set_vertex_buffer(0, group.world_buffer.slice(..));
                 rpass.set_vertex_buffer(1, group.sheet_buffer.slice(..));
             }

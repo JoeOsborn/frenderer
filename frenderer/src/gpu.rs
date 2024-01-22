@@ -47,8 +47,6 @@ impl WGPU {
         instance: &'inst wgpu::Instance,
         surface: Option<&wgpu::Surface<'inst>>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        log::info!("Use storage? {:?}", crate::USE_STORAGE);
-
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::default(),
@@ -58,6 +56,12 @@ impl WGPU {
             })
             .await
             .ok_or(FrendererError::NoUsableAdapter)?;
+        let is_gl = adapter.get_info().backend == wgpu::Backend::Gl;
+        #[cfg(not(target_arch = "wasm32"))]
+        let is_web = false;
+        #[cfg(target_arch = "wasm32")]
+        let is_web = true;
+        let use_storage = !(is_web && is_gl);
 
         // Create the logical device and command queue
         let (device, queue) = adapter
@@ -65,7 +69,7 @@ impl WGPU {
                 &wgpu::DeviceDescriptor {
                     label: None,
                     required_features: wgpu::Features::empty(),
-                    required_limits: if crate::USE_STORAGE {
+                    required_limits: if use_storage {
                         wgpu::Limits::downlevel_defaults()
                     } else {
                         wgpu::Limits::downlevel_webgl2_defaults()
@@ -94,6 +98,17 @@ impl WGPU {
     pub fn is_web(&self) -> bool {
         false
     }
+    /// Whether this GPU supports storage buffers
+    pub fn supports_storage(&self) -> bool {
+        !(self.is_gl() && self.is_web())
+            && self
+                .adapter
+                .get_downlevel_capabilities()
+                .flags
+                .contains(wgpu::DownlevelFlags::VERTEX_STORAGE)
+            && self.device.limits().max_storage_buffers_per_shader_stage > 0
+    }
+
     /// Returns this GPU wrapper's [`wgpu::Adapter`].
     pub fn adapter(&self) -> &wgpu::Adapter {
         &self.adapter
