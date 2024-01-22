@@ -136,6 +136,7 @@ impl Renderer {
         let height = if height == 0 { 240 } else { height };
         let swapchain_capabilities = surface.get_capabilities(gpu.adapter());
         let swapchain_format = swapchain_capabilities.formats[0];
+        let swapchain_format_srgb = swapchain_format.add_srgb_suffix();
 
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
@@ -148,15 +149,19 @@ impl Renderer {
             },
             present_mode: wgpu::PresentMode::AutoNoVsync,
             alpha_mode: swapchain_capabilities.alpha_modes[0],
-            view_formats: vec![swapchain_format],
+            view_formats: vec![swapchain_format, swapchain_format_srgb],
             desired_maximum_frame_latency: 2,
         };
 
         surface.configure(gpu.device(), &config);
-        let (color_texture, color_texture_view) =
-            Self::create_color_texture(gpu.device(), width, height, swapchain_format);
+        let (color_texture, color_texture_view) = Self::create_color_texture(
+            gpu.device(),
+            width,
+            height,
+            wgpu::TextureFormat::Rgba8Unorm,
+        );
         let lut = colorgeo::lut_identity(&gpu);
-        let postprocess = ColorGeo::new(&gpu, &color_texture, &lut, config.format.into());
+        let postprocess = ColorGeo::new(&gpu, &color_texture, &lut, swapchain_format_srgb.into());
         let (depth_texture, depth_texture_view) =
             Self::create_depth_texture(gpu.device(), width, height);
 
@@ -353,7 +358,7 @@ impl Renderer {
             .get_current_texture()
             .expect("Failed to acquire next swap chain texture");
         let view = frame.texture.create_view(&wgpu::TextureViewDescriptor {
-            format: Some(self.config.view_formats[0]),
+            format: Some(self.config.view_formats[1]),
             ..Default::default()
         });
         let encoder = self
