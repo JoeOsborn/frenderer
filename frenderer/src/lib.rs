@@ -21,11 +21,23 @@
 //! particular, frenderer does not take control of the event loop from
 //! winit or exclusively own the WGPU instance, device, and adapter.
 //! Typical usage will call [`frenderer::with_default_runtime()`] to
-//! set up frenderer, call e.g.
-//! [`SpriteRenderer::add_sprite_group()`] on the resulting
-//! [`frenderer::Renderer`] value, and eventually call
-//! [`SpriteRenderer::upload_sprites()`] and
-//! [`frenderer::Renderer::render`] to draw.
+//! set up frenderer, call e.g.  [`Renderer::sprite_group_add()`] on
+//! the produced [`frenderer::Renderer`] value, and eventually call
+//! [`frenderer::Renderer::sprites_mut()`] or
+//! [`frenderer::Renderer::sprite_group_resize()`] to modify the
+//! sprite data and [`frenderer::Renderer::render`] to draw.
+//!
+//! The 3D rendering facilities of frenderer are pretty basic at the
+//! moment, with simple perspective cameras and unlit textured or
+//! flat-colored meshes.  As in the sprite renderer, the overriding
+//! performance concern has been to minimize pipeline state changes
+//! and draw calls using features like instanced rendering, storage
+//! buffers (where available), array textures, and packing multiple
+//! meshes into a single buffer.
+//!
+//! Frenderer works in retained mode, but the "engine-immediate"
+//! example shows how an immediate-mode render API could be built on
+//! top of it.
 
 mod gpu;
 pub use gpu::WGPU;
