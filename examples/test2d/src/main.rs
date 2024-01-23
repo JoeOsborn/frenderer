@@ -1,7 +1,11 @@
 use assets_manager::asset::Png;
 use std::sync::Arc;
 
-use frenderer::{input, wgpu, Camera2D, SheetRegion, Transform};
+use frenderer::{
+    input,
+    sprites::{Camera2D, SheetRegion, Transform},
+    wgpu,
+};
 use rand::Rng;
 
 fn main() {
@@ -67,7 +71,7 @@ fn run(
     const DT_MAX: f32 = DT * 5.0;
     const TIME_SNAPS: [f32; 5] = [15.0, 30.0, 60.0, 120.0, 144.0];
     let mut acc = 0.0;
-    let mut now = frenderer::Instant::now();
+    let mut now = frenderer::clock::Instant::now();
     event_loop
         .run(move |event, target| {
             use winit::event::{Event, WindowEvent};
@@ -141,7 +145,7 @@ fn run(
                         elapsed = DT;
                     }
                     acc += elapsed;
-                    now = frenderer::Instant::now();
+                    now = frenderer::clock::Instant::now();
                     // While we have time to spend
                     while acc >= DT {
                         // simulate a frame

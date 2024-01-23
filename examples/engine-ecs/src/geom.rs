@@ -1,5 +1,5 @@
 pub use bytemuck::Zeroable;
-use frenderer::{Camera2D, Transform};
+use frenderer::sprites::{Camera2D, Transform};
 use std::ops::Add;
 pub use ultraviolet::*;
 

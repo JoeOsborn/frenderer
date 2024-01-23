@@ -1,6 +1,6 @@
 use crate::geom;
 use crate::TagType;
-use frenderer::SheetRegion;
+use frenderer::sprites::SheetRegion;
 pub struct Chara<Tag: TagType> {
     pub(crate) aabb_: geom::AABB, // Consider: Transform; but then you'd need to handle rotation in collision
     pub(crate) vel_: geom::Vec2,

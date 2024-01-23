@@ -2,8 +2,11 @@ use std::sync::Arc;
 
 pub use bytemuck::Zeroable;
 pub use frenderer::input::{Input, Key};
-pub use frenderer::{wgpu, Camera2D as Camera, Renderer, SheetRegion, Transform};
-use frenderer::{Clock, EventPhase, FrendererEvents};
+use frenderer::{clock::Clock, EventPhase, FrendererEvents};
+pub use frenderer::{
+    sprites::{Camera2D as Camera, SheetRegion, Transform},
+    wgpu, Renderer,
+};
 pub use hecs;
 mod gfx;
 pub use gfx::{BitFont, Spritesheet};
@@ -216,7 +219,7 @@ impl<G: Game> Engine<G> {
         char_h: u16,
     ) -> BitFont<B> {
         BitFont {
-            font: frenderer::BitFont::with_sheet_region(range, uv, char_w, char_h),
+            font: frenderer::bitfont::BitFont::with_sheet_region(range, uv, char_w, char_h),
             _spritesheet: spritesheet,
         }
     }

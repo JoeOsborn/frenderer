@@ -8,7 +8,7 @@
 //! The entry point for frenderer will depend on how it's being used;
 //! for use case (1), you can initialize a [`WGPU`] struct yourself
 //! with an adapter, device, and queue, and proceed to use the
-//! built-in [`SpriteRenderer`], [`MeshRenderer`], [`FlatRenderer`],
+//! built-in [`sprites::SpriteRenderer`], [`meshes::MeshRenderer`], [`meshes::FlatRenderer`],
 //! or [`colorgeo::ColorGeo`] color-geometry postprocessing transform
 //! with your own renderpass. In use case (2), you can initialize a
 //! [`Renderer`] with a given runtime, size, and GPU surface, and call
@@ -43,12 +43,10 @@ mod gpu;
 pub use gpu::WGPU;
 pub use wgpu;
 
-mod sprites;
-pub use sprites::{Camera2D, SheetRegion, SpriteRenderer, Transform};
-pub mod meshes;
-pub use meshes::{Camera3D, Transform3D};
 pub mod colorgeo;
 pub mod frenderer;
+pub mod meshes;
+pub mod sprites;
 pub use frenderer::*;
 
 fn range<R: std::ops::RangeBounds<usize>>(r: R, hi: usize) -> std::ops::Range<usize> {
@@ -72,9 +70,6 @@ pub mod input;
 #[cfg(feature = "winit")]
 pub use events::*;
 
-mod bitfont;
-pub use bitfont::BitFont;
+pub mod bitfont;
 
-mod clock;
-pub use clock::Clock;
-pub use clock::Instant;
+pub mod clock;

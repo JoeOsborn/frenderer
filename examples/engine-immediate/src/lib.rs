@@ -2,11 +2,15 @@ use std::sync::Arc;
 
 pub use bytemuck::Zeroable;
 pub use frenderer::{
+    bitfont::BitFont,
+    clock::Clock,
     input::{Input, Key},
-    BitFont, Clock,
 };
-pub use frenderer::{wgpu, Camera2D as Camera, Renderer, SheetRegion, Transform};
-use frenderer::{FrendererEvents, SpriteRenderer};
+use frenderer::{sprites::SpriteRenderer, FrendererEvents};
+pub use frenderer::{
+    sprites::{Camera2D as Camera, SheetRegion, Transform},
+    wgpu, Renderer,
+};
 pub trait Game: Sized + 'static {
     fn new(engine: &mut Engine) -> Self;
     fn update(&mut self, engine: &mut Engine);

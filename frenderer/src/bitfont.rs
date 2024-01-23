@@ -1,6 +1,6 @@
 use std::ops::RangeBounds;
 
-use crate::{SheetRegion, Transform};
+use crate::sprites::{SheetRegion, Transform};
 
 /// A bitmapped font helper described as a rectangular area of a spritesheet.
 #[derive(Clone, Copy, Debug)]

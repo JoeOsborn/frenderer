@@ -1,4 +1,4 @@
-use frenderer::{Camera2D, Transform};
+use frenderer::sprites::{Camera2D, Transform};
 pub use glam::*;
 
 #[repr(C)]

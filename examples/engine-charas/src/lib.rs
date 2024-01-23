@@ -2,8 +2,11 @@ use std::sync::Arc;
 
 pub use bytemuck::Zeroable;
 pub use frenderer::input::{Input, Key};
-pub use frenderer::{wgpu, Camera2D as Camera, EventPhase, Renderer, SheetRegion, Transform};
-use frenderer::{Clock, FrendererEvents};
+use frenderer::{clock::Clock, FrendererEvents};
+pub use frenderer::{
+    sprites::{Camera2D as Camera, SheetRegion, Transform},
+    wgpu, EventPhase, Renderer,
+};
 mod gfx;
 pub use gfx::{BitFont, Spritesheet};
 
@@ -155,7 +158,7 @@ impl<G: Game> Engine<G> {
         spritesheet: Spritesheet,
         tag: G::Tag,
         aabb: geom::AABB,
-        uv: frenderer::SheetRegion,
+        uv: SheetRegion,
         col: Collision,
     ) -> CharaID {
         col.check();
@@ -193,7 +196,7 @@ impl<G: Game> Engine<G> {
         spritesheet: Spritesheet,
         tag: G::Tag,
         aabb: geom::AABB,
-        uv: frenderer::SheetRegion,
+        uv: SheetRegion,
         col: Collision,
     ) -> CharaID {
         col.check();
@@ -255,7 +258,7 @@ impl<G: Game> Engine<G> {
         char_h: u16,
     ) -> BitFont<B> {
         BitFont {
-            font: frenderer::BitFont::with_sheet_region(range, uv, char_w, char_h),
+            font: frenderer::bitfont::BitFont::with_sheet_region(range, uv, char_w, char_h),
             _spritesheet: spritesheet,
         }
     }

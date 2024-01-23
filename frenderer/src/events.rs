@@ -21,7 +21,7 @@ pub trait FrendererEvents<T> {
     /// event.  See [`crate::clock::Clock`] for details on the timestep computation.
     fn handle_event(
         &mut self,
-        clock: &mut crate::Clock,
+        clock: &mut crate::clock::Clock,
         window: &winit::window::Window,
         evt: &winit::event::Event<T>,
         target: &winit::event_loop::EventLoopWindowTarget<T>,
@@ -31,7 +31,7 @@ pub trait FrendererEvents<T> {
 impl<T> FrendererEvents<T> for crate::Renderer {
     fn handle_event(
         &mut self,
-        clock: &mut crate::Clock,
+        clock: &mut crate::clock::Clock,
         window: &winit::window::Window,
         evt: &winit::event::Event<T>,
         target: &winit::event_loop::EventLoopWindowTarget<T>,

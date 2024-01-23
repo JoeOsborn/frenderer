@@ -3,8 +3,7 @@ use std::sync::Arc;
 use assets_manager::asset::Gltf;
 use frenderer::{
     input::{self, Key},
-    meshes::MeshGroup,
-    Camera3D, Transform3D,
+    meshes::{Camera3D, MeshGroup, Transform3D},
 };
 use rand::Rng;
 use ultraviolet::*;
@@ -97,7 +96,7 @@ fn run(
     const DT_MAX: f32 = DT * 5.0;
     const TIME_SNAPS: [f32; 5] = [15.0, 30.0, 60.0, 120.0, 144.0];
     let mut acc = 0.0;
-    let mut now = frenderer::Instant::now();
+    let mut now = frenderer::clock::Instant::now();
     event_loop
         .run(move |event, target| {
             use winit::event::{Event, WindowEvent};
@@ -125,7 +124,7 @@ fn run(
                         elapsed = DT;
                     }
                     acc += elapsed;
-                    now = frenderer::Instant::now();
+                    now = frenderer::clock::Instant::now();
                     // While we have time to spend
                     while acc >= DT {
                         // simulate a frame
