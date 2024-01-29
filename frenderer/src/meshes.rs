@@ -30,6 +30,7 @@ pub struct Vertex {
     uv_which: [f32; 3],
 }
 impl Vertex {
+    const ZERO: Self = Self::zeroed();
     /// Creates a vertex with the given position, UV coordinates, and index into the texture array.
     pub fn new(position: [f32; 3], uv: [f32; 2], which: u32) -> Self {
         Self {
@@ -45,6 +46,7 @@ pub struct FlatVertex {
     position_which: [f32; 4],
 }
 impl FlatVertex {
+    const ZERO: Self = Self::zeroed();
     /// Creates a vertex with the given position and index into the color array.
     pub fn new(pos: [f32; 3], which: u32) -> Self {
         Self {
@@ -106,6 +108,10 @@ pub struct Transform3D {
     pub rotation: [f32; 4],
 }
 
+impl Transform3D {
+    const ZERO: Self = Self::zeroed();
+}
+
 /// A 3D perspective camera positioned at some point and rotated in some orientation (a quaternion).
 #[repr(C)]
 #[derive(bytemuck::Zeroable, bytemuck::Pod, Clone, Copy, PartialEq, Debug)]
@@ -116,6 +122,9 @@ pub struct Camera3D {
     pub rotation: [f32; 4],
     pub aspect: f32,
     pub fov: f32,
+}
+impl Camera3D {
+    const ZERO: Self = Self::zeroed();
 }
 
 impl MeshRenderer {
