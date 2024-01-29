@@ -28,7 +28,15 @@ pub struct SheetRegion {
 }
 
 impl SheetRegion {
-    const ZERO: Self = Self::zeroed();
+    pub const ZERO: Self = Self {
+        sheet: 0,
+        depth: 0,
+        x: 0,
+        y: 0,
+        w: 0,
+        h: 0,
+        _padding_32: 0,
+    };
     /// Create a new [`SheetRegion`] with the given parameters.
     pub const fn new(sheet: u16, x: u16, y: u16, depth: u16, w: u16, h: u16) -> Self {
         Self {
@@ -80,7 +88,13 @@ pub struct Transform {
 }
 
 impl Transform {
-    const ZERO: Self = Self::zeroed();
+    pub const ZERO: Self = Self {
+        w: 0,
+        h: 0,
+        x: 0.0,
+        y: 0.0,
+        rot: 0.0,
+    };
     /// Returns the Transform's translation as a pair of `f32`.
     pub fn translation(&self) -> [f32; 2] {
         [self.x, self.y]
