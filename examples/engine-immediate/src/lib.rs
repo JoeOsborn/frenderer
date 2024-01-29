@@ -188,7 +188,7 @@ impl Engine {
         let (trfs, uvs) = self.sprite_renderer.get_sprites_mut(spritesheet.0);
         let trfs = &mut trfs[start..(start + text.len())];
         let uvs = &mut uvs[start..(start + text.len())];
-        let corner = font.draw_text(trfs, uvs, text, pos.into(), char_sz);
+        let corner = font.draw_text(trfs, uvs, text, pos.into(), 0, char_sz);
         corner.into()
     }
     pub fn draw_sprite(

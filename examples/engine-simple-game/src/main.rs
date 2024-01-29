@@ -87,6 +87,8 @@ impl engine::Game for Game {
             SheetRegion::new(0, 0, 512, 0, 80, 8),
             8,
             8,
+            0,
+            0,
         );
         Game {
             camera,
@@ -245,6 +247,7 @@ impl engine::Game for Game {
                 y: H - 16.0,
             }
             .into(),
+            0,
             16.0,
         );
         engine.renderer.sprite_group_set_camera(0, self.camera);

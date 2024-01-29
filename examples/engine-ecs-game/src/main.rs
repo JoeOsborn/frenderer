@@ -104,6 +104,8 @@ impl engine::Game for Game {
             SheetRegion::new(0, 0, 512, 0, 80, 8),
             8,
             8,
+            0,
+            0,
         );
         Game {
             apple_timer: 0.0,

@@ -8,6 +8,8 @@ pub struct BitFont<B: RangeBounds<char> = std::ops::RangeInclusive<char>> {
     region: SheetRegion,
     char_w: u16,
     char_h: u16,
+    padding_x: u16,
+    padding_y: u16,
     chars: B,
 }
 
@@ -23,7 +25,14 @@ impl<B: RangeBounds<char>> BitFont<B> {
     /// characters at the given character sizes, or if the sheet
     /// region's width or height are not multiples of the character
     /// width and height.
-    pub fn with_sheet_region(chars: B, region: SheetRegion, char_w: u16, char_h: u16) -> Self {
+    pub fn with_sheet_region(
+        chars: B,
+        region: SheetRegion,
+        char_w: u16,
+        char_h: u16,
+        padding_x: u16,
+        padding_y: u16,
+    ) -> Self {
         if let std::ops::Bound::Unbounded = chars.start_bound() {
             panic!("Can't use unbounded lower bound on bitfont chars");
         }
@@ -41,24 +50,28 @@ impl<B: RangeBounds<char>> BitFont<B> {
             _ => unreachable!(),
         };
         let char_count = end_char - start_char;
-        let chars_per_row = region.w / char_w;
+        let net_char_w = char_w + padding_x;
+        let net_char_h = char_h + padding_y;
+        let chars_per_row = region.w / net_char_w;
         let rows = (char_count / chars_per_row as u32) as u16;
         assert_eq!(
-            region.w % char_w,
+            region.w % net_char_w,
             0,
             "Sheet region width must be a multiple of character width"
         );
         assert_eq!(
-            region.h % char_h,
+            region.h % net_char_h,
             0,
             "Sheet region height must be a multiple of character height"
         );
-        assert!(region.w >= chars_per_row * char_w);
-        assert!(region.h >= rows * char_h);
+        assert!(region.w >= chars_per_row * net_char_w);
+        assert!(region.h >= rows * net_char_h);
         Self {
             chars,
             char_w,
             char_h,
+            padding_x,
+            padding_y,
             region,
         }
     }
@@ -72,6 +85,7 @@ impl<B: RangeBounds<char>> BitFont<B> {
         uvs: &mut [crate::sprites::SheetRegion],
         text: &str,
         mut screen_pos: [f32; 2],
+        depth: u16,
         char_height: f32,
     ) -> [f32; 2] {
         let start_char: u32 = match self.chars.start_bound() {
@@ -79,7 +93,7 @@ impl<B: RangeBounds<char>> BitFont<B> {
             std::ops::Bound::Excluded(&c) => u32::from(c) + 1,
             _ => unreachable!(),
         };
-        let chars_per_row = self.region.w / self.char_w;
+        let chars_per_row = self.region.w / (self.char_w + self.padding_x);
         let aspect = self.char_w as f32 / self.char_h as f32;
         let char_width = aspect * char_height;
         screen_pos[0] += char_width / 2.0;
@@ -100,9 +114,9 @@ impl<B: RangeBounds<char>> BitFont<B> {
             let which_col = chara % chars_per_row as u32;
             *uv = SheetRegion::new(
                 self.region.sheet,
-                self.region.x + (which_col as u16) * self.char_w,
-                self.region.y + (which_row as u16) * self.char_h,
-                0,
+                self.region.x + (which_col as u16) * (self.char_w + self.padding_x),
+                self.region.y + (which_row as u16) * (self.char_h + self.padding_y),
+                depth,
                 self.char_w,
                 self.char_h,
             );

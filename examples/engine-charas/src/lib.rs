@@ -135,6 +135,7 @@ impl<G: Game> Engine<G> {
                             &mut uvs[sprite_idx..],
                             text,
                             (*pos).into(),
+                            0,
                             *sz,
                         );
                         sprite_idx += text.len();
@@ -249,6 +250,7 @@ impl<G: Game> Engine<G> {
             }
         }
     }
+    #[allow(clippy::too_many_arguments)]
     pub fn make_font<B: std::ops::RangeBounds<char>>(
         &mut self,
         spritesheet: Spritesheet,
@@ -256,9 +258,13 @@ impl<G: Game> Engine<G> {
         uv: SheetRegion,
         char_w: u16,
         char_h: u16,
+        padding_x: u16,
+        padding_y: u16,
     ) -> BitFont<B> {
         BitFont {
-            font: frenderer::bitfont::BitFont::with_sheet_region(range, uv, char_w, char_h),
+            font: frenderer::bitfont::BitFont::with_sheet_region(
+                range, uv, char_w, char_h, padding_x, padding_y,
+            ),
             _spritesheet: spritesheet,
         }
     }
