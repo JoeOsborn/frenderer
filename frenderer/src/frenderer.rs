@@ -572,6 +572,7 @@ impl Renderer {
         &mut [crate::sprites::Transform],
         &mut [crate::sprites::SheetRegion],
     ) {
+        // TODO: should this resize the group to fit?
         let count = self.sprite_group_size(which);
         let range = crate::range(range, count);
         self.queued_uploads
