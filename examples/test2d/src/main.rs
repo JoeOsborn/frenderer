@@ -51,7 +51,7 @@ fn run(
     const COUNT: usize = 100_000;
     frend.sprite_group_add(
         &sprite_tex,
-        (0..COUNT)
+        (0..COUNT + 1_000)
             .map(|_n| Transform {
                 x: rng.gen_range(0.0..(camera.screen_size[0] - 16.0)),
                 y: rng.gen_range(0.0..(camera.screen_size[1] - 16.0)),
@@ -60,12 +60,76 @@ fn run(
                 rot: rng.gen_range(0.0..(std::f32::consts::TAU)),
             })
             .collect(),
-        (0..COUNT)
-            .map(|_n| SheetRegion::new(0, 0, 16, 0, 11, 16))
+        (0..COUNT + 1_000)
+            .map(|_n| SheetRegion::new(0, 0, 16, 8, 11, 16))
             .collect(),
         camera,
     );
-
+    {
+        let nine_stretched = frenderer::nineslice::NineSlice::with_corner_edge_center(
+            frenderer::nineslice::CornerSlice {
+                w: 8.0,
+                h: 8.0,
+                region: SheetRegion::rect(0, 0, 8, 8),
+            },
+            frenderer::nineslice::Slice {
+                w: 2.0,
+                h: 16.0,
+                region: SheetRegion::rect(0, 0, 2, 16).with_depth(1),
+                repeat: frenderer::nineslice::Repeat::Stretch,
+            },
+            frenderer::nineslice::Slice {
+                w: 16.0,
+                h: 2.0,
+                region: SheetRegion::rect(0, 0, 16, 2).with_depth(1),
+                repeat: frenderer::nineslice::Repeat::Stretch,
+            },
+            frenderer::nineslice::Slice {
+                w: 16.0,
+                h: 16.0,
+                region: SheetRegion::rect(16, 0, 16, 16).with_depth(2),
+                repeat: frenderer::nineslice::Repeat::Stretch,
+            },
+        );
+        let nine_tiled = frenderer::nineslice::NineSlice::with_corner_edge_center(
+            frenderer::nineslice::CornerSlice {
+                w: 8.0,
+                h: 8.0,
+                region: SheetRegion::rect(0, 0, 8, 8),
+            },
+            frenderer::nineslice::Slice {
+                w: 2.0,
+                h: 16.0,
+                region: SheetRegion::rect(0, 0, 2, 16).with_depth(1),
+                repeat: frenderer::nineslice::Repeat::Tile,
+            },
+            frenderer::nineslice::Slice {
+                w: 16.0,
+                h: 2.0,
+                region: SheetRegion::rect(0, 0, 16, 2).with_depth(1),
+                repeat: frenderer::nineslice::Repeat::Tile,
+            },
+            frenderer::nineslice::Slice {
+                w: 16.0,
+                h: 16.0,
+                region: SheetRegion::rect(16, 0, 16, 16).with_depth(2),
+                repeat: frenderer::nineslice::Repeat::Tile,
+            },
+        );
+        let (mut trf, mut uv) = frend.sprites_mut(0, COUNT..);
+        let scount = nine_stretched.sprite_count(160.0, 112.0);
+        let tcount = nine_tiled.sprite_count(160.0, 112.0);
+        let sused = nine_stretched.draw(&mut trf, &mut uv, 10.0, 20.0, 160.0, 112.0);
+        let tused = nine_tiled.draw(
+            &mut trf[scount..],
+            &mut uv[scount..],
+            400.0,
+            500.0,
+            160.0,
+            112.0,
+        );
+        println!("{scount}:{sused} , {tcount}:{tused}");
+    }
     const DT: f32 = 1.0 / 60.0;
     const DT_FUDGE_AMOUNT: f32 = 0.0002;
     const DT_MAX: f32 = DT * 5.0;

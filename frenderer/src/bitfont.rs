@@ -33,6 +33,8 @@ impl<B: RangeBounds<char>> BitFont<B> {
         padding_x: u16,
         padding_y: u16,
     ) -> Self {
+        assert!(region.w > 0);
+        assert!(region.h > 0);
         if let std::ops::Bound::Unbounded = chars.start_bound() {
             panic!("Can't use unbounded lower bound on bitfont chars");
         }
@@ -52,20 +54,20 @@ impl<B: RangeBounds<char>> BitFont<B> {
         let char_count = end_char - start_char;
         let net_char_w = char_w + padding_x;
         let net_char_h = char_h + padding_y;
-        let chars_per_row = region.w / net_char_w;
+        let chars_per_row = (region.w as u16 / net_char_w) as u32;
         let rows = (char_count / chars_per_row as u32) as u16;
         assert_eq!(
-            region.w % net_char_w,
+            region.w as u16 % net_char_w,
             0,
             "Sheet region width must be a multiple of character width"
         );
         assert_eq!(
-            region.h % net_char_h,
+            region.h as u16 % net_char_h,
             0,
             "Sheet region height must be a multiple of character height"
         );
-        assert!(region.w >= chars_per_row * net_char_w);
-        assert!(region.h >= rows * net_char_h);
+        assert!(region.w as u16 >= chars_per_row as u16 * net_char_w);
+        assert!(region.h as u16 >= rows * net_char_h);
         Self {
             chars,
             char_w,
@@ -93,7 +95,7 @@ impl<B: RangeBounds<char>> BitFont<B> {
             std::ops::Bound::Excluded(&c) => u32::from(c) + 1,
             _ => unreachable!(),
         };
-        let chars_per_row = self.region.w / (self.char_w + self.padding_x);
+        let chars_per_row = self.region.w as u16 / (self.char_w + self.padding_x);
         let aspect = self.char_w as f32 / self.char_h as f32;
         let char_width = aspect * char_height;
         screen_pos[0] += char_width / 2.0;
@@ -117,8 +119,8 @@ impl<B: RangeBounds<char>> BitFont<B> {
                 self.region.x + (which_col as u16) * (self.char_w + self.padding_x),
                 self.region.y + (which_row as u16) * (self.char_h + self.padding_y),
                 depth,
-                self.char_w,
-                self.char_h,
+                self.char_w as i16,
+                self.char_h as i16,
             );
             screen_pos[0] += char_width;
         }

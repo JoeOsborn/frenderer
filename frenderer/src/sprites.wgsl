@@ -17,7 +17,7 @@ struct Camera {
 struct UVData {
     sheet_depth:u32,
     xy:u32,
-    wh:u32,
+    wh:u32, // actually two i16s
     _padding:u32
 }
 
@@ -57,12 +57,10 @@ fn sprite_to_vert(trf:vec4<f32>, uvs:UVData, norm_vert:vec2<f32>) -> VertexOutpu
   let camera_pos = world_pos - camera.screen_pos;
   let box_pos = camera_pos / (camera.screen_size*0.5);
   let ndc_pos = vec4(box_pos.xy, 0.0, 1.0) - vec4(1.0, 1.0, 0.0, 0.0);
-  let tex_x = uvs.xy & 0x0000FFFFu;
-  let tex_y = (uvs.xy & 0xFFFF0000u) >> 16u;
-  let tex_w = uvs.wh & 0x0000FFFFu;
-  let tex_h = (uvs.wh & 0xFFFF0000u) >> 16u;
-  let tex_corner = vec2(f32(tex_x) / f32(tex_size.x), f32(tex_y) / f32(tex_size.y));
-  let tex_uv_size = vec2(f32(tex_w) / f32(tex_size.x), f32(tex_h) / f32(tex_size.y));
+  let tex_uvxy:vec2<f32> = unpack2x16unorm(uvs.xy)*65535.0;
+  let tex_uvwh:vec2<f32> = unpack2x16snorm(uvs.wh)*32767.0;
+  let tex_corner = vec2(tex_uvxy.x / f32(tex_size.x), tex_uvxy.y / f32(tex_size.y));
+  let tex_uv_size = vec2(tex_uvwh.x / f32(tex_size.x), tex_uvwh.y / f32(tex_size.y));
   let norm_uv = vec2(norm_vert.x+0.5, 1.0-(norm_vert.y+0.5));
   // Larger y = smaller depth = closer to screen
   return VertexOutput(ndc_pos+vec4(0.0, 0.0, f32(tex_depth)/65535.0, 0.0), tex_corner + norm_uv*tex_uv_size, tex_layer);

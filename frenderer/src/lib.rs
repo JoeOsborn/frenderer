@@ -71,5 +71,6 @@ pub mod input;
 pub use events::*;
 
 pub mod bitfont;
+pub mod nineslice;
 
 pub mod clock;

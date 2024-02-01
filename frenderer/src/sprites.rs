@@ -20,10 +20,10 @@ pub struct SheetRegion {
     pub x: u16,
     /// The y coordinate in pixels of the top left corner of this sprite within the spritesheet texture.
     pub y: u16,
-    /// The width in pixels of this sprite within the spritesheet texture.
-    pub w: u16,
-    /// The height in pixels of this sprite within the spritesheet texture.
-    pub h: u16,
+    /// The width in pixels of this sprite within the spritesheet texture. May be negative.
+    pub w: i16,
+    /// The height in pixels of this sprite within the spritesheet texture.  May be negative.
+    pub h: i16,
     _padding_32: u32,
 }
 
@@ -38,7 +38,7 @@ impl SheetRegion {
         _padding_32: 0,
     };
     /// Create a new [`SheetRegion`] with the given parameters.
-    pub const fn new(sheet: u16, x: u16, y: u16, depth: u16, w: u16, h: u16) -> Self {
+    pub const fn new(sheet: u16, x: u16, y: u16, depth: u16, w: i16, h: i16) -> Self {
         Self {
             sheet,
             x,
@@ -50,7 +50,7 @@ impl SheetRegion {
         }
     }
     /// Create a simple [`SheetRegion`] with just the rectangle coordinates ([`SheetRegion::sheet`] and [`SheetRegion::depth`] will be set to 0).
-    pub const fn rect(x: u16, y: u16, w: u16, h: u16) -> Self {
+    pub const fn rect(x: u16, y: u16, w: i16, h: i16) -> Self {
         Self::new(0, x, y, 0, w, h)
     }
     /// Produce a new [`SheetRegion`] on a different spritesheet layer.
@@ -63,6 +63,22 @@ impl SheetRegion {
     /// Produce a new [`SheetRegion`] drawn at a different depth level.
     pub const fn with_depth(self, depth: u16) -> Self {
         Self { depth, ..self }
+    }
+    /// Flips the texture horizontally by moving its position and inverting its width
+    pub const fn flip_horizontal(self) -> Self {
+        Self {
+            x: (self.x as i32 + self.w as i32) as u16,
+            w: -self.w,
+            ..self
+        }
+    }
+    /// Flips the texture vertically by moving its position and inverting its height
+    pub const fn flip_vertical(self) -> Self {
+        Self {
+            y: (self.y as i32 + self.h as i32) as u16,
+            h: -self.h,
+            ..self
+        }
     }
 }
 
