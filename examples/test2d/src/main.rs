@@ -116,10 +116,10 @@ fn run(
                 repeat: frenderer::nineslice::Repeat::Tile,
             },
         );
-        let (mut trf, mut uv) = frend.sprites_mut(0, COUNT..);
+        let (trf, uv) = frend.sprites_mut(0, COUNT..);
         let scount = nine_stretched.sprite_count(160.0, 112.0);
         let tcount = nine_tiled.sprite_count(160.0, 112.0);
-        let sused = nine_stretched.draw(&mut trf, &mut uv, 10.0, 20.0, 160.0, 112.0);
+        let sused = nine_stretched.draw(trf, uv, 10.0, 20.0, 160.0, 112.0);
         let tused = nine_tiled.draw(
             &mut trf[scount..],
             &mut uv[scount..],

@@ -54,13 +54,11 @@ impl NineSlice {
                 w: corner_top_left.h,
                 h: corner_top_left.w,
                 region: corner_top_left.region.flip_horizontal(),
-                ..corner_top_left
             },
             CornerSlice {
                 region: corner_top_left.region.flip_vertical(),
                 w: corner_top_left.h,
                 h: corner_top_left.w,
-                ..corner_top_left
             },
             CornerSlice {
                 region: corner_top_left.region.flip_vertical().flip_horizontal(),

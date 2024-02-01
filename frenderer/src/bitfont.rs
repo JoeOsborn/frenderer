@@ -55,7 +55,7 @@ impl<B: RangeBounds<char>> BitFont<B> {
         let net_char_w = char_w + padding_x;
         let net_char_h = char_h + padding_y;
         let chars_per_row = (region.w as u16 / net_char_w) as u32;
-        let rows = (char_count / chars_per_row as u32) as u16;
+        let rows = (char_count / chars_per_row) as u16;
         assert_eq!(
             region.w as u16 % net_char_w,
             0,
