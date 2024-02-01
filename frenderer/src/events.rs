@@ -3,10 +3,8 @@
 
 /// Phase in the game event loop
 pub enum EventPhase {
-    /// The game should simulate time forward by the given number of steps
-    Simulate(usize),
-    /// The game should do whatever it needs to draw onto the screen.  Typically the caller of [`FrendererEvents::handle_event`] should respond to this by calling `render` on the [`crate::frenderer::Renderer`].
-    Draw,
+    /// The game should simulate time forward by the given number of steps and then render.  Typically the caller of [`FrendererEvents::handle_event`] should respond to this by calling `render` on the [`crate::frenderer::Renderer`].
+    Run(usize),
     /// The game should terminate as quickly as possible and close the window.
     Quit,
     /// There's nothing in particular the game should do right now.
@@ -34,11 +32,10 @@ impl<T> FrendererEvents<T> for crate::Renderer {
         clock: &mut crate::clock::Clock,
         window: &winit::window::Window,
         evt: &winit::event::Event<T>,
-        target: &winit::event_loop::EventLoopWindowTarget<T>,
+        _target: &winit::event_loop::EventLoopWindowTarget<T>,
         input: &mut crate::input::Input,
     ) -> EventPhase {
         use winit::event::{Event, WindowEvent};
-        target.set_control_flow(winit::event_loop::ControlFlow::Poll);
         match evt {
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
@@ -59,16 +56,9 @@ impl<T> FrendererEvents<T> for crate::Renderer {
                 event: WindowEvent::RedrawRequested,
                 ..
             } => {
-                window.request_redraw();
-                EventPhase::Draw
-            }
-            Event::AboutToWait => {
                 let steps = clock.tick();
-                if steps > 0 {
-                    EventPhase::Simulate(steps)
-                } else {
-                    EventPhase::Wait
-                }
+                window.request_redraw();
+                EventPhase::Run(steps)
             }
             event => {
                 input.process_input_event(event);

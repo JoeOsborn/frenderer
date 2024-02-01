@@ -66,13 +66,11 @@ impl Engine {
                 target,
                 &mut self.input,
             ) {
-                frenderer::EventPhase::Simulate(steps) => {
+                frenderer::EventPhase::Run(steps) => {
                     for _ in 0..steps {
                         game.update(&mut self);
                         self.input.next_frame();
                     }
-                }
-                frenderer::EventPhase::Draw => {
                     for group in 0..self.sprite_renderer.sprite_group_count() {
                         self.sprite_renderer
                             .resize_sprite_group(&self.renderer.gpu, group, 0);

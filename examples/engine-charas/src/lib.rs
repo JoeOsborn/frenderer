@@ -87,7 +87,7 @@ impl<G: Game> Engine<G> {
                 target,
                 &mut self.input,
             ) {
-                EventPhase::Simulate(steps) => {
+                EventPhase::Run(steps) => {
                     for _ in 0..steps {
                         game.update(&mut self);
                         for (_id, chara) in self.charas_mut() {
@@ -108,8 +108,6 @@ impl<G: Game> Engine<G> {
                         contacts.clear();
                         self.input.next_frame();
                     }
-                }
-                EventPhase::Draw => {
                     game.render(&mut self);
                     let chara_len = self.charas().count();
                     let text_len: usize = self.texts.iter().map(|t| t.1.len()).sum();

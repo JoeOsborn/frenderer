@@ -75,7 +75,6 @@ fn run(
     event_loop
         .run(move |event, target| {
             use winit::event::{Event, WindowEvent};
-            target.set_control_flow(winit::event_loop::ControlFlow::Poll);
             match event {
                 Event::WindowEvent {
                     event: WindowEvent::CloseRequested,
@@ -87,13 +86,40 @@ fn run(
                     event: WindowEvent::Resized(size),
                     ..
                 } => {
-                    frend.resize_surface(size.width, size.height);
+                    if !frend.gpu.is_web() {
+                        frend.resize_surface(size.width, size.height);
+                    }
                     window.request_redraw();
                 }
                 Event::WindowEvent {
                     event: WindowEvent::RedrawRequested,
                     ..
                 } => {
+                    // compute elapsed time since last frame
+                    let mut elapsed = now.elapsed().as_secs_f32();
+                    println!("{elapsed}");
+                    // snap time to nearby vsync framerate
+                    TIME_SNAPS.iter().for_each(|s| {
+                        if (elapsed - 1.0 / s).abs() < DT_FUDGE_AMOUNT {
+                            elapsed = 1.0 / s;
+                        }
+                    });
+                    // Death spiral prevention
+                    if elapsed > DT_MAX {
+                        acc = 0.0;
+                        elapsed = DT;
+                    }
+                    acc += elapsed;
+                    now = frenderer::clock::Instant::now();
+                    // While we have time to spend
+                    while acc >= DT {
+                        // simulate a frame
+                        acc -= DT;
+                        println!("tick");
+                        //update_game();
+                        camera.screen_pos[0] += 0.01;
+                        input.next_frame();
+                    }
                     // Render prep
                     frend.sprite_group_set_camera(0, camera);
                     // update sprite positions and sheet regions
@@ -128,33 +154,6 @@ fn run(
                     // }
                     // // This just submits the command encoder and presents the frame, we wouldn't need it if we did that some other way.
                     // frend.render_finish(frame, encoder);
-                }
-                Event::AboutToWait => {
-                    // compute elapsed time since last frame
-                    let mut elapsed = now.elapsed().as_secs_f32();
-                    println!("{elapsed}");
-                    // snap time to nearby vsync framerate
-                    TIME_SNAPS.iter().for_each(|s| {
-                        if (elapsed - 1.0 / s).abs() < DT_FUDGE_AMOUNT {
-                            elapsed = 1.0 / s;
-                        }
-                    });
-                    // Death spiral prevention
-                    if elapsed > DT_MAX {
-                        acc = 0.0;
-                        elapsed = DT;
-                    }
-                    acc += elapsed;
-                    now = frenderer::clock::Instant::now();
-                    // While we have time to spend
-                    while acc >= DT {
-                        // simulate a frame
-                        acc -= DT;
-                        println!("tick");
-                        //update_game();
-                        camera.screen_pos[0] += 0.01;
-                        input.next_frame();
-                    }
                     window.request_redraw();
                 }
                 event => {

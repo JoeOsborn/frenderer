@@ -55,17 +55,13 @@ impl Engine {
                 target,
                 &mut self.input,
             ) {
-                EventPhase::Simulate(steps) => {
+                EventPhase::Run(steps) => {
                     for _ in 0..steps {
                         game.update(&mut self);
                         self.input.next_frame();
                     }
-                    self.window.request_redraw();
-                }
-                EventPhase::Draw => {
                     game.render(&mut self);
                     self.renderer.render();
-                    self.window.request_redraw();
                 }
                 EventPhase::Quit => {
                     target.exit();

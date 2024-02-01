@@ -110,7 +110,7 @@ impl<G: Game> Engine<G> {
                 target,
                 &mut self.input,
             ) {
-                EventPhase::Simulate(steps) => {
+                EventPhase::Run(steps) => {
                     for _ in 0..steps {
                         game.update(&mut self);
                         for (_e, (trf, phys)) in self
@@ -163,8 +163,6 @@ impl<G: Game> Engine<G> {
                         self.contacts.optimize_index(&mut self.world_);
                         self.input.next_frame();
                     }
-                }
-                EventPhase::Draw => {
                     game.render(&mut self);
                     let chara_len = self
                         .world_

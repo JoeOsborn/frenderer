@@ -108,7 +108,10 @@ fn run(
                 } => {
                     target.exit();
                 }
-                Event::AboutToWait => {
+                Event::WindowEvent {
+                    event: winit::event::WindowEvent::RedrawRequested,
+                    ..
+                } => {
                     // compute elapsed time since last frame
                     let mut elapsed = now.elapsed().as_secs_f32();
                     // println!("{elapsed}");
@@ -165,24 +168,21 @@ fn run(
                         // camera.screen_pos[0] += 0.01;
                         input.next_frame();
                     }
-                    window.request_redraw();
-                }
-                Event::WindowEvent {
-                    event: winit::event::WindowEvent::RedrawRequested,
-                    ..
-                } => {
                     // Render prep
                     frend.mesh_set_camera(camera);
                     frend.flat_set_camera(camera);
                     // update sprite positions and sheet regions
                     // ok now render.
                     frend.render();
+                    window.request_redraw();
                 }
                 Event::WindowEvent {
                     event: winit::event::WindowEvent::Resized(size),
                     ..
                 } => {
-                    frend.resize_surface(size.width, size.height);
+                    if !frend.gpu.is_web() {
+                        frend.resize_surface(size.width, size.height);
+                    }
                     window.request_redraw();
                 }
                 event => {
