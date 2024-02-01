@@ -100,7 +100,6 @@ fn run(
     event_loop
         .run(move |event, target| {
             use winit::event::{Event, WindowEvent};
-            target.set_control_flow(winit::event_loop::ControlFlow::Poll);
             match event {
                 Event::WindowEvent {
                     event: WindowEvent::CloseRequested,
