@@ -42,7 +42,7 @@ pub struct NineSlice {
 }
 
 impl NineSlice {
-    pub fn with_corner_edge_center(
+    pub const fn with_corner_edge_center(
         corner_top_left: CornerSlice,
         edge_left: Slice,
         edge_top: Slice,
@@ -78,7 +78,7 @@ impl NineSlice {
         )
     }
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub const fn new(
         top_left: CornerSlice,
         top_right: CornerSlice,
         bottom_left: CornerSlice,
