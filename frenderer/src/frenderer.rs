@@ -165,7 +165,7 @@ impl Renderer {
             } else {
                 surf_height
             },
-            present_mode: wgpu::PresentMode::AutoNoVsync,
+            present_mode: wgpu::PresentMode::AutoVsync,
             alpha_mode: swapchain_capabilities.alpha_modes[0],
             view_formats: vec![swapchain_format, swapchain_format_srgb],
             desired_maximum_frame_latency: 2,
@@ -218,6 +218,11 @@ impl Renderer {
             color_texture,
             color_texture_view,
         }
+    }
+    /// Change the presentation mode used by the swapchain
+    pub fn set_present_mode(&mut self, mode: wgpu::PresentMode) {
+        self.config.present_mode = mode;
+        self.surface.configure(self.gpu.device(), &self.config);
     }
     /// Resize the internal surface texture (typically called when the window or canvas size changes).
     pub fn resize_surface(&mut self, w: u32, h: u32) {
