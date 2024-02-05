@@ -35,7 +35,7 @@ impl Engine {
         frenderer::prepare_logging().unwrap();
         let elp = EventLoop::new().unwrap();
         let instance = Arc::new(wgpu::Instance::default());
-        let mut engine: OnceCell<Self> = OnceCell::new();
+        let mut engine: Arc<OnceCell<Self>> = Arc::new(OnceCell::new());
         let window: OnceCell<Arc<winit::window::Window>> = OnceCell::new();
         let mut builder = Some(builder);
         let mut clock = Clock::new(1.0 / 60.0, 0.0002, 5);
@@ -50,12 +50,12 @@ impl Engine {
                     window.set(Arc::clone(&win)).unwrap();
                     #[cfg(target_arch = "wasm32")]
                     {
-                        wasm_bindgen_futures::spawn(Self::engine_async_init(
+                        wasm_bindgen_futures::spawn_local(Self::engine_async_init(
                             wsz,
                             win,
                             surface,
-                            &instance,
-                            &mut engine,
+                            Arc::clone(&instance),
+                            Arc::clone(&engine),
                         ));
                     }
                     #[cfg(not(target_arch = "wasm32"))]
@@ -64,12 +64,14 @@ impl Engine {
                             wsz,
                             win,
                             surface,
-                            &instance,
-                            &mut engine,
+                            Arc::clone(&instance),
+                            Arc::clone(&engine),
                         ));
                     }
                 }
-            } else if let Some(engine) = engine.get_mut() {
+            } else if let Some(engine) =
+                Arc::get_mut(&mut engine).and_then(|c| OnceCell::get_mut(c))
+            {
                 if let Some(game) = game.get_mut() {
                     if let winit::event::Event::WindowEvent {
                         event: winit::event::WindowEvent::Resized(size),
@@ -138,16 +140,11 @@ impl Engine {
         wsz: winit::dpi::PhysicalSize<u32>,
         win: Arc<winit::window::Window>,
         surface: wgpu::Surface<'static>,
-        instance: &Arc<wgpu::Instance>,
-        engine: &mut std::cell::OnceCell<Engine>,
+        instance: Arc<wgpu::Instance>,
+        engine: Arc<std::cell::OnceCell<Engine>>,
     ) {
         let renderer = Renderer::with_surface(
-            wsz.width,
-            wsz.height,
-            wsz.width,
-            wsz.height,
-            Arc::clone(instance),
-            surface,
+            wsz.width, wsz.height, wsz.width, wsz.height, instance, surface,
         )
         .await
         .unwrap();
