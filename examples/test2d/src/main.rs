@@ -1,5 +1,4 @@
 use assets_manager::asset::Png;
-use std::sync::Arc;
 
 use frenderer::{
     input,
@@ -8,26 +7,11 @@ use frenderer::{
 };
 use rand::Rng;
 
-fn main() {
-    frenderer::with_default_runtime(winit::window::WindowBuilder::new(), Some((1024, 768)), run)
-        .unwrap();
-    // instead of the above, we could have created the wgpu device/adapter ourselves, made a frenderer::WGPU, and then made a frenderer with that and the window.
-}
-
-fn run(
-    event_loop: winit::event_loop::EventLoop<()>,
-    window: Arc<winit::window::Window>,
-    mut frend: frenderer::Renderer,
+fn init_data<S: assets_manager::source::Source>(
+    frend: &mut frenderer::Renderer,
+    cache: &assets_manager::AssetCache<S>,
+    camera: &mut Camera2D,
 ) {
-    let mut input = input::Input::default();
-
-    #[cfg(not(target_arch = "wasm32"))]
-    let source =
-        assets_manager::source::FileSystem::new("content").expect("Couldn't load resources");
-    #[cfg(target_arch = "wasm32")]
-    let source = assets_manager::source::Embedded::from(assets_manager::source::embed!("content"));
-    let cache = assets_manager::AssetCache::with_source(source);
-
     let sprite_img_handle = cache.load::<Png>("king").expect("Couldn't load king img");
     let sprite_img = sprite_img_handle.read().0.to_rgba8();
 
@@ -42,10 +26,6 @@ fn run(
         sprite_img.dimensions(),
         Some("spr-king.png"),
     );
-    let mut camera = Camera2D {
-        screen_pos: [0.0, 0.0],
-        screen_size: [1024.0, 768.0],
-    };
 
     let mut rng = rand::thread_rng();
     const COUNT: usize = 100_000;
@@ -63,7 +43,7 @@ fn run(
         (0..COUNT + 1_000)
             .map(|_n| SheetRegion::new(0, 0, 16, 8, 11, 16))
             .collect(),
-        camera,
+        *camera,
     );
     {
         let nine_stretched = frenderer::nineslice::NineSlice::with_corner_edge_center(
@@ -130,14 +110,42 @@ fn run(
         );
         println!("{scount}:{sused} , {tcount}:{tused}");
     }
+}
+
+fn main() {
+    let mut input = input::Input::default();
+
+    #[cfg(not(target_arch = "wasm32"))]
+    let source =
+        assets_manager::source::FileSystem::new("content").expect("Couldn't load resources");
+    #[cfg(target_arch = "wasm32")]
+    let source = assets_manager::source::Embedded::from(assets_manager::source::embed!("content"));
+    let cache = assets_manager::AssetCache::with_source(source);
+
+    let drv = frenderer::Driver::new(
+        winit::window::WindowBuilder::new()
+            .with_title("test")
+            .with_inner_size(winit::dpi::LogicalSize::new(1024.0, 768.0)),
+        Some((1024, 768)),
+    );
+
     const DT: f32 = 1.0 / 60.0;
     const DT_FUDGE_AMOUNT: f32 = 0.0002;
     const DT_MAX: f32 = DT * 5.0;
     const TIME_SNAPS: [f32; 5] = [15.0, 30.0, 60.0, 120.0, 144.0];
     let mut acc = 0.0;
     let mut now = frenderer::clock::Instant::now();
-    event_loop
-        .run(move |event, target| {
+    // frenderer::events::run_event_loop(event_loop, move |event, target, window, &mut frenderer| {})
+    drv.run_event_loop::<(), Camera2D>(
+        move |_window, frend| {
+            let mut camera = Camera2D {
+                screen_pos: [0.0, 0.0],
+                screen_size: [1024.0, 768.0],
+            };
+            init_data(frend, &cache, &mut camera);
+            camera
+        },
+        move |event, target, window, frend, camera| {
             use winit::event::{Event, WindowEvent};
             match event {
                 Event::WindowEvent {
@@ -185,7 +193,7 @@ fn run(
                         input.next_frame();
                     }
                     // Render prep
-                    frend.sprite_group_set_camera(0, camera);
+                    frend.sprite_group_set_camera(0, *camera);
                     // update sprite positions and sheet regions
                     // ok now render.
                     frend.render();
@@ -224,6 +232,7 @@ fn run(
                     input.process_input_event(&event);
                 }
             }
-        })
-        .unwrap();
+        },
+    )
+    .unwrap();
 }

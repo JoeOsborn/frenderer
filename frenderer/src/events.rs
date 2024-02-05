@@ -67,3 +67,164 @@ impl<T> FrendererEvents<T> for crate::Renderer {
         }
     }
 }
+
+pub struct Driver {
+    builder: Option<winit::window::WindowBuilder>,
+    render_size: Option<(u32, u32)>,
+}
+impl Driver {
+    pub fn new(builder: winit::window::WindowBuilder, render_size: Option<(u32, u32)>) -> Self {
+        Self {
+            builder: Some(builder),
+            render_size,
+        }
+    }
+}
+#[cfg(all(target_arch = "wasm32", feature = "winit"))]
+pub mod web_error {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub enum RuntimeError {
+        NoCanvas,
+        NoDocument,
+        NoBody,
+    }
+    impl std::fmt::Display for RuntimeError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            <Self as std::fmt::Debug>::fmt(self, f)
+        }
+    }
+    impl std::error::Error for RuntimeError {}
+}
+
+struct NoopWaker();
+impl std::task::Wake for NoopWaker {
+    fn wake(self: std::sync::Arc<Self>) {
+        //nop
+    }
+}
+
+impl Driver {
+    pub fn run_event_loop<T: 'static + std::fmt::Debug, U: 'static>(
+        mut self,
+        init_cb: impl FnOnce(&winit::window::Window, &mut crate::Renderer) -> U + 'static,
+        mut handler: impl FnMut(
+                winit::event::Event<T>,
+                &winit::event_loop::EventLoopWindowTarget<T>,
+                &winit::window::Window,
+                &mut crate::Renderer,
+                &mut U,
+            ) + 'static,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        use std::sync::Arc;
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            env_logger::init();
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+            console_log::init_with_level(log::Level::Warn)?;
+        }
+        use winit::event_loop::EventLoop;
+        let event_loop: EventLoop<T> =
+            winit::event_loop::EventLoopBuilder::with_user_event().build()?;
+        #[allow(clippy::type_complexity)]
+        let mut future: Option<
+            std::pin::Pin<
+                Box<
+                    dyn std::future::Future<
+                        Output = Result<crate::WGPU, Box<dyn std::error::Error>>,
+                    >,
+                >,
+            >,
+        > = None;
+        let mut window: Option<Arc<winit::window::Window>> = None;
+        let mut frenderer = None;
+        let instance = Arc::new(wgpu::Instance::default());
+        let mut surface: Option<Arc<wgpu::Surface<'static>>> = None;
+
+        let waker = Arc::new(NoopWaker()).into();
+        let mut init_cb = Some(init_cb);
+        let mut userdata: Option<U> = None;
+        let cb = move |event, target: &winit::event_loop::EventLoopWindowTarget<_>| {
+            target.set_control_flow(winit::event_loop::ControlFlow::Wait);
+            if let Some(f) = future.as_mut() {
+                let mut cx = std::task::Context::from_waker(&waker);
+                if let std::task::Poll::Ready(r) = f.as_mut().poll(&mut cx) {
+                    future = None;
+                    let wsz = window.as_ref().unwrap().inner_size();
+                    let sz = self.render_size.unwrap_or((wsz.width, wsz.height));
+                    frenderer = Some(crate::Renderer::with_gpu(
+                        sz.0,
+                        sz.1,
+                        wsz.width,
+                        wsz.height,
+                        r.unwrap(),
+                        Arc::into_inner(surface.take().unwrap()).unwrap(),
+                    ));
+                    userdata = Some(init_cb.take().unwrap()(
+                        window.as_ref().unwrap(),
+                        frenderer.as_mut().unwrap(),
+                    ));
+                } else {
+                    // schedule again
+                    target.set_control_flow(winit::event_loop::ControlFlow::Poll);
+                }
+            } else if let Some(window) = window.as_ref() {
+                handler(
+                    event,
+                    target,
+                    window,
+                    frenderer.as_mut().unwrap(),
+                    userdata.as_mut().unwrap(),
+                );
+            } else if let winit::event::Event::Resumed = event {
+                window = Some(Arc::new(
+                    self.builder.take().unwrap().build(target).unwrap(),
+                ));
+                #[cfg(target_arch = "wasm32")]
+                {
+                    use self::web_error::RuntimeError;
+                    use crate::wgpu::web_sys;
+                    use winit::platform::web::WindowExtWebSys;
+                    let doc = web_sys::window()
+                        .ok_or(RuntimeError::NoBody)
+                        .unwrap()
+                        .document()
+                        .unwrap();
+                    let canvas = window
+                        .as_ref()
+                        .unwrap()
+                        .canvas()
+                        .ok_or(RuntimeError::NoCanvas)
+                        .unwrap();
+                    doc.body()
+                        .ok_or(RuntimeError::NoBody)
+                        .unwrap()
+                        .append_child(&canvas)
+                        .unwrap();
+                }
+                surface = Some(Arc::new(
+                    instance
+                        .create_surface(Arc::clone(window.as_ref().unwrap()))
+                        .unwrap(),
+                ));
+                future = Some(Box::pin(crate::WGPU::new(
+                    Arc::clone(&instance),
+                    surface.as_ref().map(Arc::clone),
+                )));
+            } else {
+                // do nothing, wait for resume or poll
+            }
+        };
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            Ok(event_loop.run(cb)?)
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            use winit::platform::web::EventLoopExtWebSys;
+            Ok(event_loop.spawn(cb))
+        }
+    }
+}
