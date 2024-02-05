@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 pub use bytemuck::Zeroable;
 pub use frenderer::{
     bitfont::BitFont,
@@ -17,58 +15,68 @@ pub trait Game: Sized + 'static {
     fn render(&mut self, engine: &mut Engine);
 }
 
-pub struct Engine {
-    pub renderer: Renderer,
-    pub input: Input,
-    event_loop: Option<winit::event_loop::EventLoop<()>>,
-    window: Arc<winit::window::Window>,
+pub struct Engine<'r, 'w> {
+    pub renderer: &'r mut frenderer::Renderer,
+    pub window: &'w winit::window::Window,
+    inner: std::rc::Rc<std::cell::RefCell<EngineInner>>,
 }
 
-impl Engine {
-    pub fn run<G: Game>(
-        builder: winit::window::WindowBuilder,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        frenderer::with_default_runtime(
-            builder,
-            Some((1024, 768)),
-            |event_loop, window, renderer| {
-                let input = Input::default();
-                let this = Self {
-                    renderer,
-                    input,
-                    window,
-                    event_loop: Some(event_loop),
-                };
-                this.go::<G>().unwrap();
-            },
-        )
-    }
-    fn go<G: Game>(mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let mut clock = Clock::new(1.0 / 60.0, 0.0002, 5);
-        let mut game = G::new(&mut self);
+struct EngineInner {
+    input: Input,
+    clock: Clock,
+}
 
-        Ok(self.event_loop.take().unwrap().run(move |event, target| {
-            match self.renderer.handle_event(
-                &mut clock,
-                &self.window,
-                &event,
-                target,
-                &mut self.input,
-            ) {
+impl<'r, 'w> Engine<'r, 'w> {
+    pub fn input(&self) -> std::cell::Ref<Input> {
+        std::cell::Ref::map(self.inner.borrow(), |i| &i.input)
+    }
+}
+pub mod geom;
+
+pub fn run<G: Game>(
+    builder: winit::window::WindowBuilder,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    let drv = frenderer::Driver::new(builder, Some((1024, 768)));
+    drv.run_event_loop::<(), (Rc<RefCell<EngineInner>>, G)>(
+        move |window, renderer| {
+            let inner = Rc::new(RefCell::new(EngineInner {
+                input: Input::default(),
+                clock: Clock::new(1.0 / 60.0, 0.0002, 5),
+            }));
+            let mut engine = Engine {
+                window,
+                renderer,
+                inner: Rc::clone(&inner),
+            };
+            let game = G::new(&mut engine);
+            (inner, game)
+        },
+        move |event, target, window, renderer, (inner, game)| {
+            let (mut clock, mut input) =
+                std::cell::RefMut::map_split(inner.borrow_mut(), |i| (&mut i.clock, &mut i.input));
+            match renderer.handle_event(&mut clock, window, &event, target, &mut input) {
                 EventPhase::Run(steps) => {
+                    drop(clock);
+                    drop(input);
+                    let mut engine = Engine {
+                        window,
+                        renderer,
+                        inner: Rc::clone(inner),
+                    };
                     for _ in 0..steps {
-                        game.update(&mut self);
-                        self.input.next_frame();
+                        game.update(&mut engine);
+                        engine.inner.borrow_mut().input.next_frame();
                     }
-                    game.render(&mut self);
-                    self.renderer.render();
+                    game.render(&mut engine);
+                    renderer.render();
                 }
                 EventPhase::Quit => {
                     target.exit();
                 }
                 EventPhase::Wait => {}
             }
-        })?)
-    }
+        },
+    )
 }
-pub mod geom;

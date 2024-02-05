@@ -72,14 +72,6 @@ pub struct Driver {
     builder: Option<winit::window::WindowBuilder>,
     render_size: Option<(u32, u32)>,
 }
-impl Driver {
-    pub fn new(builder: winit::window::WindowBuilder, render_size: Option<(u32, u32)>) -> Self {
-        Self {
-            builder: Some(builder),
-            render_size,
-        }
-    }
-}
 #[cfg(all(target_arch = "wasm32", feature = "winit"))]
 pub mod web_error {
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -104,6 +96,12 @@ impl std::task::Wake for NoopWaker {
 }
 
 impl Driver {
+    pub fn new(builder: winit::window::WindowBuilder, render_size: Option<(u32, u32)>) -> Self {
+        Self {
+            builder: Some(builder),
+            render_size,
+        }
+    }
     pub fn run_event_loop<T: 'static + std::fmt::Debug, U: 'static>(
         mut self,
         init_cb: impl FnOnce(&winit::window::Window, &mut crate::Renderer) -> U + 'static,
@@ -116,16 +114,8 @@ impl Driver {
             ) + 'static,
     ) -> Result<(), Box<dyn std::error::Error>> {
         use std::sync::Arc;
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            env_logger::init();
-        }
-        #[cfg(target_arch = "wasm32")]
-        {
-            std::panic::set_hook(Box::new(console_error_panic_hook::hook));
-            console_log::init_with_level(log::Level::Warn)?;
-        }
         use winit::event_loop::EventLoop;
+        prepare_logging()?;
         let event_loop: EventLoop<T> =
             winit::event_loop::EventLoopBuilder::with_user_event().build()?;
         #[allow(clippy::type_complexity)]
@@ -133,7 +123,7 @@ impl Driver {
             std::pin::Pin<
                 Box<
                     dyn std::future::Future<
-                        Output = Result<crate::WGPU, Box<dyn std::error::Error>>,
+                        Output = Result<crate::Renderer, Box<dyn std::error::Error>>,
                     >,
                 >,
             >,
@@ -141,7 +131,6 @@ impl Driver {
         let mut window: Option<Arc<winit::window::Window>> = None;
         let mut frenderer = None;
         let instance = Arc::new(wgpu::Instance::default());
-        let mut surface: Option<Arc<wgpu::Surface<'static>>> = None;
 
         let waker = Arc::new(NoopWaker()).into();
         let mut init_cb = Some(init_cb);
@@ -150,18 +139,9 @@ impl Driver {
             target.set_control_flow(winit::event_loop::ControlFlow::Wait);
             if let Some(f) = future.as_mut() {
                 let mut cx = std::task::Context::from_waker(&waker);
-                if let std::task::Poll::Ready(r) = f.as_mut().poll(&mut cx) {
+                if let std::task::Poll::Ready(frend) = f.as_mut().poll(&mut cx) {
                     future = None;
-                    let wsz = window.as_ref().unwrap().inner_size();
-                    let sz = self.render_size.unwrap_or((wsz.width, wsz.height));
-                    frenderer = Some(crate::Renderer::with_gpu(
-                        sz.0,
-                        sz.1,
-                        wsz.width,
-                        wsz.height,
-                        r.unwrap(),
-                        Arc::into_inner(surface.take().unwrap()).unwrap(),
-                    ));
+                    frenderer = Some(frend.unwrap());
                     userdata = Some(init_cb.take().unwrap()(
                         window.as_ref().unwrap(),
                         frenderer.as_mut().unwrap(),
@@ -182,36 +162,19 @@ impl Driver {
                 window = Some(Arc::new(
                     self.builder.take().unwrap().build(target).unwrap(),
                 ));
-                #[cfg(target_arch = "wasm32")]
-                {
-                    use self::web_error::RuntimeError;
-                    use crate::wgpu::web_sys;
-                    use winit::platform::web::WindowExtWebSys;
-                    let doc = web_sys::window()
-                        .ok_or(RuntimeError::NoBody)
-                        .unwrap()
-                        .document()
-                        .unwrap();
-                    let canvas = window
-                        .as_ref()
-                        .unwrap()
-                        .canvas()
-                        .ok_or(RuntimeError::NoCanvas)
-                        .unwrap();
-                    doc.body()
-                        .ok_or(RuntimeError::NoBody)
-                        .unwrap()
-                        .append_child(&canvas)
-                        .unwrap();
-                }
-                surface = Some(Arc::new(
-                    instance
-                        .create_surface(Arc::clone(window.as_ref().unwrap()))
-                        .unwrap(),
-                ));
-                future = Some(Box::pin(crate::WGPU::new(
+                prepare_window(window.as_ref().unwrap());
+                let surface = instance
+                    .create_surface(Arc::clone(window.as_ref().unwrap()))
+                    .unwrap();
+                let wsz = window.as_ref().unwrap().inner_size();
+                let sz = self.render_size.unwrap_or((wsz.width, wsz.height));
+                future = Some(Box::pin(crate::Renderer::with_surface(
+                    sz.0,
+                    sz.1,
+                    wsz.width,
+                    wsz.height,
                     Arc::clone(&instance),
-                    surface.as_ref().map(Arc::clone),
+                    surface,
                 )));
             } else {
                 // do nothing, wait for resume or poll
@@ -226,5 +189,40 @@ impl Driver {
             use winit::platform::web::EventLoopExtWebSys;
             Ok(event_loop.spawn(cb))
         }
+    }
+}
+
+#[allow(unused_variables)]
+pub fn prepare_window(window: &winit::window::Window) {
+    #[cfg(target_arch = "wasm32")]
+    {
+        use self::web_error::RuntimeError;
+        use crate::wgpu::web_sys;
+        use winit::platform::web::WindowExtWebSys;
+        let doc = web_sys::window()
+            .ok_or(RuntimeError::NoBody)
+            .unwrap()
+            .document()
+            .unwrap();
+        let canvas = window.canvas().ok_or(RuntimeError::NoCanvas).unwrap();
+        doc.body()
+            .ok_or(RuntimeError::NoBody)
+            .unwrap()
+            .append_child(&canvas)
+            .unwrap();
+    }
+}
+
+pub fn prepare_logging() -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        env_logger::init();
+        Ok(())
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+        console_log::init_with_level(log::Level::Warn)?;
+        Ok(())
     }
 }

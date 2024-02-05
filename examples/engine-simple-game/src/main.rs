@@ -102,7 +102,7 @@ impl engine::Game for Game {
     }
     fn update(&mut self, engine: &mut Engine) {
         let dir = engine
-            .input
+            .input()
             .key_axis(engine::Key::ArrowLeft, engine::Key::ArrowRight);
         self.guy.pos.x += dir * GUY_SPEED;
         let mut contacts = Vec::with_capacity(self.walls.len());
@@ -260,5 +260,5 @@ impl engine::Game for Game {
     }
 }
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    Engine::run::<Game>(winit::window::WindowBuilder::new())
+    engine::run::<Game>(winit::window::WindowBuilder::new())
 }

@@ -21,7 +21,6 @@ pub struct Engine {
     pub renderer: Renderer,
     pub input: Input,
     camera: Camera,
-    event_loop: Option<winit::event_loop::EventLoop<()>>,
     window: Arc<winit::window::Window>,
     sprite_renderer: SpriteRenderer,
 }
@@ -30,85 +29,145 @@ impl Engine {
     pub fn run<G: Game>(
         builder: winit::window::WindowBuilder,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        frenderer::with_default_runtime(
-            builder,
-            Some((1024, 768)),
-            |event_loop, window, renderer| {
-                let camera = Camera {
-                    screen_pos: [0.0, 0.0],
-                    screen_size: window.inner_size().into(),
-                };
-                let input = Input::default();
-                let this = Self {
-                    sprite_renderer: SpriteRenderer::new(
-                        &renderer.gpu,
-                        renderer.config().view_formats[1].into(),
-                        renderer.depth_texture().format(),
-                    ),
-                    renderer,
-                    input,
-                    window,
-                    event_loop: Some(event_loop),
-                    camera,
-                };
-                this.go::<G>().unwrap();
-            },
-        )
-    }
-    pub fn go<G: Game>(mut self) -> Result<(), Box<dyn std::error::Error>> {
+        use std::cell::OnceCell;
+        use winit::event::Event;
+        use winit::event_loop::EventLoop;
+        frenderer::prepare_logging().unwrap();
+        let elp = EventLoop::new().unwrap();
+        let instance = Arc::new(wgpu::Instance::default());
+        let mut engine: OnceCell<Self> = OnceCell::new();
+        let window: OnceCell<Arc<winit::window::Window>> = OnceCell::new();
+        let mut builder = Some(builder);
         let mut clock = Clock::new(1.0 / 60.0, 0.0002, 5);
-        let mut game = G::new(&mut self);
-        Ok(self.event_loop.take().unwrap().run(move |event, target| {
-            match self.renderer.handle_event(
-                &mut clock,
-                &self.window,
-                &event,
-                target,
-                &mut self.input,
-            ) {
-                frenderer::EventPhase::Run(steps) => {
-                    for _ in 0..steps {
-                        game.update(&mut self);
-                        self.input.next_frame();
+        let mut game: OnceCell<G> = OnceCell::new();
+        elp.run(move |evt, tgt| {
+            if window.get().is_none() {
+                if let Event::Resumed = evt {
+                    let win = Arc::new(builder.take().unwrap().build(tgt).unwrap());
+                    frenderer::prepare_window(&win);
+                    let surface = instance.create_surface(Arc::clone(&win)).unwrap();
+                    let wsz = win.inner_size();
+                    window.set(Arc::clone(&win)).unwrap();
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        wasm_bindgen_futures::spawn(Self::engine_async_init(
+                            wsz,
+                            win,
+                            surface,
+                            &instance,
+                            &mut engine,
+                        ));
                     }
-                    for group in 0..self.sprite_renderer.sprite_group_count() {
-                        self.sprite_renderer
-                            .resize_sprite_group(&self.renderer.gpu, group, 0);
-                        self.sprite_renderer.upload_sprites(
-                            &self.renderer.gpu,
-                            group,
-                            0..self.sprite_renderer.sprite_group_size(group),
-                        );
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
+                        pollster::block_on(Self::engine_async_init(
+                            wsz,
+                            win,
+                            surface,
+                            &instance,
+                            &mut engine,
+                        ));
                     }
-                    game.render(&mut self);
-                    // TODO this is actually not right if we want menus
-                    self.sprite_renderer
-                        .set_camera_all(&self.renderer.gpu, self.camera);
-                    for group in 0..self.sprite_renderer.sprite_group_count() {
-                        self.sprite_renderer.upload_sprites(
-                            &self.renderer.gpu,
-                            group,
-                            0..self.sprite_renderer.sprite_group_size(group),
-                        );
-                    }
-                    self.render();
                 }
-                frenderer::EventPhase::Quit => {
-                    target.exit();
+            } else if let Some(engine) = engine.get_mut() {
+                if let Some(game) = game.get_mut() {
+                    if let winit::event::Event::WindowEvent {
+                        event: winit::event::WindowEvent::Resized(size),
+                        ..
+                    } = evt
+                    {
+                        if !engine.renderer.gpu.is_web() {
+                            engine.renderer.resize_render(size.width, size.height);
+                            engine.window.request_redraw();
+                        }
+                    }
+                    match engine.renderer.handle_event(
+                        &mut clock,
+                        &engine.window,
+                        &evt,
+                        tgt,
+                        &mut engine.input,
+                    ) {
+                        frenderer::EventPhase::Run(steps) => {
+                            for _ in 0..steps {
+                                game.update(engine);
+                                engine.input.next_frame();
+                            }
+                            for group in 0..engine.sprite_renderer.sprite_group_count() {
+                                engine.sprite_renderer.resize_sprite_group(
+                                    &engine.renderer.gpu,
+                                    group,
+                                    0,
+                                );
+                                engine.sprite_renderer.upload_sprites(
+                                    &engine.renderer.gpu,
+                                    group,
+                                    0..engine.sprite_renderer.sprite_group_size(group),
+                                );
+                            }
+                            game.render(engine);
+                            // TODO this is actually not right if we want menus
+                            engine
+                                .sprite_renderer
+                                .set_camera_all(&engine.renderer.gpu, engine.camera);
+                            for group in 0..engine.sprite_renderer.sprite_group_count() {
+                                engine.sprite_renderer.upload_sprites(
+                                    &engine.renderer.gpu,
+                                    group,
+                                    0..engine.sprite_renderer.sprite_group_size(group),
+                                );
+                            }
+                            engine.render();
+                        }
+                        frenderer::EventPhase::Quit => {
+                            tgt.exit();
+                        }
+                        frenderer::EventPhase::Wait => {}
+                    };
+                } else {
+                    game.set(G::new(engine))
+                        .unwrap_or_else(|_| panic!("Couldn't initialize game"));
                 }
-                frenderer::EventPhase::Wait => {}
+            } else {
+                // just waiting
             }
-            if let winit::event::Event::WindowEvent {
-                event: winit::event::WindowEvent::Resized(size),
-                ..
-            } = event
-            {
-                if !self.renderer.gpu.is_web() {
-                    self.renderer.resize_render(size.width, size.height);
-                    self.window.request_redraw();
-                }
-            }
-        })?)
+        })?;
+        Ok(())
+    }
+    async fn engine_async_init(
+        wsz: winit::dpi::PhysicalSize<u32>,
+        win: Arc<winit::window::Window>,
+        surface: wgpu::Surface<'static>,
+        instance: &Arc<wgpu::Instance>,
+        engine: &mut std::cell::OnceCell<Engine>,
+    ) {
+        let renderer = Renderer::with_surface(
+            wsz.width,
+            wsz.height,
+            wsz.width,
+            wsz.height,
+            Arc::clone(instance),
+            surface,
+        )
+        .await
+        .unwrap();
+
+        engine
+            .set(Self {
+                input: Input::default(),
+                camera: Camera {
+                    screen_pos: [0.0, 0.0],
+                    screen_size: win.inner_size().into(),
+                },
+                sprite_renderer: SpriteRenderer::new(
+                    &renderer.gpu,
+                    renderer.config().view_formats[1].into(),
+                    renderer.depth_texture().format(),
+                ),
+                window: win,
+                renderer,
+            })
+            .unwrap_or_else(|_| panic!("Couldn't set engine cell"));
     }
     fn render(&mut self) {
         let (frame, view, mut encoder) = self.renderer.render_setup();

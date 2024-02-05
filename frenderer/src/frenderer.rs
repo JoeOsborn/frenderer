@@ -63,6 +63,24 @@ enum Upload {
 impl Renderer {
     /// The format used for depth textures within frenderer.
     pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+    pub async fn with_surface(
+        width: u32,
+        height: u32,
+        surf_width: u32,
+        surf_height: u32,
+        instance: std::sync::Arc<wgpu::Instance>,
+        surface: wgpu::Surface<'static>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let gpu = WGPU::new(instance, Some(&surface)).await?;
+        Ok(Self::with_gpu(
+            width,
+            height,
+            surf_width,
+            surf_height,
+            gpu,
+            surface,
+        ))
+    }
     /// Create a new Renderer with a full set of GPU resources, a
     /// render size, a surface size, and a surface.
     pub fn with_gpu(

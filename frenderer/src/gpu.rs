@@ -41,14 +41,14 @@ impl WGPU {
     /// Create a WGPU structure by initializing WGPU for display onto the given surface.
     pub async fn new(
         instance: Arc<wgpu::Instance>,
-        surface: Option<Arc<wgpu::Surface<'static>>>,
+        surface: Option<&wgpu::Surface<'static>>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::default(),
                 force_fallback_adapter: false,
                 // Request an adapter which can render to our surface
-                compatible_surface: surface.as_deref(),
+                compatible_surface: surface,
             })
             .await
             .ok_or(FrendererError::NoUsableAdapter)?;
