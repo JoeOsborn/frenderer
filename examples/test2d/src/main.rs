@@ -136,16 +136,16 @@ fn main() {
     let mut acc = 0.0;
     let mut now = frenderer::clock::Instant::now();
     // frenderer::events::run_event_loop(event_loop, move |event, target, window, &mut frenderer| {})
-    drv.run_event_loop::<(), Camera2D>(
-        move |_window, frend| {
+    drv.run_event_loop::<(), _>(
+        move |win, mut frend| {
             let mut camera = Camera2D {
                 screen_pos: [0.0, 0.0],
                 screen_size: [1024.0, 768.0],
             };
-            init_data(frend, &cache, &mut camera);
-            camera
+            init_data(&mut frend, &cache, &mut camera);
+            (win, camera, frend)
         },
-        move |event, target, window, frend, camera| {
+        move |event, target, (window, camera, frend)| {
             use winit::event::{Event, WindowEvent};
             match event {
                 Event::WindowEvent {

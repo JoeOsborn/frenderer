@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use assets_manager::asset::Gltf;
 use frenderer::{
     input::{self, Key},
@@ -11,16 +9,12 @@ use ultraviolet::*;
 //mod obj_loader;
 
 fn main() {
-    frenderer::with_default_runtime(winit::window::WindowBuilder::new(), Some((1024, 768)), run)
-        .unwrap();
-    // instead of the above, we could have created the wgpu device/adapter ourselves, made a frenderer::WGPU, and then made a frenderer with that and the window.
-}
-
-fn run(
-    event_loop: winit::event_loop::EventLoop<()>,
-    window: Arc<winit::window::Window>,
-    mut frend: frenderer::Renderer,
-) {
+    let drv = frenderer::Driver::new(
+        winit::window::WindowBuilder::new()
+            .with_title("test")
+            .with_inner_size(winit::dpi::LogicalSize::new(1024.0, 768.0)),
+        Some((1024, 768)),
+    );
     let mut input = input::Input::default();
     #[cfg(not(target_arch = "wasm32"))]
     let source =
@@ -28,68 +22,6 @@ fn run(
     #[cfg(target_arch = "wasm32")]
     let source = assets_manager::source::Embedded::from(assets_manager::source::embed!("content"));
     let cache = assets_manager::AssetCache::with_source(source);
-    let fox = cache
-        .load::<assets_manager::asset::Gltf>("khronos.Fox.glTF-Binary.Fox")
-        .expect("Couldn't get fox asset");
-    let raccoon = cache
-        .load::<assets_manager::asset::Gltf>("low_poly_raccoon.scene")
-        .expect("Couldn't get raccoon asset");
-
-    let mut camera = Camera3D {
-        translation: Vec3 {
-            x: 0.0,
-            y: 0.0,
-            z: -10.0,
-        }
-        .into(),
-        rotation: Rotor3::from_rotation_xz(0.0).into_quaternion_array(),
-        // 90 degrees is typical
-        fov: std::f32::consts::FRAC_PI_2,
-        near: 1.0,
-        far: 1000.0,
-        aspect: 1024.0 / 768.0,
-    };
-    frend.mesh_set_camera(camera);
-    frend.flat_set_camera(camera);
-
-    let mut rng = rand::thread_rng();
-    const COUNT: usize = 100;
-    let fox = load_gltf_single_textured(&mut frend, &fox.read(), COUNT as u32);
-    for trf in frend.meshes_mut(fox, 0, ..) {
-        *trf = Transform3D {
-            translation: Vec3 {
-                x: rng.gen_range(-80.0..80.0),
-                y: rng.gen_range(-60.0..60.0),
-                z: rng.gen_range(-50.0..50.0),
-            }
-            .into(),
-            rotation: Rotor3::from_euler_angles(
-                rng.gen_range(0.0..std::f32::consts::TAU),
-                rng.gen_range(0.0..std::f32::consts::TAU),
-                rng.gen_range(0.0..std::f32::consts::TAU),
-            )
-            .into_quaternion_array(),
-            scale: rng.gen_range(0.01..0.10),
-        };
-    }
-    let raccoon = load_gltf_flat(&mut frend, &raccoon.read(), COUNT as u32);
-    for trf in frend.flats_mut(raccoon, 0, ..) {
-        *trf = Transform3D {
-            translation: Vec3 {
-                x: rng.gen_range(-80.0..80.0),
-                y: rng.gen_range(-60.0..60.0),
-                z: rng.gen_range(-50.0..50.0),
-            }
-            .into(),
-            rotation: Rotor3::from_euler_angles(
-                rng.gen_range(0.0..std::f32::consts::TAU),
-                rng.gen_range(0.0..std::f32::consts::TAU),
-                rng.gen_range(0.0..std::f32::consts::TAU),
-            )
-            .into_quaternion_array(),
-            scale: rng.gen_range(3.0..6.0),
-        };
-    }
 
     const DT: f32 = 1.0 / 60.0;
     const DT_FUDGE_AMOUNT: f32 = 0.0002;
@@ -97,8 +29,74 @@ fn run(
     const TIME_SNAPS: [f32; 5] = [15.0, 30.0, 60.0, 120.0, 144.0];
     let mut acc = 0.0;
     let mut now = frenderer::clock::Instant::now();
-    event_loop
-        .run(move |event, target| {
+    drv.run_event_loop::<(), _>(
+        move |win, mut frend| {
+            let fox = cache
+                .load::<assets_manager::asset::Gltf>("khronos.Fox.glTF-Binary.Fox")
+                .expect("Couldn't get fox asset");
+            let raccoon = cache
+                .load::<assets_manager::asset::Gltf>("low_poly_raccoon.scene")
+                .expect("Couldn't get raccoon asset");
+
+            let camera = Camera3D {
+                translation: Vec3 {
+                    x: 0.0,
+                    y: 0.0,
+                    z: -10.0,
+                }
+                .into(),
+                rotation: Rotor3::from_rotation_xz(0.0).into_quaternion_array(),
+                // 90 degrees is typical
+                fov: std::f32::consts::FRAC_PI_2,
+                near: 1.0,
+                far: 1000.0,
+                aspect: 1024.0 / 768.0,
+            };
+            frend.mesh_set_camera(camera);
+            frend.flat_set_camera(camera);
+
+            let mut rng = rand::thread_rng();
+            const COUNT: usize = 100;
+            let fox = load_gltf_single_textured(&mut frend, &fox.read(), COUNT as u32);
+            for trf in frend.meshes_mut(fox, 0, ..) {
+                *trf = Transform3D {
+                    translation: Vec3 {
+                        x: rng.gen_range(-80.0..80.0),
+                        y: rng.gen_range(-60.0..60.0),
+                        z: rng.gen_range(-50.0..50.0),
+                    }
+                    .into(),
+                    rotation: Rotor3::from_euler_angles(
+                        rng.gen_range(0.0..std::f32::consts::TAU),
+                        rng.gen_range(0.0..std::f32::consts::TAU),
+                        rng.gen_range(0.0..std::f32::consts::TAU),
+                    )
+                    .into_quaternion_array(),
+                    scale: rng.gen_range(0.01..0.10),
+                };
+            }
+            let raccoon = load_gltf_flat(&mut frend, &raccoon.read(), COUNT as u32);
+            for trf in frend.flats_mut(raccoon, 0, ..) {
+                *trf = Transform3D {
+                    translation: Vec3 {
+                        x: rng.gen_range(-80.0..80.0),
+                        y: rng.gen_range(-60.0..60.0),
+                        z: rng.gen_range(-50.0..50.0),
+                    }
+                    .into(),
+                    rotation: Rotor3::from_euler_angles(
+                        rng.gen_range(0.0..std::f32::consts::TAU),
+                        rng.gen_range(0.0..std::f32::consts::TAU),
+                        rng.gen_range(0.0..std::f32::consts::TAU),
+                    )
+                    .into_quaternion_array(),
+                    scale: rng.gen_range(3.0..6.0),
+                };
+            }
+
+            (win, camera, fox, frend)
+        },
+        move |event, target, (window, camera, fox, frend)| {
             use winit::event::{Event, WindowEvent};
             match event {
                 Event::WindowEvent {
@@ -127,12 +125,13 @@ fn run(
                     }
                     acc += elapsed;
                     now = frenderer::clock::Instant::now();
+                    let mut rng = rand::thread_rng();
                     // While we have time to spend
                     while acc >= DT {
                         // simulate a frame
                         acc -= DT;
                         // rotate every fox a random amount
-                        for trf in frend.meshes_mut(fox, 0, ..) {
+                        for trf in frend.meshes_mut(*fox, 0, ..) {
                             trf.rotation = (Rotor3::from_quaternion_array(trf.rotation)
                                 * Rotor3::from_euler_angles(
                                     rng.gen_range(0.0..(std::f32::consts::TAU * DT)),
@@ -168,8 +167,8 @@ fn run(
                         input.next_frame();
                     }
                     // Render prep
-                    frend.mesh_set_camera(camera);
-                    frend.flat_set_camera(camera);
+                    frend.mesh_set_camera(*camera);
+                    frend.flat_set_camera(*camera);
                     // update sprite positions and sheet regions
                     // ok now render.
                     frend.render();
@@ -188,8 +187,9 @@ fn run(
                     input.process_input_event(&event);
                 }
             }
-        })
-        .unwrap();
+        },
+    )
+    .unwrap();
 }
 
 fn load_gltf_single_textured(

@@ -21,6 +21,7 @@ pub struct Engine {
     pub renderer: Renderer,
     pub input: Input,
     camera: Camera,
+    clock: Clock,
     window: Arc<winit::window::Window>,
     sprite_renderer: SpriteRenderer,
 }
@@ -30,49 +31,68 @@ impl Engine {
         builder: winit::window::WindowBuilder,
     ) -> Result<(), Box<dyn std::error::Error>> {
         use std::cell::OnceCell;
+        enum InitPhase<G: Game> {
+            WaitingOnResume(winit::window::WindowBuilder),
+            WaitingOnEngine(Arc<winit::window::Window>, Rc<OnceCell<Engine>>),
+            Ready(Arc<winit::window::Window>, Engine, G),
+            Invalid,
+        }
+        use std::rc::Rc;
         use winit::event::Event;
         use winit::event_loop::EventLoop;
         frenderer::prepare_logging().unwrap();
         let elp = EventLoop::new().unwrap();
+        let phase = std::cell::Cell::new(InitPhase::WaitingOnResume(builder));
         let instance = Arc::new(wgpu::Instance::default());
-        let mut engine: Arc<OnceCell<Self>> = Arc::new(OnceCell::new());
-        let window: OnceCell<Arc<winit::window::Window>> = OnceCell::new();
-        let mut builder = Some(builder);
-        let mut clock = Clock::new(1.0 / 60.0, 0.0002, 5);
-        let mut game: OnceCell<G> = OnceCell::new();
         elp.run(move |evt, tgt| {
-            if window.get().is_none() {
-                if let Event::Resumed = evt {
-                    let win = Arc::new(builder.take().unwrap().build(tgt).unwrap());
-                    frenderer::prepare_window(&win);
-                    let surface = instance.create_surface(Arc::clone(&win)).unwrap();
-                    let wsz = win.inner_size();
-                    window.set(Arc::clone(&win)).unwrap();
-                    #[cfg(target_arch = "wasm32")]
-                    {
-                        wasm_bindgen_futures::spawn_local(Self::engine_async_init(
-                            wsz,
-                            win,
-                            surface,
-                            Arc::clone(&instance),
-                            Arc::clone(&engine),
-                        ));
-                    }
-                    #[cfg(not(target_arch = "wasm32"))]
-                    {
-                        pollster::block_on(Self::engine_async_init(
-                            wsz,
-                            win,
-                            surface,
-                            Arc::clone(&instance),
-                            Arc::clone(&engine),
-                        ));
+            phase.set(match phase.replace(InitPhase::Invalid) {
+                InitPhase::WaitingOnResume(builder) => {
+                    if let Event::Resumed = evt {
+                        let win = Arc::new(builder.build(tgt).unwrap());
+                        frenderer::prepare_window(&win);
+                        let surface = instance.create_surface(Arc::clone(&win)).unwrap();
+                        let wsz = win.inner_size();
+                        let engine_cell = Rc::new(OnceCell::default());
+                        #[cfg(target_arch = "wasm32")]
+                        {
+                            wasm_bindgen_futures::spawn_local(Self::engine_async_init(
+                                wsz,
+                                Arc::clone(&win),
+                                surface,
+                                Arc::clone(&instance),
+                                Rc::clone(&engine_cell),
+                            ));
+                        }
+                        #[cfg(not(target_arch = "wasm32"))]
+                        {
+                            pollster::block_on(Self::engine_async_init(
+                                wsz,
+                                Arc::clone(&win),
+                                surface,
+                                Arc::clone(&instance),
+                                Rc::clone(&engine_cell),
+                            ));
+                        }
+                        InitPhase::WaitingOnEngine(win, engine_cell)
+                    } else {
+                        InitPhase::WaitingOnResume(builder)
                     }
                 }
-            } else if let Some(engine) =
-                Arc::get_mut(&mut engine).and_then(|c| OnceCell::get_mut(c))
-            {
-                if let Some(game) = game.get_mut() {
+                InitPhase::WaitingOnEngine(window, engine_cell) => {
+                    if Rc::strong_count(&engine_cell) == 1 {
+                        if let Some(mut engine) =
+                            Rc::into_inner(engine_cell).and_then(OnceCell::into_inner)
+                        {
+                            let game = G::new(&mut engine);
+                            InitPhase::Ready(window, engine, game)
+                        } else {
+                            panic!("Rc has only one owner but engine is not yet initialized");
+                        }
+                    } else {
+                        InitPhase::WaitingOnEngine(window, engine_cell)
+                    }
+                }
+                InitPhase::Ready(window, mut engine, mut game) => {
                     if let winit::event::Event::WindowEvent {
                         event: winit::event::WindowEvent::Resized(size),
                         ..
@@ -84,7 +104,7 @@ impl Engine {
                         }
                     }
                     match engine.renderer.handle_event(
-                        &mut clock,
+                        &mut engine.clock,
                         &engine.window,
                         &evt,
                         tgt,
@@ -92,7 +112,7 @@ impl Engine {
                     ) {
                         frenderer::EventPhase::Run(steps) => {
                             for _ in 0..steps {
-                                game.update(engine);
+                                game.update(&mut engine);
                                 engine.input.next_frame();
                             }
                             for group in 0..engine.sprite_renderer.sprite_group_count() {
@@ -107,7 +127,7 @@ impl Engine {
                                     0..engine.sprite_renderer.sprite_group_size(group),
                                 );
                             }
-                            game.render(engine);
+                            game.render(&mut engine);
                             // TODO this is actually not right if we want menus
                             engine
                                 .sprite_renderer
@@ -126,22 +146,21 @@ impl Engine {
                         }
                         frenderer::EventPhase::Wait => {}
                     };
-                } else {
-                    game.set(G::new(engine))
-                        .unwrap_or_else(|_| panic!("Couldn't initialize game"));
+                    InitPhase::Ready(window, engine, game)
                 }
-            } else {
-                // just waiting
-            }
+                InitPhase::Invalid => {
+                    panic!("unexpectedly reentrant event loop")
+                }
+            });
         })?;
         Ok(())
     }
     async fn engine_async_init(
         wsz: winit::dpi::PhysicalSize<u32>,
-        win: Arc<winit::window::Window>,
+        window: Arc<winit::window::Window>,
         surface: wgpu::Surface<'static>,
         instance: Arc<wgpu::Instance>,
-        engine: Arc<std::cell::OnceCell<Engine>>,
+        engine: std::rc::Rc<std::cell::OnceCell<Engine>>,
     ) {
         let renderer = Renderer::with_surface(
             wsz.width, wsz.height, wsz.width, wsz.height, instance, surface,
@@ -154,14 +173,15 @@ impl Engine {
                 input: Input::default(),
                 camera: Camera {
                     screen_pos: [0.0, 0.0],
-                    screen_size: win.inner_size().into(),
+                    screen_size: window.inner_size().into(),
                 },
+                clock: Clock::new(1.0 / 60.0, 0.0002, 5),
                 sprite_renderer: SpriteRenderer::new(
                     &renderer.gpu,
                     renderer.config().view_formats[1].into(),
                     renderer.depth_texture().format(),
                 ),
-                window: win,
+                window,
                 renderer,
             })
             .unwrap_or_else(|_| panic!("Couldn't set engine cell"));

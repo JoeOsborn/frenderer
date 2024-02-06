@@ -26,7 +26,7 @@ pub struct Engine<G: Game> {
     pub renderer: Renderer,
     pub input: Input,
     camera: Camera,
-    event_loop: Option<winit::event_loop::EventLoop<()>>,
+    clock: Clock,
     window: Arc<winit::window::Window>,
     // We could pull these three out into a "World" or "CollisionWorld",
     // but note that the collision system only needs AABBs and tags, not vel or uv.
@@ -50,107 +50,112 @@ impl<G: Game> Engine<G> {
     const C_PH: u8 = 2;
 
     pub fn run(builder: winit::window::WindowBuilder) -> Result<(), Box<dyn std::error::Error>> {
-        frenderer::with_default_runtime(
-            builder,
-            Some((1024, 768)),
-            |event_loop, window, renderer| {
+        let drv = frenderer::Driver::new(builder, Some((1024, 768)));
+        drv.run_event_loop::<(), _>(
+            move |window, renderer| {
                 let input = Input::default();
                 let camera = Camera {
                     screen_pos: [0.0, 0.0],
                     screen_size: window.inner_size().into(),
                 };
-                let this = Self {
+                let mut this = Self {
                     renderer,
                     input,
                     window,
-                    event_loop: Some(event_loop),
                     camera,
+                    clock: Clock::new(1.0 / 60.0, 0.0002, 5),
                     charas_nocollide: vec![],
                     charas_trigger: vec![],
                     charas_physical: vec![],
                     texts: Vec::with_capacity(128),
                 };
-                this.go().unwrap();
+                let game = G::new(&mut this);
+                (this, game, collision::Contacts::new())
+            },
+            move |event, target, (ref mut engine, ref mut game, ref mut contacts)| {
+                engine.run_step(event, target, game, contacts);
             },
         )
     }
-    fn go(mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let mut clock = Clock::new(1.0 / 60.0, 0.0002, 5);
-        let mut game = G::new(&mut self);
-        let mut contacts = collision::Contacts::new();
-
-        Ok(self.event_loop.take().unwrap().run(move |event, target| {
-            match self.renderer.handle_event(
-                &mut clock,
-                &self.window,
-                &event,
-                target,
-                &mut self.input,
-            ) {
-                EventPhase::Run(steps) => {
-                    for _ in 0..steps {
-                        game.update(&mut self);
-                        for (_id, chara) in self.charas_mut() {
-                            // This will update dead charas too but it won't cause any harm
-                            chara.aabb_.center += chara.vel_;
-                        }
-                        for _iter in 0..COLLISION_STEPS {
-                            collision::do_collisions(&mut self.charas_physical, &mut contacts);
-                            game.handle_collisions(&mut self, contacts.displacements.drain(..));
-                            contacts.clear();
-                        }
-                        collision::gather_triggers(
-                            &mut self.charas_trigger,
-                            &mut self.charas_physical,
-                            &mut contacts,
-                        );
-                        game.handle_triggers(&mut self, contacts.triggers.drain(..));
+    fn run_step(
+        &mut self,
+        event: winit::event::Event<()>,
+        target: &winit::event_loop::EventLoopWindowTarget<()>,
+        game: &mut G,
+        contacts: &mut collision::Contacts<G::Tag>,
+    ) {
+        match self.renderer.handle_event(
+            &mut self.clock,
+            &self.window,
+            &event,
+            target,
+            &mut self.input,
+        ) {
+            EventPhase::Run(steps) => {
+                for _ in 0..steps {
+                    game.update(self);
+                    for (_id, chara) in self.charas_mut() {
+                        // This will update dead charas too but it won't cause any harm
+                        chara.aabb_.center += chara.vel_;
+                    }
+                    for _iter in 0..COLLISION_STEPS {
+                        collision::do_collisions(&mut self.charas_physical, contacts);
+                        let disps = contacts.displacements.drain(..);
+                        game.handle_collisions(self, disps);
                         contacts.clear();
-                        self.input.next_frame();
                     }
-                    game.render(&mut self);
-                    let chara_len = self.charas().count();
-                    let text_len: usize = self.texts.iter().map(|t| t.1.len()).sum();
-                    self.renderer.sprite_group_resize(0, chara_len + text_len);
-                    let (trfs, uvs) = self.renderer.sprites_mut(0, ..);
-                    // iterate through charas and update trf,uv
-                    // TODO: this could be more efficient by only updating charas which changed, or could be done during integration?
-                    for ((_id, chara), (trf, uv)) in Self::charas_internal(
-                        &self.charas_nocollide,
-                        &self.charas_trigger,
-                        &self.charas_physical,
-                    )
-                    .zip(trfs.iter_mut().zip(uvs.iter_mut()))
-                    {
-                        *trf = chara.aabb_.into();
-                        *uv = chara.uv_;
-                    }
-                    // iterate through texts and draw each one
-                    let mut sprite_idx = chara_len;
-                    for TextDraw(font, text, pos, sz) in self.texts.iter() {
-                        font.draw_text(
-                            &mut trfs[sprite_idx..],
-                            &mut uvs[sprite_idx..],
-                            text,
-                            (*pos).into(),
-                            0,
-                            *sz,
-                        );
-                        sprite_idx += text.len();
-                    }
-                    assert_eq!(sprite_idx, chara_len + text_len);
-                    // update sprites from charas
-                    // update texts
-                    self.renderer.sprite_group_set_camera(0, self.camera);
-                    self.renderer.render();
-                    self.texts.clear();
+                    collision::gather_triggers(
+                        &mut self.charas_trigger,
+                        &mut self.charas_physical,
+                        contacts,
+                    );
+                    let triggers = contacts.triggers.drain(..);
+                    game.handle_triggers(self, triggers);
+                    contacts.clear();
+                    self.input.next_frame();
                 }
-                EventPhase::Quit => {
-                    target.exit();
+                game.render(self);
+                let chara_len = self.charas().count();
+                let text_len: usize = self.texts.iter().map(|t| t.1.len()).sum();
+                self.renderer.sprite_group_resize(0, chara_len + text_len);
+                let (trfs, uvs) = self.renderer.sprites_mut(0, ..);
+                // iterate through charas and update trf,uv
+                // TODO: this could be more efficient by only updating charas which changed, or could be done during integration?
+                for ((_id, chara), (trf, uv)) in Self::charas_internal(
+                    &self.charas_nocollide,
+                    &self.charas_trigger,
+                    &self.charas_physical,
+                )
+                .zip(trfs.iter_mut().zip(uvs.iter_mut()))
+                {
+                    *trf = chara.aabb_.into();
+                    *uv = chara.uv_;
                 }
-                EventPhase::Wait => {}
+                // iterate through texts and draw each one
+                let mut sprite_idx = chara_len;
+                for TextDraw(font, text, pos, sz) in self.texts.iter() {
+                    font.draw_text(
+                        &mut trfs[sprite_idx..],
+                        &mut uvs[sprite_idx..],
+                        text,
+                        (*pos).into(),
+                        0,
+                        *sz,
+                    );
+                    sprite_idx += text.len();
+                }
+                assert_eq!(sprite_idx, chara_len + text_len);
+                // update sprites from charas
+                // update texts
+                self.renderer.sprite_group_set_camera(0, self.camera);
+                self.renderer.render();
+                self.texts.clear();
             }
-        })?)
+            EventPhase::Quit => {
+                target.exit();
+            }
+            EventPhase::Wait => {}
+        }
     }
     pub fn make_chara(
         &mut self,

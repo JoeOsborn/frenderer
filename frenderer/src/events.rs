@@ -69,7 +69,7 @@ impl<T> FrendererEvents<T> for crate::Renderer {
 }
 
 pub struct Driver {
-    builder: Option<winit::window::WindowBuilder>,
+    builder: winit::window::WindowBuilder,
     render_size: Option<(u32, u32)>,
 }
 #[cfg(all(target_arch = "wasm32", feature = "winit"))]
@@ -98,87 +98,89 @@ impl std::task::Wake for NoopWaker {
 impl Driver {
     pub fn new(builder: winit::window::WindowBuilder, render_size: Option<(u32, u32)>) -> Self {
         Self {
-            builder: Some(builder),
+            builder,
             render_size,
         }
     }
     pub fn run_event_loop<T: 'static + std::fmt::Debug, U: 'static>(
-        mut self,
-        init_cb: impl FnOnce(&winit::window::Window, &mut crate::Renderer) -> U + 'static,
-        mut handler: impl FnMut(
-                winit::event::Event<T>,
-                &winit::event_loop::EventLoopWindowTarget<T>,
-                &winit::window::Window,
-                &mut crate::Renderer,
-                &mut U,
-            ) + 'static,
+        self,
+        init_cb: impl FnOnce(std::sync::Arc<winit::window::Window>, crate::Renderer) -> U + 'static,
+        mut handler: impl FnMut(winit::event::Event<T>, &winit::event_loop::EventLoopWindowTarget<T>, &mut U)
+            + 'static,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        enum DriverState<U: 'static> {
+            WaitingForResume(winit::window::WindowBuilder),
+            PollingFuture(
+                Arc<winit::window::Window>,
+                #[allow(clippy::type_complexity)]
+                std::pin::Pin<
+                    Box<
+                        dyn std::future::Future<
+                            Output = Result<crate::Renderer, Box<dyn std::error::Error>>,
+                        >,
+                    >,
+                >,
+            ),
+            Running(U),
+            // This is just used as a temporary value
+            InsideLoop,
+        }
         use std::sync::Arc;
         use winit::event_loop::EventLoop;
+        let Self {
+            builder,
+            render_size,
+        } = self;
         prepare_logging()?;
         let event_loop: EventLoop<T> =
             winit::event_loop::EventLoopBuilder::with_user_event().build()?;
-        #[allow(clippy::type_complexity)]
-        let mut future: Option<
-            std::pin::Pin<
-                Box<
-                    dyn std::future::Future<
-                        Output = Result<crate::Renderer, Box<dyn std::error::Error>>,
-                    >,
-                >,
-            >,
-        > = None;
-        let mut window: Option<Arc<winit::window::Window>> = None;
-        let mut frenderer = None;
         let instance = Arc::new(wgpu::Instance::default());
-
         let waker = Arc::new(NoopWaker()).into();
         let mut init_cb = Some(init_cb);
-        let mut userdata: Option<U> = None;
+        let driver_state = std::cell::Cell::new(DriverState::WaitingForResume(builder));
         let cb = move |event, target: &winit::event_loop::EventLoopWindowTarget<_>| {
             target.set_control_flow(winit::event_loop::ControlFlow::Wait);
-            if let Some(f) = future.as_mut() {
-                let mut cx = std::task::Context::from_waker(&waker);
-                if let std::task::Poll::Ready(frend) = f.as_mut().poll(&mut cx) {
-                    future = None;
-                    frenderer = Some(frend.unwrap());
-                    userdata = Some(init_cb.take().unwrap()(
-                        window.as_ref().unwrap(),
-                        frenderer.as_mut().unwrap(),
-                    ));
-                } else {
-                    // schedule again
-                    target.set_control_flow(winit::event_loop::ControlFlow::Poll);
+            driver_state.set(match driver_state.replace(DriverState::InsideLoop) {
+                DriverState::WaitingForResume(builder) => {
+                    if let winit::event::Event::Resumed = event {
+                        let window = Arc::new(builder.build(target).unwrap());
+                        prepare_window(&window);
+                        let surface = instance.create_surface(Arc::clone(&window)).unwrap();
+                        let wsz = window.inner_size();
+                        let sz = render_size.unwrap_or((wsz.width, wsz.height));
+                        let future = Box::pin(crate::Renderer::with_surface(
+                            sz.0,
+                            sz.1,
+                            wsz.width,
+                            wsz.height,
+                            Arc::clone(&instance),
+                            surface,
+                        ));
+                        DriverState::PollingFuture(window, future)
+                    } else {
+                        DriverState::WaitingForResume(builder)
+                    }
                 }
-            } else if let Some(window) = window.as_ref() {
-                handler(
-                    event,
-                    target,
-                    window,
-                    frenderer.as_mut().unwrap(),
-                    userdata.as_mut().unwrap(),
-                );
-            } else if let winit::event::Event::Resumed = event {
-                window = Some(Arc::new(
-                    self.builder.take().unwrap().build(target).unwrap(),
-                ));
-                prepare_window(window.as_ref().unwrap());
-                let surface = instance
-                    .create_surface(Arc::clone(window.as_ref().unwrap()))
-                    .unwrap();
-                let wsz = window.as_ref().unwrap().inner_size();
-                let sz = self.render_size.unwrap_or((wsz.width, wsz.height));
-                future = Some(Box::pin(crate::Renderer::with_surface(
-                    sz.0,
-                    sz.1,
-                    wsz.width,
-                    wsz.height,
-                    Arc::clone(&instance),
-                    surface,
-                )));
-            } else {
-                // do nothing, wait for resume or poll
-            }
+                DriverState::PollingFuture(window, mut future) => {
+                    let mut cx = std::task::Context::from_waker(&waker);
+                    if let std::task::Poll::Ready(frend) = future.as_mut().poll(&mut cx) {
+                        let frenderer = frend.unwrap();
+                        let userdata = init_cb.take().unwrap()(Arc::clone(&window), frenderer);
+                        DriverState::Running(userdata)
+                    } else {
+                        // schedule again
+                        target.set_control_flow(winit::event_loop::ControlFlow::Poll);
+                        DriverState::PollingFuture(window, future)
+                    }
+                }
+                DriverState::Running(mut userdata) => {
+                    handler(event, target, &mut userdata);
+                    DriverState::Running(userdata)
+                }
+                DriverState::InsideLoop => {
+                    panic!("driver state loop unexpectedly reentrant");
+                }
+            });
         };
         #[cfg(not(target_arch = "wasm32"))]
         {
