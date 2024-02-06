@@ -42,7 +42,7 @@ pub struct Engine<G: Game> {
     // Text drawing
     texts: Vec<TextDraw>,
     sim_frame: usize,
-    clock:Clock,
+    clock: Clock,
     _game: std::marker::PhantomData<G>,
 }
 
@@ -77,7 +77,7 @@ impl<G: Game> Engine<G> {
                     sim_frame: 0,
                     _game: std::marker::PhantomData,
                 };
-                
+
                 let displacements: Vec<Contact> = Vec::with_capacity(128);
                 let triggers: Vec<Contact> = Vec::with_capacity(128);
 
@@ -101,7 +101,14 @@ impl<G: Game> Engine<G> {
         self.contacts.remove_entity(entity, &mut self.world);
         self.world.despawn(entity)
     }
-    fn run_step(&mut self, event:&winit::event::Event<()>, target:&winit::event_loop::EventLoopWindowTarget<()>, game:&mut G, displacements:&mut Vec<Contact>, triggers:&mut Vec<Contact>){
+    fn run_step(
+        &mut self,
+        event: &winit::event::Event<()>,
+        target: &winit::event_loop::EventLoopWindowTarget<()>,
+        game: &mut G,
+        displacements: &mut Vec<Contact>,
+        triggers: &mut Vec<Contact>,
+    ) {
         match self.renderer.handle_event(
             &mut self.clock,
             &self.window,
@@ -130,16 +137,13 @@ impl<G: Game> Engine<G> {
                     for Contact(e1, _e2, v) in self.contacts.displacements.iter() {
                         // if e1 is pushable, maybe reset its vel
                         // we also might have a contact for e2, e1 for the opposite push
-                        if let Ok(phys) =
-                            self.world.query_one_mut::<&mut components::Physics>(*e1)
+                        if let Ok(phys) = self.world.query_one_mut::<&mut components::Physics>(*e1)
                         {
-                            if v.x.abs() > std::f32::EPSILON
-                                && v.x.signum() != phys.vel.x.signum()
+                            if v.x.abs() > std::f32::EPSILON && v.x.signum() != phys.vel.x.signum()
                             {
                                 phys.vel.x = 0.0;
                             }
-                            if v.y.abs() > std::f32::EPSILON
-                                && v.y.signum() != phys.vel.y.signum()
+                            if v.y.abs() > std::f32::EPSILON && v.y.signum() != phys.vel.y.signum()
                             {
                                 phys.vel.y = 0.0;
                             }
@@ -149,11 +153,7 @@ impl<G: Game> Engine<G> {
                     // we can respond to collision displacements and triggers of the frame all at once
                     displacements.append(&mut self.contacts.displacements);
                     triggers.append(&mut self.contacts.triggers);
-                    game.handle_collisions(
-                        self,
-                        displacements.drain(..),
-                        triggers.drain(..),
-                    );
+                    game.handle_collisions(self, displacements.drain(..), triggers.drain(..));
                     displacements.clear();
                     triggers.clear();
                     // the handle_* functions might have moved things around, but we need accurate info for ad hoc queries during game::update next trip through the loop
