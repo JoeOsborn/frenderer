@@ -34,15 +34,15 @@ pub mod components {
 
 pub struct Engine<G: Game> {
     pub renderer: Renderer,
-    world_: hecs::World,
+    world: hecs::World,
     pub input: Input,
     camera: Camera,
     contacts: collision::Contacts,
-    event_loop: Option<winit::event_loop::EventLoop<()>>,
     window: Arc<winit::window::Window>,
     // Text drawing
     texts: Vec<TextDraw>,
     sim_frame: usize,
+    clock:Clock,
     _game: std::marker::PhantomData<G>,
 }
 
@@ -55,10 +55,9 @@ pub struct CharaID(
 
 impl<G: Game> Engine<G> {
     pub fn run(builder: winit::window::WindowBuilder) -> Result<(), Box<dyn std::error::Error>> {
-        frenderer::with_default_runtime(
-            builder,
-            Some((1024, 768)),
-            |event_loop, window, renderer| {
+        let drv = frenderer::Driver::new(builder, Some((1024, 768)));
+        drv.run_event_loop::<(), _>(
+            move |window, renderer| {
                 let input = Input::default();
                 let camera = Camera {
                     screen_pos: [0.0, 0.0],
@@ -66,148 +65,147 @@ impl<G: Game> Engine<G> {
                 };
                 let contacts = collision::Contacts::new();
                 let world = hecs::World::new();
-                let this = Self {
+                let mut this = Self {
                     renderer,
                     input,
                     contacts,
                     window,
-                    world_: world,
-                    event_loop: Some(event_loop),
+                    clock: Clock::new(1.0 / 60.0, 0.0002, 5),
+                    world,
                     camera,
                     texts: Vec::with_capacity(128),
                     sim_frame: 0,
                     _game: std::marker::PhantomData,
                 };
-                this.go().unwrap();
+                
+                let displacements: Vec<Contact> = Vec::with_capacity(128);
+                let triggers: Vec<Contact> = Vec::with_capacity(128);
+
+                let game = G::new(&mut this);
+                (this, game, displacements, triggers)
             },
-        )
+            move |event, target, (ref mut engine, ref mut game, ref mut displacements, ref mut triggers)| engine.run_step(&event, target, game, displacements, triggers)
+    )
     }
     pub fn world(&self) -> &hecs::World {
-        &self.world_
+        &self.world
     }
     pub fn spawn<B: hecs::DynamicBundle>(&mut self, b: B) -> hecs::Entity {
-        let ent = self.world_.spawn(b);
+        let ent = self.world.spawn(b);
         // maybe add entity to collision world
-        self.contacts.insert_entity(ent, &mut self.world_);
+        self.contacts.insert_entity(ent, &mut self.world);
         ent
     }
     pub fn despawn(&mut self, entity: hecs::Entity) -> Result<(), hecs::NoSuchEntity> {
         // remove entity from collision world
-        self.contacts.remove_entity(entity, &mut self.world_);
-        self.world_.despawn(entity)
+        self.contacts.remove_entity(entity, &mut self.world);
+        self.world.despawn(entity)
     }
-    fn go(mut self) -> Result<(), Box<dyn std::error::Error>> {
-        let mut clock = Clock::new(G::DT, 0.0002, 5);
-        let mut game = G::new(&mut self);
-        let mut displacements: Vec<Contact> = Vec::with_capacity(128);
-        let mut triggers: Vec<Contact> = Vec::with_capacity(128);
-
-        Ok(self.event_loop.take().unwrap().run(move |event, target| {
-            match self.renderer.handle_event(
-                &mut clock,
-                &self.window,
-                &event,
-                target,
-                &mut self.input,
-            ) {
-                EventPhase::Run(steps) => {
-                    for _ in 0..steps {
-                        game.update(&mut self);
-                        for (_e, (trf, phys)) in self
-                            .world_
-                            .query_mut::<(&mut Transform, &mut components::Physics)>()
+    fn run_step(&mut self, event:&winit::event::Event<()>, target:&winit::event_loop::EventLoopWindowTarget<()>, game:&mut G, displacements:&mut Vec<Contact>, triggers:&mut Vec<Contact>){
+        match self.renderer.handle_event(
+            &mut self.clock,
+            &self.window,
+            event,
+            target,
+            &mut self.input,
+        ) {
+            EventPhase::Run(steps) => {
+                for _ in 0..steps {
+                    game.update(self);
+                    for (_e, (trf, phys)) in self
+                        .world
+                        .query_mut::<(&mut Transform, &mut components::Physics)>()
+                    {
+                        phys.vel += phys.acc * G::DT;
+                        trf.x += phys.vel.x * G::DT;
+                        trf.y += phys.vel.y * G::DT;
+                        // TODO could we call contacts.update_entity here?
+                    }
+                    self.contacts.frame_update_index(&mut self.world);
+                    for _iter in 0..COLLISION_STEPS {
+                        self.contacts.do_collisions(&mut self.world);
+                        self.contacts.step_update_index(&mut self.world);
+                    }
+                    // any displacement should clear velocity in the opposing direction
+                    for Contact(e1, _e2, v) in self.contacts.displacements.iter() {
+                        // if e1 is pushable, maybe reset its vel
+                        // we also might have a contact for e2, e1 for the opposite push
+                        if let Ok(phys) =
+                            self.world.query_one_mut::<&mut components::Physics>(*e1)
                         {
-                            phys.vel += phys.acc * G::DT;
-                            trf.x += phys.vel.x * G::DT;
-                            trf.y += phys.vel.y * G::DT;
-                            // TODO could we call contacts.update_entity here?
-                        }
-                        self.contacts.frame_update_index(&mut self.world_);
-                        for _iter in 0..COLLISION_STEPS {
-                            self.contacts.do_collisions(&mut self.world_);
-                            self.contacts.step_update_index(&mut self.world_);
-                        }
-                        // any displacement should clear velocity in the opposing direction
-                        for Contact(e1, _e2, v) in self.contacts.displacements.iter() {
-                            // if e1 is pushable, maybe reset its vel
-                            // we also might have a contact for e2, e1 for the opposite push
-                            if let Ok(phys) =
-                                self.world_.query_one_mut::<&mut components::Physics>(*e1)
+                            if v.x.abs() > std::f32::EPSILON
+                                && v.x.signum() != phys.vel.x.signum()
                             {
-                                if v.x.abs() > std::f32::EPSILON
-                                    && v.x.signum() != phys.vel.x.signum()
-                                {
-                                    phys.vel.x = 0.0;
-                                }
-                                if v.y.abs() > std::f32::EPSILON
-                                    && v.y.signum() != phys.vel.y.signum()
-                                {
-                                    phys.vel.y = 0.0;
-                                }
+                                phys.vel.x = 0.0;
+                            }
+                            if v.y.abs() > std::f32::EPSILON
+                                && v.y.signum() != phys.vel.y.signum()
+                            {
+                                phys.vel.y = 0.0;
                             }
                         }
-                        self.contacts.gather_triggers();
-                        // we can respond to collision displacements and triggers of the frame all at once
-                        displacements.append(&mut self.contacts.displacements);
-                        triggers.append(&mut self.contacts.triggers);
-                        game.handle_collisions(
-                            &mut self,
-                            displacements.drain(..),
-                            triggers.drain(..),
-                        );
-                        displacements.clear();
-                        triggers.clear();
-                        // the handle_* functions might have moved things around, but we need accurate info for ad hoc queries during game::update next trip through the loop
-                        self.contacts.step_update_index(&mut self.world_);
-                        // Remove empty quadtree branches/grid cell chunks or rows
-                        self.contacts.optimize_index(&mut self.world_);
-                        self.input.next_frame();
                     }
-                    game.render(&mut self);
-                    let chara_len = self
-                        .world_
-                        .query_mut::<(&Transform, &components::Sprite)>()
-                        .into_iter()
-                        .len();
-                    let text_len: usize = self.texts.iter().map(|t| t.1.len()).sum();
-                    self.ensure_spritegroup_size(0, chara_len + text_len);
-
-                    let (trfs, uvs) = self.renderer.sprites_mut(0, 0..(chara_len + text_len));
-
-                    for ((_e, (trf, spr)), (out_trf, out_uv)) in self
-                        .world_
-                        .query_mut::<(&Transform, &mut components::Sprite)>()
-                        .into_iter()
-                        .zip(trfs.iter_mut().zip(uvs.iter_mut()))
-                    {
-                        *out_trf = *trf;
-                        *out_uv = spr.1;
-                    }
-                    // iterate through texts and draw each one
-                    let mut sprite_idx = chara_len;
-                    for TextDraw(font, text, pos, sz) in self.texts.iter() {
-                        font.draw_text(
-                            &mut trfs[chara_len..(chara_len + text_len)],
-                            &mut uvs[chara_len..(chara_len + text_len)],
-                            text,
-                            (*pos).into(),
-                            0,
-                            *sz,
-                        );
-                        sprite_idx += text.len();
-                    }
-                    assert_eq!(sprite_idx, chara_len + text_len);
-                    self.renderer.sprite_group_set_camera(0, self.camera);
-                    self.renderer.sprite_group_resize(0, chara_len + text_len);
-                    self.renderer.render();
-                    self.texts.clear();
+                    self.contacts.gather_triggers();
+                    // we can respond to collision displacements and triggers of the frame all at once
+                    displacements.append(&mut self.contacts.displacements);
+                    triggers.append(&mut self.contacts.triggers);
+                    game.handle_collisions(
+                        self,
+                        displacements.drain(..),
+                        triggers.drain(..),
+                    );
+                    displacements.clear();
+                    triggers.clear();
+                    // the handle_* functions might have moved things around, but we need accurate info for ad hoc queries during game::update next trip through the loop
+                    self.contacts.step_update_index(&mut self.world);
+                    // Remove empty quadtree branches/grid cell chunks or rows
+                    self.contacts.optimize_index(&mut self.world);
+                    self.input.next_frame();
                 }
-                EventPhase::Quit => {
-                    target.exit();
+                game.render(self);
+                let chara_len = self
+                    .world
+                    .query_mut::<(&Transform, &components::Sprite)>()
+                    .into_iter()
+                    .len();
+                let text_len: usize = self.texts.iter().map(|t| t.1.len()).sum();
+                self.ensure_spritegroup_size(0, chara_len + text_len);
+
+                let (trfs, uvs) = self.renderer.sprites_mut(0, 0..(chara_len + text_len));
+
+                for ((_e, (trf, spr)), (out_trf, out_uv)) in self
+                    .world
+                    .query_mut::<(&Transform, &mut components::Sprite)>()
+                    .into_iter()
+                    .zip(trfs.iter_mut().zip(uvs.iter_mut()))
+                {
+                    *out_trf = *trf;
+                    *out_uv = spr.1;
                 }
-                EventPhase::Wait => {}
+                // iterate through texts and draw each one
+                let mut sprite_idx = chara_len;
+                for TextDraw(font, text, pos, sz) in self.texts.iter() {
+                    font.draw_text(
+                        &mut trfs[chara_len..(chara_len + text_len)],
+                        &mut uvs[chara_len..(chara_len + text_len)],
+                        text,
+                        (*pos).into(),
+                        0,
+                        *sz,
+                    );
+                    sprite_idx += text.len();
+                }
+                assert_eq!(sprite_idx, chara_len + text_len);
+                self.renderer.sprite_group_set_camera(0, self.camera);
+                self.renderer.sprite_group_resize(0, chara_len + text_len);
+                self.renderer.render();
+                self.texts.clear();
             }
-        })?)
+            EventPhase::Quit => {
+                target.exit();
+            }
+            EventPhase::Wait => {}
+        }
     }
     #[allow(clippy::too_many_arguments)]
     pub fn make_font<B: std::ops::RangeBounds<char>>(
