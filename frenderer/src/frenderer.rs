@@ -1,12 +1,13 @@
-//! [`Renderer`] is the main user-facing type of this crate.  You can
-//! make one using [`with_default_runtime()`].  If you don't need
-//! frenderer to initialize `wgpu` or windowing for you, you can
-//! instead use [`Renderer::with_gpu`] to construct a renderer with a
-//! given instance, adapter, device, and queue (wrapped in a
-//! [`crate::gpu::WGPU`] struct), dimensions, and surface.
-//! [`Renderer`]'s built-in rendering scheme uses off-screen rendering
-//! at a given resolution, then a color postprocessing step to produce
-//! output on the [`wgpu::Surface`].
+//! [`Renderer`] is the main user-facing type of this crate.  If you
+//! want a renderer as quickly as possible, you can use
+//! [`crate::Driver`] if you have kept the `winit` feature flag on.
+//! If you don't need frenderer to initialize `wgpu` or windowing for
+//! you, you can instead use [`Renderer::with_gpu`] to construct a
+//! renderer with a given instance, adapter, device, and queue
+//! (wrapped in a [`crate::gpu::WGPU`] struct), dimensions, and
+//! surface.  [`Renderer`]'s built-in rendering scheme uses off-screen
+//! rendering at a given resolution, then a color postprocessing step
+//! to produce output on the [`wgpu::Surface`].
 //!
 //! Besides managing the swapchain, [`Renderer`] also offers
 //! facilities for accessing the internal data of a sprite renderer, a

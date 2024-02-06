@@ -1,5 +1,9 @@
-//! This extension trait simplifies the connection between winit's
-//! event loop stages and a game rendering/simulation lifecycle.
+//! The winit feature enables two useful helpers.  First is an
+//! extension trait [`FrendererEvents`] that simplifies the connection
+//! between winit's event loop stages and a game rendering/simulation
+//! lifecycle.  Second is the [`Driver`] struct that manages winit's
+//! event loop and initializes both a window and the graphics context
+//! once the proper winit events have arrived.
 
 /// Phase in the game event loop
 pub enum EventPhase {
@@ -67,7 +71,7 @@ impl<T> FrendererEvents<T> for crate::Renderer {
         }
     }
 }
-
+/// Driver takes ownership of winit's event loop and creates a window and graphics context when possible.
 pub struct Driver {
     builder: winit::window::WindowBuilder,
     render_size: Option<(u32, u32)>,
@@ -96,13 +100,41 @@ impl std::task::Wake for NoopWaker {
 }
 
 impl Driver {
+    /// Create a [`Driver`] with the given window builder and render target size (if absent, will use the window's inner size instead).
     pub fn new(builder: winit::window::WindowBuilder, render_size: Option<(u32, u32)>) -> Self {
         Self {
             builder,
             render_size,
         }
     }
-    pub fn run_event_loop<T: 'static + std::fmt::Debug, U: 'static>(
+    /// Kick off the event loop. Once the driver receives the
+    /// [`winit::event::Event::Resumed`] event, it will initialize
+    /// Frenderer and call `init_cb` with the window and renderer.
+    /// This callback may return an application state object or
+    /// userdata which will be passed as the final argument to
+    /// `handler`, which will be called for every winit event /after/
+    /// `init_cb` has been called.  If you don't want `run_event_loop`
+    /// to own your application-specific data, you could instead store
+    /// such data yourself in internally mutable types such as
+    /// [`std::cell::OnceCell`] and evaluate `init_cb` for its side
+    /// effects.
+    ///
+    /// Example:
+    /// ```
+    ///    drv.run_event_loop::<(), _>(
+    ///      move |window, mut frend| {
+    ///        let mut camera = Camera2D {
+    ///          screen_pos: [0.0, 0.0],
+    ///          screen_size: [1024.0, 768.0],
+    ///        };
+    ///        init_data(&mut frend, &mut camera);
+    ///        (window, camera, frend)
+    ///      },
+    ///      move |event, target, (window, camera, frend)| {
+    ///        // handle the winit event here, and maybe do some rendering!
+    ///      });
+    /// ```
+    pub fn run_event_loop<T: 'static, U: 'static>(
         self,
         init_cb: impl FnOnce(std::sync::Arc<winit::window::Window>, crate::Renderer) -> U + 'static,
         mut handler: impl FnMut(winit::event::Event<T>, &winit::event_loop::EventLoopWindowTarget<T>, &mut U)
@@ -194,6 +226,10 @@ impl Driver {
     }
 }
 
+/// If you don't use [`Driver`], it may still be convenient to call
+/// `prepare_window` to set up a window in a cross-platform way
+/// (e.g. on web, it will add the window's canvas to the HTML
+/// document).
 #[allow(unused_variables)]
 pub fn prepare_window(window: &winit::window::Window) {
     #[cfg(target_arch = "wasm32")]
@@ -215,6 +251,9 @@ pub fn prepare_window(window: &winit::window::Window) {
     }
 }
 
+/// If you don't use [`Driver`], it may still be convenient to call
+/// `prepare_logging` to set up `env_logger` or `console_log`
+/// appropriately for the platform.
 pub fn prepare_logging() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(not(target_arch = "wasm32"))]
     {

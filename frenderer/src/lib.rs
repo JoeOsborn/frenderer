@@ -8,21 +8,27 @@
 //! The entry point for frenderer will depend on how it's being used;
 //! for use case (1), you can initialize a [`WGPU`] struct yourself
 //! with an adapter, device, and queue, and proceed to use the
-//! built-in [`sprites::SpriteRenderer`], [`meshes::MeshRenderer`], [`meshes::FlatRenderer`],
-//! or [`colorgeo::ColorGeo`] color-geometry postprocessing transform
-//! with your own renderpass. In use case (2), you can initialize a
-//! [`Renderer`] with a given runtime, size, and GPU surface, and call
-//! [`Renderer::render`] to handle all the drawing.  Finally, in use
-//! case (3), you'll use [`clock::Clock`], the extension trait in
+//! built-in [`sprites::SpriteRenderer`], [`meshes::MeshRenderer`],
+//! [`meshes::FlatRenderer`], or [`colorgeo::ColorGeo`] color-geometry
+//! postprocessing transform with your own renderpass. In use case
+//! (2), you can initialize a [`Renderer`] asynchronously with a given
+//! size, WGPU instance, and GPU surface, and call
+//! [`Renderer::render`] to handle all the drawing; or you can let
+//! [`events::Driver`] manage your application's event loop and
+//! initialize frenderer at the appropriate time (with the `winit`
+//! feature flag).  Finally, in use case (3), you'll use
+//! [`clock::Clock`], the extension trait in
 //! [`events::FrendererEvents`], and the [`input::Input`] struct to
 //! simplify your game loop's lifecycle.
 //!
 //! frenderer is highly modular, especially in case (1); in
-//! particular, frenderer does not take control of the event loop from
-//! winit or exclusively own the WGPU instance, device, and adapter.
-//! Typical usage will call [`frenderer::with_default_runtime()`] to
-//! set up frenderer, call e.g.  [`Renderer::sprite_group_add()`] on
-//! the produced [`frenderer::Renderer`] value, and eventually call
+//! particular, frenderer does not need to take control of the event
+//! loop from winit or exclusively own the WGPU instance, device, or
+//! adapter.  For convenience, users who don't need this modularity
+//! can employ [`Driver`] to initialize the window and a
+//! renderer. Once you have obtained a [`frenderer::Renderer`], you
+//! can call e.g.  [`Renderer::sprite_group_add()`] to set up a 2D
+//! render group and eventually call
 //! [`frenderer::Renderer::sprites_mut()`] or
 //! [`frenderer::Renderer::sprite_group_resize()`] to modify the
 //! sprite data and [`frenderer::Renderer::render`] to draw.
