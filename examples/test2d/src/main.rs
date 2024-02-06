@@ -135,7 +135,6 @@ fn main() {
     const TIME_SNAPS: [f32; 5] = [15.0, 30.0, 60.0, 120.0, 144.0];
     let mut acc = 0.0;
     let mut now = frenderer::clock::Instant::now();
-    // frenderer::events::run_event_loop(event_loop, move |event, target, window, &mut frenderer| {})
     drv.run_event_loop::<(), _>(
         move |win, mut frend| {
             let mut camera = Camera2D {

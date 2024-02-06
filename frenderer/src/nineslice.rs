@@ -42,7 +42,7 @@ pub struct NineSlice {
 }
 
 impl NineSlice {
-    pub const fn with_corner_edge_center(
+    pub fn with_corner_edge_center(
         corner_top_left: CornerSlice,
         edge_left: Slice,
         edge_top: Slice,
@@ -78,7 +78,7 @@ impl NineSlice {
         )
     }
     #[allow(clippy::too_many_arguments)]
-    pub const fn new(
+    pub fn new(
         top_left: CornerSlice,
         top_right: CornerSlice,
         bottom_left: CornerSlice,
@@ -89,6 +89,10 @@ impl NineSlice {
         right: Slice,
         center: Slice,
     ) -> Self {
+        assert_eq!(top_left.w, bottom_left.w);
+        assert_eq!(top_right.w, bottom_right.w);
+        assert_eq!(top_left.h, top_right.h);
+        assert_eq!(bottom_left.h, bottom_right.h);
         Self {
             top_left,
             top_right,
@@ -136,34 +140,40 @@ impl NineSlice {
         let mut which = 0;
         let limit = self.sprite_count(w, h);
         // draw center
-        match self.center.repeat {
-            Repeat::Stretch => {
-                let w = w.max(self.center.w);
-                let h = h.max(self.center.h);
-                trf[which] = Transform {
-                    w: w as u16,
-                    h: h as u16,
-                    x: x + w / 2.0,
-                    y: y + h / 2.0,
-                    rot: 0.0,
-                };
-                uvs[which] = self.center.region;
-                which += 1;
-            }
-            Repeat::Tile => {
-                for row in 0..((h / self.center.h) as usize) {
-                    for (col, (trf, uv)) in (0..(w / self.center.w) as usize)
-                        .zip(trf[which..].iter_mut().zip(uvs[which..].iter_mut()))
-                    {
-                        *trf = Transform {
-                            w: self.center.w as u16,
-                            h: self.center.h as u16,
-                            rot: 0.0,
-                            x: x + (col as f32 * self.center.w) + (self.center.w / 2.0),
-                            y: y + (row as f32 * self.center.h) + (self.center.h / 2.0),
-                        };
-                        *uv = self.center.region;
-                        which += 1;
+        {
+            let x0 = x + self.top_left.w;
+            let x1 = x + w - self.top_right.w;
+            let w = x1 - x0;
+            let y0 = y + self.bottom_left.h;
+            let y1 = y + h - self.top_left.h;
+            let h = y1 - y0;
+            match self.center.repeat {
+                Repeat::Stretch => {
+                    trf[which] = Transform {
+                        w: w as u16,
+                        h: h as u16,
+                        x: x0 + w / 2.0,
+                        y: y0 + h / 2.0,
+                        rot: 0.0,
+                    };
+                    uvs[which] = self.center.region;
+                    which += 1;
+                }
+                Repeat::Tile => {
+                    for row in 0..((h / self.center.h) as usize) {
+                        for (col, (trf, uv)) in (0..(w / self.center.w) as usize)
+                            .zip(trf[which..].iter_mut().zip(uvs[which..].iter_mut()))
+                        {
+                            *trf = Transform {
+                                w: self.center.w as u16,
+                                h: self.center.h as u16,
+                                rot: 0.0,
+                                x: x0 + (col as f32 * self.center.w) + (self.center.w / 2.0),
+                                y: y0 + (row as f32 * self.center.h) + (self.center.h / 2.0),
+                            };
+                            *uv = self.center.region;
+                            which += 1;
+                        }
                     }
                 }
             }
@@ -173,10 +183,11 @@ impl NineSlice {
             (self.left, x + self.left.w / 2.0),
             (self.right, x + w - self.right.w / 2.0),
         ] {
+            let y = y + self.bottom_left.h;
             match edge.repeat {
                 Repeat::Stretch => {
                     let w = edge.w;
-                    let h = h.max(edge.h);
+                    let h = (h - self.bottom_left.h - self.top_left.h).max(edge.h);
                     trf[which] = Transform {
                         w: w as u16,
                         h: h as u16,
@@ -188,6 +199,7 @@ impl NineSlice {
                     which += 1;
                 }
                 Repeat::Tile => {
+                    let h = h - self.bottom_left.h - self.top_left.h;
                     for (row, (trf, uv)) in (0..((h / edge.h) as usize))
                         .zip(trf[which..].iter_mut().zip(uvs[which..].iter_mut()))
                     {
@@ -204,13 +216,15 @@ impl NineSlice {
                 }
             };
         }
+
         for (edge, ypos) in &[
             (self.bottom, y + self.bottom.h / 2.0),
             (self.top, y + h - self.bottom.h / 2.0),
         ] {
+            let x = x + self.top_left.w;
             match edge.repeat {
                 Repeat::Stretch => {
-                    let w = w.max(edge.w);
+                    let w = (w - self.top_left.w - self.top_right.w).max(edge.w);
                     let h = edge.h;
                     trf[which] = Transform {
                         w: w as u16,
@@ -223,6 +237,7 @@ impl NineSlice {
                     which += 1;
                 }
                 Repeat::Tile => {
+                    let w = w - self.top_left.w - self.top_right.w;
                     for (col, (trf, uv)) in (0..((w / edge.w) as usize))
                         .zip(trf[which..].iter_mut().zip(uvs[which..].iter_mut()))
                     {
@@ -239,7 +254,6 @@ impl NineSlice {
                 }
             };
         }
-
         // draw corners
         for ((corner, x, y), (trf, uv)) in [
             (
