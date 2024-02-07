@@ -5,6 +5,8 @@
 //! event loop and initializes both a window and the graphics context
 //! once the proper winit events have arrived.
 
+use std::sync::Arc;
+
 /// Phase in the game event loop
 pub enum EventPhase {
     /// The game should simulate time forward by the given number of steps and then render.  Typically the caller of [`FrendererEvents::handle_event`] should respond to this by calling `render` on the [`crate::frenderer::Renderer`].
@@ -24,7 +26,7 @@ pub trait FrendererEvents<T> {
     fn handle_event(
         &mut self,
         clock: &mut crate::clock::Clock,
-        window: &winit::window::Window,
+        window: &Arc<winit::window::Window>,
         evt: &winit::event::Event<T>,
         target: &winit::event_loop::EventLoopWindowTarget<T>,
         input: &mut crate::input::Input,
@@ -34,13 +36,17 @@ impl<T> FrendererEvents<T> for crate::Renderer {
     fn handle_event(
         &mut self,
         clock: &mut crate::clock::Clock,
-        window: &winit::window::Window,
+        window: &Arc<winit::window::Window>,
         evt: &winit::event::Event<T>,
         _target: &winit::event_loop::EventLoopWindowTarget<T>,
         input: &mut crate::input::Input,
     ) -> EventPhase {
         use winit::event::{Event, WindowEvent};
         match evt {
+            Event::Resumed if self.surface().is_none() => {
+                self.create_surface(Arc::clone(window));
+                EventPhase::Wait
+            }
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
                 ..
@@ -157,7 +163,6 @@ impl Driver {
             // This is just used as a temporary value
             InsideLoop,
         }
-        use std::sync::Arc;
         use winit::event_loop::EventLoop;
         let Self {
             builder,
@@ -186,7 +191,7 @@ impl Driver {
                             wsz.width,
                             wsz.height,
                             Arc::clone(&instance),
-                            surface,
+                            Some(surface),
                         ));
                         DriverState::PollingFuture(window, future)
                     } else {

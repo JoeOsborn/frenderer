@@ -30,164 +30,82 @@ impl Engine {
     pub fn run<G: Game>(
         builder: winit::window::WindowBuilder,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        use std::cell::OnceCell;
-        enum InitPhase<G: Game> {
-            WaitingOnResume(winit::window::WindowBuilder),
-            WaitingOnEngine(Arc<winit::window::Window>, Rc<OnceCell<Engine>>),
-            Ready(Arc<winit::window::Window>, Engine, G),
-            Invalid,
-        }
-        use std::rc::Rc;
-        use winit::event::Event;
-        use winit::event_loop::EventLoop;
-        frenderer::prepare_logging().unwrap();
-        let elp = EventLoop::new().unwrap();
-        let phase = std::cell::Cell::new(InitPhase::WaitingOnResume(builder));
-        let instance = Arc::new(wgpu::Instance::default());
-        elp.run(move |evt, tgt| {
-            phase.set(match phase.replace(InitPhase::Invalid) {
-                InitPhase::WaitingOnResume(builder) => {
-                    if let Event::Resumed = evt {
-                        let win = Arc::new(builder.build(tgt).unwrap());
-                        frenderer::prepare_window(&win);
-                        let surface = instance.create_surface(Arc::clone(&win)).unwrap();
-                        let wsz = win.inner_size();
-                        let engine_cell = Rc::new(OnceCell::default());
-                        #[cfg(target_arch = "wasm32")]
-                        {
-                            wasm_bindgen_futures::spawn_local(Self::engine_async_init(
-                                wsz,
-                                Arc::clone(&win),
-                                surface,
-                                Arc::clone(&instance),
-                                Rc::clone(&engine_cell),
-                            ));
-                        }
-                        #[cfg(not(target_arch = "wasm32"))]
-                        {
-                            pollster::block_on(Self::engine_async_init(
-                                wsz,
-                                Arc::clone(&win),
-                                surface,
-                                Arc::clone(&instance),
-                                Rc::clone(&engine_cell),
-                            ));
-                        }
-                        InitPhase::WaitingOnEngine(win, engine_cell)
-                    } else {
-                        InitPhase::WaitingOnResume(builder)
+        let drv = frenderer::Driver::new(builder, Some((1024, 768)));
+        drv.run_event_loop::<(), _>(
+            move |window, renderer| {
+                let mut engine = Self {
+                    input: Input::default(),
+                    camera: Camera {
+                        screen_pos: [0.0, 0.0],
+                        screen_size: window.inner_size().into(),
+                    },
+                    clock: Clock::new(1.0 / 60.0, 0.0002, 5),
+                    sprite_renderer: SpriteRenderer::new(
+                        &renderer.gpu,
+                        renderer.config().view_formats[1].into(),
+                        renderer.depth_texture().format(),
+                    ),
+                    window,
+                    renderer,
+                };
+                let game = G::new(&mut engine);
+                (engine, game)
+            },
+            move |event, target, (ref mut engine, ref mut game)| match engine.renderer.handle_event(
+                &mut engine.clock,
+                &engine.window,
+                &event,
+                target,
+                &mut engine.input,
+            ) {
+                frenderer::EventPhase::Run(steps) => {
+                    for _ in 0..steps {
+                        game.update(engine);
+                        engine.input.next_frame();
                     }
+                    engine.pre_render();
+                    game.render(engine);
+                    engine.render();
                 }
-                InitPhase::WaitingOnEngine(window, engine_cell) => {
-                    if Rc::strong_count(&engine_cell) == 1 {
-                        if let Some(mut engine) =
-                            Rc::into_inner(engine_cell).and_then(OnceCell::into_inner)
-                        {
-                            let game = G::new(&mut engine);
-                            InitPhase::Ready(window, engine, game)
-                        } else {
-                            panic!("Rc has only one owner but engine is not yet initialized");
-                        }
-                    } else {
-                        InitPhase::WaitingOnEngine(window, engine_cell)
-                    }
+                frenderer::EventPhase::Quit => {
+                    target.exit();
                 }
-                InitPhase::Ready(window, mut engine, mut game) => {
-                    if let winit::event::Event::WindowEvent {
-                        event: winit::event::WindowEvent::Resized(size),
-                        ..
-                    } = evt
-                    {
-                        if !engine.renderer.gpu.is_web() {
-                            engine.renderer.resize_render(size.width, size.height);
-                            engine.window.request_redraw();
-                        }
-                    }
-                    match engine.renderer.handle_event(
-                        &mut engine.clock,
-                        &engine.window,
-                        &evt,
-                        tgt,
-                        &mut engine.input,
-                    ) {
-                        frenderer::EventPhase::Run(steps) => {
-                            for _ in 0..steps {
-                                game.update(&mut engine);
-                                engine.input.next_frame();
-                            }
-                            for group in 0..engine.sprite_renderer.sprite_group_count() {
-                                engine.sprite_renderer.resize_sprite_group(
-                                    &engine.renderer.gpu,
-                                    group,
-                                    0,
-                                );
-                                engine.sprite_renderer.upload_sprites(
-                                    &engine.renderer.gpu,
-                                    group,
-                                    0..engine.sprite_renderer.sprite_group_size(group),
-                                );
-                            }
-                            game.render(&mut engine);
-                            // TODO this is actually not right if we want menus
-                            engine
-                                .sprite_renderer
-                                .set_camera_all(&engine.renderer.gpu, engine.camera);
-                            for group in 0..engine.sprite_renderer.sprite_group_count() {
-                                engine.sprite_renderer.upload_sprites(
-                                    &engine.renderer.gpu,
-                                    group,
-                                    0..engine.sprite_renderer.sprite_group_size(group),
-                                );
-                            }
-                            engine.render();
-                        }
-                        frenderer::EventPhase::Quit => {
-                            tgt.exit();
-                        }
-                        frenderer::EventPhase::Wait => {}
-                    };
-                    InitPhase::Ready(window, engine, game)
-                }
-                InitPhase::Invalid => {
-                    panic!("unexpectedly reentrant event loop")
-                }
-            });
-        })?;
+                frenderer::EventPhase::Wait => {}
+            },
+        )?;
         Ok(())
     }
-    async fn engine_async_init(
-        wsz: winit::dpi::PhysicalSize<u32>,
-        window: Arc<winit::window::Window>,
-        surface: wgpu::Surface<'static>,
-        instance: Arc<wgpu::Instance>,
-        engine: std::rc::Rc<std::cell::OnceCell<Engine>>,
-    ) {
-        let renderer = Renderer::with_surface(
-            wsz.width, wsz.height, wsz.width, wsz.height, instance, surface,
-        )
-        .await
-        .unwrap();
+    fn pre_render(&mut self) {
+        let surface_size = self.renderer.surface_size();
+        if self.renderer.render_size() != surface_size {
+            self.renderer.resize_render(surface_size.0, surface_size.1);
+            self.window.request_redraw();
+        }
 
-        engine
-            .set(Self {
-                input: Input::default(),
-                camera: Camera {
-                    screen_pos: [0.0, 0.0],
-                    screen_size: window.inner_size().into(),
-                },
-                clock: Clock::new(1.0 / 60.0, 0.0002, 5),
-                sprite_renderer: SpriteRenderer::new(
-                    &renderer.gpu,
-                    renderer.config().view_formats[1].into(),
-                    renderer.depth_texture().format(),
-                ),
-                window,
-                renderer,
-            })
-            .unwrap_or_else(|_| panic!("Couldn't set engine cell"));
+        for group in 0..self.sprite_renderer.sprite_group_count() {
+            self.sprite_renderer
+                .resize_sprite_group(&self.renderer.gpu, group, 0);
+            self.sprite_renderer.upload_sprites(
+                &self.renderer.gpu,
+                group,
+                0..self.sprite_renderer.sprite_group_size(group),
+            );
+        }
     }
     fn render(&mut self) {
-        let (frame, view, mut encoder) = self.renderer.render_setup();
+        // TODO this is actually not right if we want menus
+        self.sprite_renderer
+            .set_camera_all(&self.renderer.gpu, self.camera);
+        for group in 0..self.sprite_renderer.sprite_group_count() {
+            self.sprite_renderer.upload_sprites(
+                &self.renderer.gpu,
+                group,
+                0..self.sprite_renderer.sprite_group_size(group),
+            );
+        }
+        let Some((frame, view, mut encoder)) = self.renderer.render_setup() else {
+            return;
+        };
         {
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: None,

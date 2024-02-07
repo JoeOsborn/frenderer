@@ -20,6 +20,7 @@ impl std::error::Error for FrendererError {}
 /// A wrapper for a WGPU instance, surface, adapter, device, queue, and surface configuration.
 #[allow(dead_code)]
 pub struct WGPU {
+    instance: Arc<wgpu::Instance>,
     adapter: Arc<wgpu::Adapter>,
     device: Arc<wgpu::Device>,
     queue: Arc<wgpu::Queue>,
@@ -28,11 +29,13 @@ pub struct WGPU {
 impl WGPU {
     /// Create a WGPU structure with already-created GPU resources.
     pub fn with_resources(
+        instance: Arc<wgpu::Instance>,
         adapter: Arc<wgpu::Adapter>,
         device: Arc<wgpu::Device>,
         queue: Arc<wgpu::Queue>,
     ) -> Self {
         Self {
+            instance,
             adapter,
             device,
             queue,
@@ -76,6 +79,7 @@ impl WGPU {
             )
             .await?;
         Ok(Self::with_resources(
+            instance,
             Arc::new(adapter),
             Arc::new(device),
             Arc::new(queue),
@@ -103,6 +107,10 @@ impl WGPU {
                 .flags
                 .contains(wgpu::DownlevelFlags::VERTEX_STORAGE)
             && self.device.limits().max_storage_buffers_per_shader_stage > 0
+    }
+    /// Returns this GPU wrapper's [`wgpu::Instance`].
+    pub fn instance(&self) -> &wgpu::Instance {
+        &self.instance
     }
 
     /// Returns this GPU wrapper's [`wgpu::Adapter`].

@@ -30,7 +30,10 @@ use crate::{
     sprites::SpriteRenderer,
     WGPU,
 };
-use std::ops::{Range, RangeBounds};
+use std::{
+    ops::{Range, RangeBounds},
+    sync::Arc,
+};
 
 pub use crate::meshes::{FlatRenderer, MeshRenderer};
 /// A wrapper over GPU state, surface, depth texture, and some renderers.
@@ -39,7 +42,7 @@ pub struct Renderer {
     pub gpu: WGPU,
     render_width: u32,
     render_height: u32,
-    surface: wgpu::Surface<'static>,
+    surface: Option<wgpu::Surface<'static>>,
     config: wgpu::SurfaceConfiguration,
     depth_texture: wgpu::Texture,
     depth_texture_view: wgpu::TextureView,
@@ -70,9 +73,9 @@ impl Renderer {
         surf_width: u32,
         surf_height: u32,
         instance: std::sync::Arc<wgpu::Instance>,
-        surface: wgpu::Surface<'static>,
+        surface: Option<wgpu::Surface<'static>>,
     ) -> Result<Self, Box<dyn std::error::Error>> {
-        let gpu = WGPU::new(instance, Some(&surface)).await?;
+        let gpu = WGPU::new(instance, surface.as_ref()).await?;
         Ok(Self::with_gpu(
             width,
             height,
@@ -90,17 +93,23 @@ impl Renderer {
         surf_width: u32,
         surf_height: u32,
         gpu: crate::gpu::WGPU,
-        surface: wgpu::Surface<'static>,
+        surface: Option<wgpu::Surface<'static>>,
     ) -> Self {
         let width = if width == 0 { 320 } else { width };
         let height = if height == 0 { 240 } else { height };
-        let swapchain_capabilities = surface.get_capabilities(gpu.adapter());
-        let swapchain_format = swapchain_capabilities.formats[0];
+        let swapchain_capabilities = surface
+            .as_ref()
+            .map(|s| s.get_capabilities(gpu.adapter()))
+            .unwrap_or_default();
+        let swapchain_format = swapchain_capabilities
+            .formats
+            .first()
+            .unwrap_or(&wgpu::TextureFormat::Rgba8Unorm);
         let swapchain_format_srgb = swapchain_format.add_srgb_suffix();
 
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: swapchain_format,
+            format: *swapchain_format,
             width: if surf_width == 0 { width } else { surf_width },
             height: if surf_height == 0 {
                 height
@@ -109,11 +118,13 @@ impl Renderer {
             },
             present_mode: wgpu::PresentMode::AutoVsync,
             alpha_mode: swapchain_capabilities.alpha_modes[0],
-            view_formats: vec![swapchain_format, swapchain_format_srgb],
+            view_formats: vec![*swapchain_format, swapchain_format_srgb],
             desired_maximum_frame_latency: 2,
         };
 
-        surface.configure(gpu.device(), &config);
+        if let Some(surface) = surface.as_ref() {
+            surface.configure(gpu.device(), &config)
+        };
         let (color_texture, color_texture_view) = Self::create_color_texture(
             gpu.device(),
             width,
@@ -164,13 +175,40 @@ impl Renderer {
     /// Change the presentation mode used by the swapchain
     pub fn set_present_mode(&mut self, mode: wgpu::PresentMode) {
         self.config.present_mode = mode;
-        self.surface.configure(self.gpu.device(), &self.config);
+        self.configure_surface();
+    }
+    pub fn surface(&self) -> Option<&wgpu::Surface<'static>> {
+        self.surface.as_ref()
+    }
+    pub fn create_surface(&mut self, window: Arc<winit::window::Window>) {
+        let surface = self.gpu.instance().create_surface(window).unwrap();
+        let swapchain_capabilities = surface.get_capabilities(self.gpu.adapter());
+        let swapchain_format = swapchain_capabilities.formats[0];
+        let swapchain_format_srgb = swapchain_format.add_srgb_suffix();
+
+        self.config = wgpu::SurfaceConfiguration {
+            format: swapchain_format,
+            alpha_mode: swapchain_capabilities.alpha_modes[0],
+            view_formats: vec![swapchain_format, swapchain_format_srgb],
+            ..self.config
+        };
+        self.postprocess.set_color_target(
+            &self.gpu,
+            (*self.config.view_formats.last().unwrap()).into(),
+        );
+        self.surface = Some(surface);
+        self.configure_surface();
+    }
+    fn configure_surface(&mut self) {
+        if let Some(surface) = self.surface.as_ref() {
+            surface.configure(self.gpu.device(), &self.config);
+        }
     }
     /// Resize the internal surface texture (typically called when the window or canvas size changes).
     pub fn resize_surface(&mut self, w: u32, h: u32) {
         self.config.width = w;
         self.config.height = h;
-        self.surface.configure(self.gpu.device(), &self.config);
+        self.configure_surface();
     }
     /// Resize the internal color and depth targets (the actual rendering resolution).
     pub fn resize_render(&mut self, w: u32, h: u32) {
@@ -257,7 +295,9 @@ impl Renderer {
     /// using the built-in mesh, flat, or sprite renderers.
     pub fn render(&mut self) {
         self.do_uploads();
-        let (frame, view, mut encoder) = self.render_setup();
+        let Some((frame, view, mut encoder)) = self.render_setup() else {
+            return;
+        };
         {
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: None,
@@ -312,16 +352,19 @@ impl Renderer {
         self.sprites.render(rpass, ..);
     }
     /// Convenience method for acquiring a surface texture, view, and
-    /// command encoder.
+    /// command encoder.  If this returns `None` it means the surface isn't ready yet.
     pub fn render_setup(
         &self,
-    ) -> (
+    ) -> Option<(
         wgpu::SurfaceTexture,
         wgpu::TextureView,
         wgpu::CommandEncoder,
-    ) {
-        let frame = self
-            .surface
+    )> {
+        let Some(surface) = self.surface.as_ref() else {
+            println!("render_setup called before surface was ready");
+            return None;
+        };
+        let frame = surface
             .get_current_texture()
             .expect("Failed to acquire next swap chain texture");
         let view = frame.texture.create_view(&wgpu::TextureViewDescriptor {
@@ -332,13 +375,19 @@ impl Renderer {
             .gpu
             .device()
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        (frame, view, encoder)
+        Some((frame, view, encoder))
     }
     /// Convenience method for submitting a command encoder and
     /// presenting the swapchain image.
     pub fn render_finish(&self, frame: wgpu::SurfaceTexture, encoder: wgpu::CommandEncoder) {
         self.gpu.queue().submit(Some(encoder.finish()));
         frame.present();
+    }
+    pub fn surface_size(&self) -> (u32, u32) {
+        (self.config.width, self.config.height)
+    }
+    pub fn render_size(&self) -> (u32, u32) {
+        (self.render_width, self.render_height)
     }
     /// Creates an array texture on the renderer's GPU.
     pub fn create_array_texture(

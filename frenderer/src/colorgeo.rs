@@ -9,7 +9,9 @@ use wgpu::util::DeviceExt;
 /// homogenous color transformation, a saturation modifier, and a
 /// color lookup table (LUT).
 pub struct ColorGeo {
+    shader: wgpu::ShaderModule,
     pipeline: wgpu::RenderPipeline,
+    pipeline_layout: wgpu::PipelineLayout,
     transform_bind_group: wgpu::BindGroup,
     texture_bind_group: wgpu::BindGroup,
     texture_bind_group_layout: wgpu::BindGroupLayout,
@@ -257,7 +259,9 @@ impl ColorGeo {
             });
 
         Self {
+            shader,
             pipeline,
+            pipeline_layout,
             transform,
             colormod,
             transform_buf,
@@ -268,6 +272,30 @@ impl ColorGeo {
             color_texture_view,
             lut_texture_view,
         }
+    }
+
+    /// Changes the postprocessing phase's color target, re-creating the pipeline if needed
+    pub fn set_color_target(&mut self, gpu: &WGPU, color_target: wgpu::ColorTargetState) {
+        self.pipeline = gpu
+            .device()
+            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("post:pipeline"),
+                layout: Some(&self.pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &self.shader,
+                    entry_point: "vs_vbuf_main",
+                    buffers: &[],
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &self.shader,
+                    entry_point: "fs_main",
+                    targets: &[Some(color_target)],
+                }),
+                primitive: wgpu::PrimitiveState::default(),
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(),
+                multiview: None,
+            });
     }
     /// Updates simple parameters for color-geometry transforms.  To replace the lut, call [`ColorGeo::replace_lut`].
     pub fn set_post(&mut self, gpu: &WGPU, trf: [f32; 16], color_trf: [f32; 16], sat: f32) {

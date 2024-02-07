@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 pub use bytemuck::Zeroable;
 use frenderer::EventPhase;
 pub use frenderer::{
@@ -27,37 +29,66 @@ pub fn run<G: Game>(
     builder: winit::window::WindowBuilder,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use frenderer::FrendererEvents;
-    let drv = frenderer::Driver::new(builder, Some((1024, 768)));
-    drv.run_event_loop::<(), (Engine, G)>(
-        move |window, renderer| {
-            let mut engine = Engine {
-                window,
-                renderer,
-                input: Input::default(),
-                clock: Clock::new(1.0 / 60.0, 0.0002, 5),
-            };
-            let game = G::new(&mut engine);
-            (engine, game)
-        },
-        move |event, target, (ref mut engine, ref mut game)| match engine.renderer.handle_event(
-            &mut engine.clock,
-            &engine.window,
-            &event,
-            target,
-            &mut engine.input,
-        ) {
-            EventPhase::Run(steps) => {
-                for _ in 0..steps {
-                    game.update(engine);
-                    engine.input.next_frame();
+    frenderer::prepare_logging()?;
+    let instance = Arc::new(wgpu::Instance::default());
+    let mut builder = Some(builder);
+    let elp = winit::event_loop::EventLoop::new()?;
+
+    let fut = async {
+        let mut renderer = Some(
+            Renderer::with_surface(1024, 768, 1024, 768, Arc::clone(&instance), None)
+                .await
+                .unwrap(),
+        );
+        let mut init: Option<(Engine, G)> = None;
+
+        elp.run(move |event, target| {
+            if let winit::event::Event::Resumed = event {
+                if let Some(builder) = builder.take() {
+                    let window = Arc::new(builder.build(target).unwrap());
+                    frenderer::prepare_window(&window);
+                    let mut engine = Engine {
+                        window,
+                        renderer: renderer.take().unwrap(),
+                        input: Input::default(),
+                        clock: Clock::new(1.0 / 60.0, 0.0002, 5),
+                    };
+                    let game = G::new(&mut engine);
+                    init = Some((engine, game));
                 }
-                game.render(engine);
-                engine.renderer.render();
             }
-            EventPhase::Quit => {
-                target.exit();
+            if let Some((engine, game)) = init.as_mut() {
+                match engine.renderer.handle_event(
+                    &mut engine.clock,
+                    &engine.window,
+                    &event,
+                    target,
+                    &mut engine.input,
+                ) {
+                    EventPhase::Run(steps) => {
+                        for _ in 0..steps {
+                            game.update(engine);
+                            engine.input.next_frame();
+                        }
+                        game.render(engine);
+                        engine.renderer.render();
+                    }
+                    EventPhase::Quit => {
+                        target.exit();
+                    }
+                    EventPhase::Wait => {}
+                }
             }
-            EventPhase::Wait => {}
-        },
-    )
+        })
+        .unwrap();
+    };
+    #[cfg(target_arch = "wasm32")]
+    {
+        wasm_bindgen_futures::spawn_local(fut);
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        pollster::block_on(fut);
+    }
+    Ok(())
 }
