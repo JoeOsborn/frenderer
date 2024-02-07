@@ -128,6 +128,7 @@ impl NineSlice {
         count
     }
     /// Draws a nineslice box from (x,y) (bottom left corner) to (x+w, y+h) (top right corner)
+    #[allow(clippy::too_many_arguments)]
     pub fn draw(
         &self,
         trf: &mut [Transform],
@@ -136,6 +137,7 @@ impl NineSlice {
         y: f32,
         w: f32,
         h: f32,
+        z_offset: u16,
     ) -> usize {
         let mut which = 0;
         let limit = self.sprite_count(w, h);
@@ -157,6 +159,7 @@ impl NineSlice {
                         rot: 0.0,
                     };
                     uvs[which] = self.center.region;
+                    uvs[which].depth += z_offset;
                     which += 1;
                 }
                 Repeat::Tile => {
@@ -172,6 +175,7 @@ impl NineSlice {
                                 y: y0 + (row as f32 * self.center.h) + (self.center.h / 2.0),
                             };
                             *uv = self.center.region;
+                            uv.depth += z_offset;
                             which += 1;
                         }
                     }
@@ -196,6 +200,7 @@ impl NineSlice {
                         rot: 0.0,
                     };
                     uvs[which] = edge.region;
+                    uvs[which].depth += z_offset;
                     which += 1;
                 }
                 Repeat::Tile => {
@@ -211,6 +216,7 @@ impl NineSlice {
                             y: y + (row as f32 * edge.h) + (edge.h / 2.0),
                         };
                         *uv = edge.region;
+                        uv.depth += z_offset;
                         which += 1;
                     }
                 }
@@ -234,6 +240,7 @@ impl NineSlice {
                         rot: 0.0,
                     };
                     uvs[which] = edge.region;
+                    uvs[which].depth += z_offset;
                     which += 1;
                 }
                 Repeat::Tile => {
@@ -249,6 +256,7 @@ impl NineSlice {
                             x: x + (col as f32 * edge.w) + (edge.w / 2.0),
                         };
                         *uv = edge.region;
+                        uv.depth += z_offset;
                         which += 1;
                     }
                 }
@@ -288,6 +296,7 @@ impl NineSlice {
                 rot: 0.0,
             };
             *uv = corner.region;
+            uv.depth += z_offset;
         }
         which += 4;
 
