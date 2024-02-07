@@ -47,6 +47,11 @@ pub fn run<G: Game>(
                 if let Some(builder) = builder.take() {
                     let window = Arc::new(builder.build(target).unwrap());
                     frenderer::prepare_window(&window);
+                    // instead of using Renderer::with_surface above
+                    // we could have created a surface here with
+                    // instance.create_surface(&window) and then a
+                    // WGPU with WGPU::new(instance).await, then build
+                    // the renderer using Renderer::with_gpu.
                     let mut engine = Engine {
                         window,
                         renderer: renderer.take().unwrap(),
