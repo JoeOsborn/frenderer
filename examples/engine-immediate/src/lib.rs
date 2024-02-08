@@ -174,14 +174,14 @@ impl Engine {
         text: &str,
         pos: geom::Vec2,
         char_sz: f32,
-    ) -> geom::Vec2 {
+    ) -> (geom::Vec2, usize) {
         let start = self.sprite_renderer.sprite_group_size(spritesheet.0);
         self.ensure_spritegroup_size(spritesheet.0, start + text.len());
         let (trfs, uvs) = self.sprite_renderer.get_sprites_mut(spritesheet.0);
         let trfs = &mut trfs[start..(start + text.len())];
         let uvs = &mut uvs[start..(start + text.len())];
-        let corner = font.draw_text(trfs, uvs, text, pos.into(), 0, char_sz);
-        corner.into()
+        let (corner, used) = font.draw_text(trfs, uvs, text, pos.into(), 0, char_sz);
+        (corner.into(), used)
     }
     pub fn draw_sprite(
         &mut self,

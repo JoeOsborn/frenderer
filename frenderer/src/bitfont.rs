@@ -80,7 +80,7 @@ impl<B: RangeBounds<char>> BitFont<B> {
     /// Draws the given `text` as a single line of characters of height `char_height`.
     /// The given position is the top-left corner of the rendered string.
     /// Panics if any character in text is not within the font's character range.
-    /// Returns the bottom right corner of the rendered string.
+    /// Returns the bottom right corner of the rendered string and how many sprites were used.
     pub fn draw_text(
         &self,
         trfs: &mut [crate::sprites::Transform],
@@ -89,18 +89,25 @@ impl<B: RangeBounds<char>> BitFont<B> {
         mut screen_pos: [f32; 2],
         depth: u16,
         char_height: f32,
-    ) -> [f32; 2] {
+    ) -> ([f32; 2], usize) {
         let start_char: u32 = match self.chars.start_bound() {
             std::ops::Bound::Included(&c) => u32::from(c),
             std::ops::Bound::Excluded(&c) => u32::from(c) + 1,
             _ => unreachable!(),
         };
+        trfs[0..text.len()].fill(Transform::ZERO);
+        uvs[0..text.len()].fill(SheetRegion::ZERO);
         let chars_per_row = self.region.w as u16 / (self.char_w + self.padding_x);
         let aspect = self.char_w as f32 / self.char_h as f32;
         let char_width = aspect * char_height;
         screen_pos[0] += char_width / 2.0;
         screen_pos[1] -= char_height / 2.0;
+        let mut used = 0;
         for (chara, (trf, uv)) in text.chars().zip(trfs.iter_mut().zip(uvs.iter_mut())) {
+            // we'll collapse all whitespace into one space
+            if chara.is_whitespace() {
+                screen_pos[0] += char_width;
+            }
             if !self.chars.contains(&chara) {
                 panic!("Drawing outside of font character range");
             }
@@ -122,11 +129,15 @@ impl<B: RangeBounds<char>> BitFont<B> {
                 self.char_w as i16,
                 self.char_h as i16,
             );
+            used += 1;
             screen_pos[0] += char_width;
         }
-        [
-            screen_pos[0] + char_width / 2.0,
-            screen_pos[1] + char_height / 2.0,
-        ]
+        (
+            [
+                screen_pos[0] + char_width / 2.0,
+                screen_pos[1] + char_height / 2.0,
+            ],
+            used,
+        )
     }
 }

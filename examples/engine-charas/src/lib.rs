@@ -134,7 +134,7 @@ impl<G: Game> Engine<G> {
                 // iterate through texts and draw each one
                 let mut sprite_idx = chara_len;
                 for TextDraw(font, text, pos, sz) in self.texts.iter() {
-                    font.draw_text(
+                    let (_corner, used) = font.draw_text(
                         &mut trfs[sprite_idx..],
                         &mut uvs[sprite_idx..],
                         text,
@@ -142,7 +142,7 @@ impl<G: Game> Engine<G> {
                         0,
                         *sz,
                     );
-                    sprite_idx += text.len();
+                    sprite_idx += used;
                 }
                 assert_eq!(sprite_idx, chara_len + text_len);
                 // update sprites from charas
