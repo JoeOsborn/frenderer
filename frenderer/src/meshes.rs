@@ -857,6 +857,9 @@ impl<Vtx: bytemuck::Pod + bytemuck::Zeroable + Copy> MeshRendererInner<Vtx> {
             rpass.set_vertex_buffer(1, group.instance_buffer.slice(..));
             rpass.set_index_buffer(group.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
             for mesh in group.meshes.iter() {
+                if mesh.instances.is_empty() {
+                    continue;
+                }
                 for submesh in mesh.submeshes.iter() {
                     rpass.draw_indexed(
                         submesh.indices.clone(),

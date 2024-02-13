@@ -631,6 +631,9 @@ impl SpriteRenderer {
         rpass.set_pipeline(&self.pipeline);
         let which = crate::range(which, self.groups.len());
         for group in self.groups[which].iter().filter_map(|o| o.as_ref()) {
+            if group.world_transforms.is_empty() {
+                continue;
+            }
             if !self.use_storage {
                 rpass.set_vertex_buffer(0, group.world_buffer.slice(..));
                 rpass.set_vertex_buffer(1, group.sheet_buffer.slice(..));
