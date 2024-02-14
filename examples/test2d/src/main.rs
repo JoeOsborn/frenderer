@@ -5,7 +5,7 @@ use frenderer::{
     sprites::{Camera2D, SheetRegion, Transform},
     wgpu,
 };
-use rand::Rng;
+use rand::{seq::SliceRandom, Rng};
 
 fn init_data<S: assets_manager::source::Source>(
     frend: &mut frenderer::Renderer,
@@ -41,7 +41,14 @@ fn init_data<S: assets_manager::source::Source>(
             })
             .collect(),
         (0..COUNT + 1_000)
-            .map(|_n| SheetRegion::new(0, 0, 16, 8, 11, 16))
+            .map(|_n| {
+                SheetRegion::new(rng.gen_range(0..2), 0, 16, 8, 11, 16).with_colormod([
+                    rng.gen(),
+                    rng.gen(),
+                    rng.gen(),
+                    *[0, 128, 255].choose(&mut rng).unwrap(),
+                ])
+            })
             .collect(),
         *camera,
     );

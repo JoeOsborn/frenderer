@@ -108,5 +108,5 @@ fn fs_main(in:VertexOutput) -> @location(0) vec4<f32> {
     if color.w < 0.05 { discard; }
     // mod color by in.colormod
     let out_color = mix(color.xyz, in.colormod.xyz, in.colormod.w);
-    return vec4<f32>(color.xyz, 1.0);
+    return vec4<f32>(out_color.xyz, 1.0);
 }
