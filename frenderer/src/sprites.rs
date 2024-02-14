@@ -24,7 +24,8 @@ pub struct SheetRegion {
     pub w: i16,
     /// The height in pixels of this sprite within the spritesheet texture.  May be negative.
     pub h: i16,
-    _padding_32: u32,
+    /// RGBA bytes where alpha indicates intensity of color modulation
+    pub colormod: [u8; 4],
 }
 
 impl SheetRegion {
@@ -35,7 +36,7 @@ impl SheetRegion {
         y: 0,
         w: 0,
         h: 0,
-        _padding_32: 0,
+        colormod: [0; 4],
     };
     /// Create a new [`SheetRegion`] with the given parameters.
     pub const fn new(sheet: u16, x: u16, y: u16, depth: u16, w: i16, h: i16) -> Self {
@@ -46,7 +47,7 @@ impl SheetRegion {
             w,
             h,
             depth,
-            _padding_32: 0,
+            colormod: [0; 4],
         }
     }
     /// Create a simple [`SheetRegion`] with just the rectangle coordinates ([`SheetRegion::sheet`] and [`SheetRegion::depth`] will be set to 0).
@@ -79,6 +80,10 @@ impl SheetRegion {
             h: -self.h,
             ..self
         }
+    }
+    /// Changes the color modulation of the sheet region
+    pub const fn with_colormod(self, colormod: [u8; 4]) -> Self {
+        Self { colormod, ..self }
     }
 }
 

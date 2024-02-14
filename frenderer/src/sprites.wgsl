@@ -18,7 +18,7 @@ struct UVData {
     sheet_depth:u32,
     xy:u32,
     wh:u32, // actually two i16s
-    _padding:u32
+    colormod:u32 // actually four u8s
 }
 
 @group(0) @binding(0)
@@ -32,6 +32,7 @@ struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) tex_coords: vec2<f32>,
     @location(1) @interpolate(flat) tex_index: u32,
+    @location(2) colormod: vec4<f32>
 }
 
 fn sprite_to_vert(trf:vec4<f32>, uvs:UVData, norm_vert:vec2<f32>) -> VertexOutput {
@@ -62,8 +63,9 @@ fn sprite_to_vert(trf:vec4<f32>, uvs:UVData, norm_vert:vec2<f32>) -> VertexOutpu
   let tex_corner = vec2(tex_uvxy.x / f32(tex_size.x), tex_uvxy.y / f32(tex_size.y));
   let tex_uv_size = vec2(tex_uvwh.x / f32(tex_size.x), tex_uvwh.y / f32(tex_size.y));
   let norm_uv = vec2(norm_vert.x+0.5, 1.0-(norm_vert.y+0.5));
+  let colormod = unpack4x8unorm(uvs.colormod);
   // Larger y = smaller depth = closer to screen
-  return VertexOutput(ndc_pos+vec4(0.0, 0.0, f32(tex_depth)/65535.0, 0.0), tex_corner + norm_uv*tex_uv_size, tex_layer);
+  return VertexOutput(ndc_pos+vec4(0.0, 0.0, f32(tex_depth)/65535.0, 0.0), tex_corner + norm_uv*tex_uv_size, tex_layer, colormod);
 }
 
 @vertex
@@ -104,5 +106,7 @@ fn fs_main(in:VertexOutput) -> @location(0) vec4<f32> {
     // And we use the tex coords from the vertex output to sample from the texture.
     let color:vec4<f32> = textureSample(t_diffuse, s_diffuse, in.tex_coords, in.tex_index);
     if color.w < 0.05 { discard; }
-    return color;
+    // mod color by in.colormod
+    let out_color = mix(color.xyz, in.colormod.xyz, in.colormod.w);
+    return vec4<f32>(color, 1.0);
 }
