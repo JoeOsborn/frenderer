@@ -587,6 +587,7 @@ impl SpriteRenderer {
     /// You must call this yourself after modifying sprite data.
     /// Panics if the given sprite group is not populated.
     pub fn upload_sprites(&mut self, gpu: &WGPU, which: usize, range: Range<usize>) {
+        let range = crate::range(range, self.sprite_group_size(which));
         self.upload_world_transforms(gpu, which, range.clone());
         self.upload_sheet_regions(gpu, which, range);
     }
