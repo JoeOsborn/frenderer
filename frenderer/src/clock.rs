@@ -47,6 +47,10 @@ impl Clock {
         self.last_t = instant;
         self.acc = 0.0;
     }
+    /// Returns the current time on the clock
+    pub fn now(&self) -> Instant {
+        self.last_t
+    }
     /// Tick the clock forward based on the time since it was last
     /// ticked.  Returns how many timesteps to simulate based on the
     /// elapsed time.
