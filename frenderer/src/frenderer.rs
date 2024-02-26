@@ -67,6 +67,7 @@ enum Upload {
 impl Renderer {
     /// The format used for depth textures within frenderer.
     pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+    /// Creates a [Renderer] and its internal [crate::gpu::WGPU] using a wgpu [wgpu::Instance] and [wgpu::Surface], along with the rendering resolution (`w`, `h`) and surface dimensions.
     pub async fn with_surface(
         width: u32,
         height: u32,
@@ -86,7 +87,7 @@ impl Renderer {
         ))
     }
     /// Create a new Renderer with a full set of GPU resources, a
-    /// render size, a surface size, and a surface.
+    /// render size (`width`,`height), a surface size, and a surface.
     pub fn with_gpu(
         width: u32,
         height: u32,
@@ -177,9 +178,11 @@ impl Renderer {
         self.config.present_mode = mode;
         self.configure_surface();
     }
+    /// Returns the current surface
     pub fn surface(&self) -> Option<&wgpu::Surface<'static>> {
         self.surface.as_ref()
     }
+    /// Creates a new surface for this renderer
     pub fn create_surface(&mut self, window: Arc<winit::window::Window>) {
         let surface = self.gpu.instance().create_surface(window).unwrap();
         let swapchain_capabilities = surface.get_capabilities(self.gpu.adapter());
@@ -383,9 +386,11 @@ impl Renderer {
         self.gpu.queue().submit(Some(encoder.finish()));
         frame.present();
     }
+    /// Returns the size of the surface onto which the rendered image is stretched
     pub fn surface_size(&self) -> (u32, u32) {
         (self.config.width, self.config.height)
     }
+    /// Returns the size of the internal rendering texture (i.e., the rendering resolution)
     pub fn render_size(&self) -> (u32, u32) {
         (self.render_width, self.render_height)
     }
@@ -767,6 +772,7 @@ pub struct Immediate {
     sprites_used: Vec<usize>,
 }
 impl Immediate {
+    /// Permanently converts a [Renderer] into an [Immediate].
     pub fn new(renderer: Renderer) -> Self {
         Self {
             flats_used: (0..(renderer.flat_group_count()))
@@ -779,12 +785,15 @@ impl Immediate {
             renderer,
         }
     }
+    /// Changes the present mode for this renderer
     pub fn set_present_mode(&mut self, mode: wgpu::PresentMode) {
         self.renderer.set_present_mode(mode)
     }
+    /// Returns the current surface
     pub fn surface(&self) -> Option<&wgpu::Surface<'static>> {
         self.renderer.surface()
     }
+    /// Creates a new surface for this renderer
     pub fn create_surface(&mut self, window: Arc<winit::window::Window>) {
         self.renderer.create_surface(window)
     }
@@ -848,9 +857,11 @@ impl Immediate {
         }
         self.renderer.render();
     }
+    /// Returns the size of the surface onto which the rendered image is stretched
     pub fn surface_size(&self) -> (u32, u32) {
         self.renderer.surface_size()
     }
+    /// Returns the size of the internal rendering texture (i.e., the rendering resolution)
     pub fn render_size(&self) -> (u32, u32) {
         self.renderer.render_size()
     }
@@ -904,6 +915,7 @@ impl Immediate {
     pub fn sprite_group_size(&self, which: usize) -> usize {
         self.renderer.sprite_group_size(which)
     }
+    /// Makes sure that the size of the given sprite group is at least as large as num.
     pub fn ensure_sprites_size(&mut self, which: usize, num: usize) {
         if self.renderer.sprites.sprite_group_size(which) <= num {
             self.renderer.sprites.resize_sprite_group(
@@ -918,6 +930,7 @@ impl Immediate {
     pub fn sprite_group_set_camera(&mut self, which: usize, camera: crate::sprites::Camera2D) {
         self.renderer.sprite_group_set_camera(which, camera)
     }
+    /// Draws a sprite with the given transform and sheet region
     pub fn draw_sprite(
         &mut self,
         group: usize,
@@ -931,6 +944,7 @@ impl Immediate {
         uvs[old_count] = sheet_region;
         self.sprites_used[group] += 1;
     }
+    /// Draws a line of text with the given [`crate::bitfont::BitFont`].
     pub fn draw_text<B: RangeBounds<char>>(
         &mut self,
         group: usize,
@@ -949,6 +963,7 @@ impl Immediate {
         self.sprites_used[group] += used;
         (corner, used)
     }
+    /// Draws the sprites of a [`crate::nineslice::NineSlice`].
     #[allow(clippy::too_many_arguments)]
     pub fn draw_nineslice(
         &mut self,
@@ -1009,6 +1024,7 @@ impl Immediate {
     pub fn mesh_group_size(&self, which: crate::meshes::MeshGroup) -> usize {
         self.renderer.mesh_group_size(which)
     }
+    /// Makes sure that the mesh instance slice for the given mesh group and index is at least big enough to hold `num`.
     pub fn ensure_meshes_size(&mut self, which: crate::meshes::MeshGroup, idx: usize, num: usize) {
         if self.renderer.meshes.mesh_instance_count(which, idx) <= num {
             self.renderer.meshes.resize_group_mesh(
@@ -1019,6 +1035,7 @@ impl Immediate {
             );
         }
     }
+    /// Draws a textured, unlit mesh with the given [`crate::meshes::Transform3D`].
     pub fn draw_mesh(
         &mut self,
         which: crate::meshes::MeshGroup,
@@ -1070,6 +1087,7 @@ impl Immediate {
     pub fn flat_group_size(&self, which: crate::meshes::MeshGroup) -> usize {
         self.renderer.flat_group_size(which)
     }
+    /// Makes sure that the flats instance slice for the given mesh group and index is at least big enough to hold `num`.
     pub fn ensure_flats_size(&mut self, which: crate::meshes::MeshGroup, idx: usize, num: usize) {
         if self.renderer.flats.mesh_instance_count(which, idx) <= num {
             self.renderer.flats.resize_group_mesh(
@@ -1080,6 +1098,7 @@ impl Immediate {
             );
         }
     }
+    /// Draws a flat mesh (of the given group and mesh index) with the given [`crate::meshes::Transform3D`].
     pub fn draw_flat(
         &mut self,
         which: crate::meshes::MeshGroup,
