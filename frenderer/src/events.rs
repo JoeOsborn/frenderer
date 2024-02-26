@@ -77,6 +77,19 @@ impl<T> FrendererEvents<T> for crate::Renderer {
         }
     }
 }
+impl<T> FrendererEvents<T> for crate::Immediate {
+    fn handle_event(
+        &mut self,
+        clock: &mut crate::clock::Clock,
+        window: &Arc<winit::window::Window>,
+        evt: &winit::event::Event<T>,
+        target: &winit::event_loop::EventLoopWindowTarget<T>,
+        input: &mut crate::input::Input,
+    ) -> EventPhase {
+        self.renderer
+            .handle_event(clock, window, evt, target, input)
+    }
+}
 /// Driver takes ownership of winit's event loop and creates a window and graphics context when possible.
 pub struct Driver {
     builder: winit::window::WindowBuilder,
