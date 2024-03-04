@@ -963,6 +963,26 @@ impl Immediate {
         uvs[old_count] = sheet_region;
         self.sprites_used[group] += 1;
     }
+    /// Gets a block of `howmany` sprites to draw into, as per [Renderer::get_sprites_mut]
+    pub fn draw_sprites(
+        &mut self,
+        group: usize,
+        howmany: usize,
+    ) -> (
+        &mut [crate::sprites::Transform],
+        &mut [crate::sprites::SheetRegion],
+    ) {
+        let old_count = self.sprites_used[group];
+        self.ensure_sprites_size(group, old_count + howmany);
+        let (trfs, uvs) = self.renderer.sprites.get_sprites_mut(group);
+        let trfs = &mut trfs[old_count..(old_count + howmany)];
+        let uvs = &mut uvs[old_count..(old_count + howmany)];
+        trfs.fill(crate::sprites::Transform::ZERO);
+        uvs.fill(crate::sprites::SheetRegion::ZERO);
+        self.sprites_used[group] += howmany;
+        (trfs, uvs)
+    }
+
     /// Draws a line of text with the given [`crate::bitfont::BitFont`].
     pub fn draw_text<B: RangeBounds<char>>(
         &mut self,
@@ -973,13 +993,8 @@ impl Immediate {
         depth: u16,
         char_height: f32,
     ) -> ([f32; 2], usize) {
-        let old_count = self.sprites_used[group];
-        self.ensure_sprites_size(group, old_count + text.len());
-        let (trfs, uvs) = self.renderer.sprites.get_sprites_mut(group);
-        let trfs = &mut trfs[old_count..];
-        let uvs = &mut uvs[old_count..];
+        let (trfs, uvs) = self.draw_sprites(group, text.len());
         let (corner, used) = bitfont.draw_text(trfs, uvs, text, screen_pos, depth, char_height);
-        self.sprites_used[group] += used;
         (corner, used)
     }
     /// Draws the sprites of a [`crate::nineslice::NineSlice`].
@@ -994,14 +1009,8 @@ impl Immediate {
         h: f32,
         z_offset: u16,
     ) -> usize {
-        let old_count = self.sprites_used[group];
-        self.ensure_sprites_size(group, old_count + ninesl.sprite_count(w, h));
-        let (trfs, uvs) = self.renderer.sprites.get_sprites_mut(group);
-        let trfs = &mut trfs[old_count..];
-        let uvs = &mut uvs[old_count..];
-        let used = ninesl.draw(trfs, uvs, x, y, w, h, z_offset);
-        self.sprites_used[group] += used;
-        used
+        let (trfs, uvs) = self.draw_sprites(group, ninesl.sprite_count(w, h));
+        ninesl.draw(trfs, uvs, x, y, w, h, z_offset)
     }
 
     /// Sets the given camera for all textured mesh groups.
@@ -1067,7 +1076,21 @@ impl Immediate {
         trfs[old_count] = trf;
         self.meshes_used[which.index()][idx] += 1;
     }
-
+    /// Gets a block of `howmany` mesh instances to draw into, as per [Renderer::get_meshes_mut]
+    pub fn draw_meshes(
+        &mut self,
+        group: crate::meshes::MeshGroup,
+        idx: usize,
+        howmany: usize,
+    ) -> &mut [crate::meshes::Transform3D] {
+        let old_count = self.meshes_used[group.index()][idx];
+        self.ensure_meshes_size(group, idx, old_count + howmany);
+        let trfs = self.renderer.meshes.get_meshes_mut(group, idx);
+        let trfs = &mut trfs[old_count..(old_count + howmany)];
+        trfs.fill(crate::meshes::Transform3D::ZERO);
+        self.meshes_used[group.index()][idx] += howmany;
+        trfs
+    }
     /// Sets the given camera for all flat mesh groups.
     pub fn flat_set_camera(&mut self, camera: crate::meshes::Camera3D) {
         self.renderer.flat_set_camera(camera)
@@ -1129,6 +1152,21 @@ impl Immediate {
         let trfs = self.renderer.flats.get_meshes_mut(which, idx);
         trfs[old_count] = trf;
         self.flats_used[which.index()][idx] += 1;
+    }
+    /// Gets a block of `howmany` flatmesh instances to draw into, as per [Renderer::get_flats_mut]
+    pub fn draw_flats(
+        &mut self,
+        group: crate::meshes::MeshGroup,
+        idx: usize,
+        howmany: usize,
+    ) -> &mut [crate::meshes::Transform3D] {
+        let old_count = self.flats_used[group.index()][idx];
+        self.ensure_flats_size(group, idx, old_count + howmany);
+        let trfs = self.renderer.flats.get_meshes_mut(group, idx);
+        let trfs = &mut trfs[old_count..(old_count + howmany)];
+        trfs.fill(crate::meshes::Transform3D::ZERO);
+        self.flats_used[group.index()][idx] += howmany;
+        trfs
     }
     /// Returns the current geometric transform used in postprocessing (a 4x4 column-major homogeneous matrix)
     pub fn post_transform(&self) -> [f32; 16] {
