@@ -770,11 +770,13 @@ pub struct Immediate {
     flats_used: Vec<Vec<usize>>,
     meshes_used: Vec<Vec<usize>>,
     sprites_used: Vec<usize>,
+    auto_clear: bool,
 }
 impl Immediate {
     /// Permanently converts a [Renderer] into an [Immediate].
     pub fn new(renderer: Renderer) -> Self {
         Self {
+            auto_clear: true,
             flats_used: (0..(renderer.flat_group_count()))
                 .map(|mg| vec![0; renderer.flat_group_size(mg.into())])
                 .collect(),
@@ -783,6 +785,23 @@ impl Immediate {
                 .collect(),
             sprites_used: vec![0; renderer.sprite_group_count()],
             renderer,
+        }
+    }
+    /// Whether this renderer should clear its counters/state during rendering.  If set to false, it will accumulate drawing commands from multiple frames until [Immediate::clear] is called.
+    pub fn auto_clear(&mut self, c: bool) {
+        self.auto_clear = c;
+    }
+    /// Clear the render state.  If done in the middle of a frame this
+    /// cancels out earlier draw commands, and if done between frames
+    /// (when `auto_clear` is false) will set up the renderer for the
+    /// next frame.
+    pub fn clear(&mut self) {
+        self.sprites_used.fill(0);
+        for used_sets in self.meshes_used.iter_mut() {
+            used_sets.fill(0);
+        }
+        for used_sets in self.flats_used.iter_mut() {
+            used_sets.fill(0);
         }
     }
     /// Changes the present mode for this renderer
@@ -819,7 +838,6 @@ impl Immediate {
             self.renderer
                 .sprites
                 .upload_sprites(&self.renderer.gpu, sg, 0..*used);
-            *used = 0;
         }
         for (mg_idx, used_sets) in self.meshes_used.iter_mut().enumerate() {
             for (mesh_idx, used) in used_sets.iter_mut().enumerate() {
@@ -835,7 +853,6 @@ impl Immediate {
                     mesh_idx,
                     0..*used,
                 );
-                *used = 0;
             }
         }
         for (mg_idx, used_sets) in self.flats_used.iter_mut().enumerate() {
@@ -852,10 +869,12 @@ impl Immediate {
                     mesh_idx,
                     0..*used,
                 );
-                *used = 0;
             }
         }
         self.renderer.render();
+        if self.auto_clear {
+            self.clear();
+        }
     }
     /// Returns the size of the surface onto which the rendered image is stretched
     pub fn surface_size(&self) -> (u32, u32) {
