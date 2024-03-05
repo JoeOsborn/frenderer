@@ -35,6 +35,14 @@ struct VertexOutput {
     @location(2) colormod: vec4<f32>
 }
 
+fn u32_to_vec4(in:u32) -> vec4<f32> {
+  let r = (in >> 24u) & 0x000000FFu;
+  let g = (in >> 16u) & 0x000000FFu;
+  let b = (in >>  8u) & 0x000000FFu;
+  let a = in & 0x000000FFu;
+  return vec4(f32(r)/255.0, f32(g)/255.0, f32(b)/255.0, f32(a)/255.0);
+}
+
 fn sprite_to_vert(trf:vec4<f32>, uvs:UVData, norm_vert:vec2<f32>) -> VertexOutput {
   let center:vec2<f32> = trf.yz;
   let size_bits:u32 = bitcast<u32>(trf.x);
@@ -63,7 +71,7 @@ fn sprite_to_vert(trf:vec4<f32>, uvs:UVData, norm_vert:vec2<f32>) -> VertexOutpu
   let tex_corner = vec2(tex_uvxy.x / f32(tex_size.x), tex_uvxy.y / f32(tex_size.y));
   let tex_uv_size = vec2(tex_uvwh.x / f32(tex_size.x), tex_uvwh.y / f32(tex_size.y));
   let norm_uv = vec2(norm_vert.x+0.5, 1.0-(norm_vert.y+0.5));
-  let colormod = unpack4x8unorm(uvs.colormod);
+  let colormod = u32_to_vec4(uvs.colormod);
   // Larger y = smaller depth = closer to screen
   return VertexOutput(ndc_pos+vec4(0.0, 0.0, f32(tex_depth)/65535.0, 0.0), tex_corner + norm_uv*tex_uv_size, tex_layer, colormod);
 }
