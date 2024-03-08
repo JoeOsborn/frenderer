@@ -11,7 +11,7 @@ pub use winit::{self, window::WindowBuilder};
 #[cfg(not(target_arch = "wasm32"))]
 pub type AssetCache = assets_manager::AssetCache<assets_manager::source::FileSystem>;
 #[cfg(target_arch = "wasm32")]
-pub type AssetCache = assets_manager::AssetCache<assets_manager::source::Embedded>;
+pub type AssetCache = assets_manager::AssetCache<assets_manager::source::Embedded<'static>>;
 
 /// App is the main public trait of `frapp`.  Implementors get a defined new/update/render lifecycle with a choice of frenderer renderers (either [frenderer::Renderer] or [frenderer::Immediate]).
 pub trait App {
