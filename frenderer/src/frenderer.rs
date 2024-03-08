@@ -1218,13 +1218,22 @@ impl Immediate {
     }
 }
 
-impl std::convert::Into<Renderer> for Renderer {
-    fn into(self) -> Renderer {
-        self
+impl std::convert::From<Renderer> for Immediate {
+    fn from(rend: Renderer) -> Self {
+        Immediate::new(rend)
     }
 }
-impl std::convert::Into<Immediate> for Renderer {
-    fn into(self) -> Immediate {
-        Immediate::new(self)
+
+pub trait Frenderer {
+    fn render(&mut self);
+}
+impl Frenderer for Immediate {
+    fn render(&mut self) {
+        Immediate::render(self);
+    }
+}
+impl Frenderer for Renderer {
+    fn render(&mut self) {
+        Renderer::render(self);
     }
 }

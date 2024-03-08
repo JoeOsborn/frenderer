@@ -1,14 +1,13 @@
 [package]
-name = "frapp"
+name = "app"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-frenderer = {path="../frenderer"}
-assets_manager = { version = "0.11", features = ["png", "hot-reloading", "embedded"] }
-winit = "0.29"
+frapp = {path="../../frapp"}
+rand = "0.8.5"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies.getrandom]
 features=["js"]
@@ -16,4 +15,4 @@ version="0.2.12"
 
 [features]
 default = []
-webgl = ["frenderer/webgl"]
+webgl = ["frapp/webgl"]
