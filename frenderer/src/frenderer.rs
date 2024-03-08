@@ -1217,3 +1217,14 @@ impl Immediate {
         &self.renderer.gpu
     }
 }
+
+impl std::convert::Into<Renderer> for Renderer {
+    fn into(self) -> Renderer {
+        self
+    }
+}
+impl std::convert::Into<Immediate> for Renderer {
+    fn into(self) -> Immediate {
+        Immediate::new(self)
+    }
+}

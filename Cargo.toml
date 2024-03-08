@@ -1,5 +1,5 @@
 [workspace]
-members = ["frenderer", "examples/*", "run-wasm"]
+members = ["frenderer", "frapp", "examples/*", "run-wasm"]
 exclude = ["target", "content"]
 resolver = "2"
 
