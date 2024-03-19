@@ -33,28 +33,10 @@ impl App for TestApp {
             Some("spr-king.png"),
         );
 
-        let mut rng = rand::thread_rng();
         renderer.sprite_group_add(
             &sprite_tex,
-            (0..COUNT + 1_000)
-                .map(|_n| Transform {
-                    x: rng.gen_range(0.0..(W - 16.0)),
-                    y: rng.gen_range(0.0..(H - 16.0)),
-                    w: 11,
-                    h: 16,
-                    rot: rng.gen_range(0.0..(std::f32::consts::TAU)),
-                })
-                .collect(),
-            (0..COUNT + 1_000)
-                .map(|_n| {
-                    SheetRegion::new(rng.gen_range(0..2), 0, 16, 8, 11, 16).with_colormod([
-                        rng.gen(),
-                        rng.gen(),
-                        rng.gen(),
-                        *[0, 128, 255].choose(&mut rng).unwrap(),
-                    ])
-                })
-                .collect(),
+            vec![Transform::ZERO; COUNT],
+            vec![SheetRegion::ZERO; COUNT],
             Camera2D {
                 screen_pos: [0.0, 0.0],
                 screen_size: [W, H],
@@ -81,7 +63,7 @@ impl App for TestApp {
         };
         Self { assets, sprites }
     }
-    fn update(&mut self, _renderer: &mut Self::Renderer, _input: &mut Input) {
+    fn update(&mut self, _renderer: &mut Self::Renderer, _input: &Input) {
         let mut rng = rand::thread_rng();
         for (x, y, rot, _gfx) in self.sprites.iter_mut() {
             *x += rng.gen_range((-1.0)..1.0);
@@ -106,7 +88,7 @@ impl App for TestApp {
             ));
         }
     }
-    fn render(&mut self, renderer: &mut Self::Renderer, _dt: f32) {
+    fn render(&mut self, renderer: &mut Self::Renderer, _dt: f32, _input: &Input) {
         for (x, y, rot, uv) in self.sprites.iter() {
             renderer.draw_sprite(
                 0,

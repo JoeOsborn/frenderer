@@ -197,8 +197,8 @@ fn main() {
                                 repeat: frenderer::nineslice::Repeat::Tile,
                             },
                         );
-                        frend.draw_nineslice(0, nine_stretched, 10.0, 20.0, 160.0, 112.0, 0);
-                        frend.draw_nineslice(0, nine_tiled, 400.0, 500.0, 160.0, 112.0, 0);
+                        frend.draw_nineslice(0, &nine_stretched, 10.0, 20.0, 160.0, 112.0, 0);
+                        frend.draw_nineslice(0, &nine_tiled, 400.0, 500.0, 160.0, 112.0, 0);
                     }
                     frend.render();
                 }

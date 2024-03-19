@@ -57,7 +57,7 @@ pub fn run<G: Game>(
                         clock: Clock::new(1.0 / 60.0, 0.0002, 5),
                     };
                     let game = G::new(&mut engine);
-                    init.set((engine, game)).unwrap();
+                    init.set((engine, game)).unwrap_or_else(|_| panic!());
                 };
                 #[cfg(target_arch = "wasm32")]
                 {

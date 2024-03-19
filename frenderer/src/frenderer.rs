@@ -987,7 +987,7 @@ impl Immediate {
     pub fn draw_text<B: RangeBounds<char>>(
         &mut self,
         group: usize,
-        bitfont: crate::bitfont::BitFont<B>,
+        bitfont: &crate::bitfont::BitFont<B>,
         text: &str,
         screen_pos: [f32; 2],
         depth: u16,
@@ -1002,7 +1002,7 @@ impl Immediate {
     pub fn draw_nineslice(
         &mut self,
         group: usize,
-        ninesl: crate::nineslice::NineSlice,
+        ninesl: &crate::nineslice::NineSlice,
         x: f32,
         y: f32,
         w: f32,

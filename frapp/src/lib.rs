@@ -22,9 +22,9 @@ pub trait App {
     /// Initialize the app
     fn new(renderer: &mut Self::Renderer, assets: AssetCache) -> Self;
     /// Update (called every DT seconds)
-    fn update(&mut self, renderer: &mut Self::Renderer, input: &mut Input);
+    fn update(&mut self, renderer: &mut Self::Renderer, input: &Input);
     /// Render (called once per present cycle)
-    fn render(&mut self, renderer: &mut Self::Renderer, dt: f32);
+    fn render(&mut self, renderer: &mut Self::Renderer, dt: f32, input: &Input);
 }
 
 use std::marker::PhantomData;
@@ -55,13 +55,13 @@ where
                 (window, app, rend, input)
             },
             move |event, target, (window, ref mut app, ref mut renderer, ref mut input)| {
-                match renderer.handle_event(&mut clock, &window, &event, target, input) {
+                match renderer.handle_event(&mut clock, window, &event, target, input) {
                     EventPhase::Run(steps) => {
                         for _ in 0..steps {
                             app.update(renderer, input);
                             input.next_frame();
                         }
-                        app.render(renderer, last_render.elapsed().as_secs_f32());
+                        app.render(renderer, last_render.elapsed().as_secs_f32(), input);
                         last_render = Instant::now();
                         renderer.render();
                     }
@@ -86,6 +86,7 @@ where
 #[macro_export]
 macro_rules! app {
     ($et:ty, $content:literal) => {{
+        use frapp::{assets_manager, AppDriver};
         #[cfg(not(target_arch = "wasm32"))]
         let source =
             assets_manager::source::FileSystem::new($content).expect("Couldn't load resources");

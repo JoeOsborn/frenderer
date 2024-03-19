@@ -39,19 +39,11 @@ pub struct Engine<G: Game> {
     camera: Camera,
     contacts: collision::Contacts,
     window: Arc<winit::window::Window>,
-    // Text drawing
     texts: Vec<TextDraw>,
     sim_frame: usize,
     clock: Clock,
     _game: std::marker::PhantomData<G>,
 }
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct CharaID(
-    u8, /* group */
-    /* consider: generation, and matching generation on chara */
-    u32, /* index within group */
-);
 
 impl<G: Game> Engine<G> {
     pub fn run(builder: winit::window::WindowBuilder) -> Result<(), Box<dyn std::error::Error>> {
