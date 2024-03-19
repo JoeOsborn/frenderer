@@ -1,0 +1,9 @@
+[package]
+name = "engine-ecs-app-game"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+engine-ecs-app = {path="../engine-ecs-app"}
