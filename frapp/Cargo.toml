@@ -1,6 +1,6 @@
 [package]
 name = "frapp"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 license="GPL-3.0-or-later"
 description = "An app abstraction for simple uses of frenderer, the friendly WGPU renderer."
@@ -12,7 +12,7 @@ readme = "../README.md"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-frenderer = "0.9.12"
+frenderer = "0.9.13"
 assets_manager = { version = "0.11", features = ["png", "hot-reloading", "embedded"] }
 winit = "0.29"
 
