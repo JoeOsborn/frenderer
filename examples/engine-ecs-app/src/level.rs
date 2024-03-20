@@ -19,6 +19,17 @@ pub struct EntityType {
     strings: Vec<String>,
     numbers: Vec<u16>,
 }
+impl EntityType {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn strings(&self) -> &[String] {
+        &self.strings
+    }
+    pub fn numbers(&self) -> &[u16] {
+        &self.numbers
+    }
+}
 
 #[allow(dead_code)]
 pub struct Level {
@@ -305,7 +316,7 @@ impl Level {
                 / self.tile_size as f32) as usize,
         )
     }
-    pub fn tiles_within(&self, rect: Rect) -> impl Iterator<Item = (Rect, &TileData)> {
+    pub fn tiles_within(&self, rect: Rect) -> impl Iterator<Item = (usize, Rect, &TileData)> {
         let (l, t) = self.world_to_grid(Vec2 {
             x: rect.x,
             y: rect.y,
@@ -317,20 +328,31 @@ impl Level {
         ((b.max(1) - 1)..(t + 2)).flat_map(move |row| {
             ((l.max(1) - 1)..(r + 2)).filter_map(move |col| {
                 self.grid.get(col, row).map(|tile_dat| {
-                    let world = self.grid_to_world((col, row));
+                    let tid = self.grid.coord_to_index((col, row)).unwrap();
                     (
-                        Rect {
-                            x: world.x,
-                            y: world.y,
-                            w: self.tile_size,
-                            h: self.tile_size,
-                        },
+                        tid,
+                        self.tile_rect_for_coord((col, row)),
                         &self.tileset[*tile_dat as usize],
                     )
                 })
             })
         })
     }
+    pub fn tile_rect_for_index(&self, idx: usize) -> Option<Rect> {
+        self.grid
+            .index_to_coord(idx)
+            .map(|c| self.tile_rect_for_coord(c))
+    }
+    pub fn tile_rect_for_coord(&self, coord: grid::Coord) -> Rect {
+        let world = self.grid_to_world(coord);
+        Rect {
+            x: world.x,
+            y: world.y,
+            w: self.tile_size,
+            h: self.tile_size,
+        }
+    }
+
     pub fn width(&self) -> usize {
         self.grid.width()
     }

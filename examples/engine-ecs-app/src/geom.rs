@@ -33,6 +33,12 @@ impl Rect {
             y: self.y,
         }
     }
+    pub fn center(&self) -> Vec2 {
+        Vec2 {
+            x: self.x + self.w as f32 / 2.0,
+            y: self.y + self.h as f32 / 2.0,
+        }
+    }
     pub fn is_empty(&self) -> bool {
         self.w == 0 || self.h == 0
     }
@@ -64,6 +70,7 @@ impl std::ops::AddAssign for Vec2 {
     }
 }
 impl Vec2 {
+    pub const ZERO: Vec2 = Vec2 { x: 0.0, y: 0.0 };
     pub fn mag_sq(&self) -> f32 {
         self.x * self.x + self.y * self.y
     }
