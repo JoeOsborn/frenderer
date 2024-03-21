@@ -4,7 +4,8 @@ pub use frapp::frenderer::sprites::Camera2D;
 use frapp::frenderer::*;
 use frapp::*;
 pub use frapp::{self, app, assets_manager, frenderer, winit, WindowBuilder};
-
+pub use hecs::*;
+pub use rand;
 pub struct ECSApp<G: Game> {
     #[allow(dead_code)]
     assets: AssetCache,
@@ -21,6 +22,7 @@ pub struct Engine<'app> {
     pub input: &'app Input,
     pub camera: Camera2D,
     pub frame: usize,
+    pub dt: f32,
 }
 pub trait Game: Sized + 'static {
     fn new(engine: &mut Engine<'_>) -> Self;
@@ -142,12 +144,13 @@ impl<G: Game> ECSApp<G> {
                     trf2.y -= disp.y;
                 }
             }
+            use components::Physics;
             for (_ent, (mov, phys)) in self.world.query_mut::<(&Movable, &mut Physics)>() {
                 for col in mov.0.iter() {
-                    if col.disp.x > 0.0 || col.disp.x < 0.0 {
+                    if col.disp.x.abs() > std::f32::EPSILON {
                         phys.vel.x = 0.0;
                     }
-                    if col.disp.y > 0.0 || col.disp.y < 0.0 {
+                    if col.disp.y.abs() > std::f32::EPSILON {
                         phys.vel.y = 0.0;
                     }
                 }
@@ -192,6 +195,7 @@ impl<G: Game> App for ECSApp<G> {
             world: &mut world,
             input: &Input::default(),
             camera,
+            dt: 0.0,
             frame: 0,
             renderer,
         };
@@ -211,6 +215,7 @@ impl<G: Game> App for ECSApp<G> {
                 assets: &mut self.assets,
                 world: &mut self.world,
                 input,
+                dt: Self::DT,
                 camera: self.camera,
                 frame: self.frame + 1,
                 renderer,
@@ -234,6 +239,7 @@ impl<G: Game> App for ECSApp<G> {
                 assets: &mut self.assets,
                 world: &mut self.world,
                 input,
+                dt: Self::DT,
                 camera: self.camera,
                 frame: self.frame + 1,
                 renderer,
@@ -243,7 +249,7 @@ impl<G: Game> App for ECSApp<G> {
             self.frame = engine.frame;
         }
     }
-    fn render(&mut self, renderer: &mut Self::Renderer, _dt: f32, input: &Input) {
+    fn render(&mut self, renderer: &mut Self::Renderer, dt: f32, input: &Input) {
         use components::{Level, Sprite, Text, Transform};
         self.world
             .query_mut::<&Level>()
@@ -285,6 +291,7 @@ impl<G: Game> App for ECSApp<G> {
             camera: self.camera,
             frame: self.frame + 1,
             renderer,
+            dt,
         };
         self.game.render(&mut engine);
         self.camera = engine.camera;
@@ -309,6 +316,7 @@ pub mod components {
     use frapp::frenderer::bitfont::BitFont;
     pub use level::Level;
     pub use sprites::Transform;
+    #[derive(Default)]
     pub struct Physics {
         pub vel: geom::Vec2,
         pub acc: geom::Vec2,

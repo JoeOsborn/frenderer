@@ -1,9 +1,9 @@
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug, Default)]
 pub struct Vec2 {
     pub x: f32,
     pub y: f32,
 }
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug, Default)]
 pub struct Rect {
     pub x: f32,
     pub y: f32,

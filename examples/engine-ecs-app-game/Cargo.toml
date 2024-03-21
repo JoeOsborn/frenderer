@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 engine-ecs-app = {path="../engine-ecs-app"}
+hecs = {version="0.10.4",features=["macros"]}

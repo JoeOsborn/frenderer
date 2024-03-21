@@ -1,4 +1,4 @@
-adventure-l1 20 15
+adventure-l1 20 15 16
 bg 594 55 2 2
 ======
 . o 594 55 16 16
