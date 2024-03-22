@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 pub use bytemuck::Zeroable;
-use frenderer::EventPhase;
+use frenderer::{EventPhase, Logger};
 pub use frenderer::{
     bitfont::BitFont,
     clock::Clock,
@@ -30,7 +30,7 @@ pub fn run<G: Game>(
     builder: winit::window::WindowBuilder,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use frenderer::FrendererEvents;
-    frenderer::prepare_logging()?;
+    frenderer::EnvLogger().prepare_logging()?;
     let mut builder = Some(builder);
     let elp = winit::event_loop::EventLoop::new()?;
     let mut init: Arc<OnceCell<(Engine, G)>> = Arc::new(OnceCell::new());

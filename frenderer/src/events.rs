@@ -94,6 +94,7 @@ impl<T> FrendererEvents<T> for crate::Immediate {
 pub struct Driver {
     builder: winit::window::WindowBuilder,
     render_size: Option<(u32, u32)>,
+    logger: Box<dyn Logger>
 }
 #[cfg(all(target_arch = "wasm32", feature = "winit"))]
 pub mod web_error {
@@ -120,10 +121,22 @@ impl std::task::Wake for NoopWaker {
 
 impl Driver {
     /// Create a [`Driver`] with the given window builder and render target size (if absent, will use the window's inner size instead).
-    pub fn new(builder: winit::window::WindowBuilder, render_size: Option<(u32, u32)>) -> Self {
+    pub fn new(builder: winit::window::WindowBuilder, render_size: Option<(u32, u32)>) -> Self 
+    {
         Self {
             builder,
             render_size,
+            logger: Box::new(EnvLogger{})
+        }
+    }
+    /// Create a [`Driver`] with the given window builder and render target size (if absent, will use the window's inner size instead). 
+    /// Allows for a custom logging to be externally defined for Frenderer
+    pub fn new_with_logger<L: Logger + 'static>(builder: winit::window::WindowBuilder, render_size: Option<(u32, u32)>, logger: L) -> Self 
+    {
+        Self {
+            builder,
+            render_size,
+            logger: Box::new(logger),
         }
     }
     /// Kick off the event loop. Once the driver receives the
@@ -180,8 +193,9 @@ impl Driver {
         let Self {
             builder,
             render_size,
+            logger,
         } = self;
-        prepare_logging()?;
+        logger.prepare_logging()?;
         let event_loop: EventLoop<T> =
             winit::event_loop::EventLoopBuilder::with_user_event().build()?;
         let instance = Arc::new(wgpu::Instance::default());
@@ -269,19 +283,29 @@ pub fn prepare_window(window: &winit::window::Window) {
     }
 }
 
-/// If you don't use [`Driver`], it may still be convenient to call
-/// `prepare_logging` to set up `env_logger` or `console_log`
-/// appropriately for the platform.
-pub fn prepare_logging() -> Result<(), Box<dyn std::error::Error>> {
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        env_logger::init();
-        Ok(())
-    }
-    #[cfg(target_arch = "wasm32")]
-    {
-        std::panic::set_hook(Box::new(console_error_panic_hook::hook));
-        console_log::init_with_level(log::Level::Warn)?;
-        Ok(())
+/// A trait used to allow for users to define custom logging procedures
+pub trait Logger{
+    fn prepare_logging(&self) -> Result<(), Box<dyn std::error::Error>>;
+}
+
+/// The default Frenderer logger: `env_logger`
+pub struct EnvLogger();
+
+impl Logger for EnvLogger {
+    /// If you don't use [`Driver`], it may still be convenient to call
+    /// `prepare_logging` to set up `env_logger` or `console_log`
+    /// appropriately for the platform.
+    fn prepare_logging(&self) -> Result<(), Box<dyn std::error::Error>> {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            env_logger::init();
+            Ok(())
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+            console_log::init_with_level(log::Level::Warn)?;
+            Ok(())
+        }
     }
 }
