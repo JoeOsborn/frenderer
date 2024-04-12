@@ -408,8 +408,7 @@ impl Engine<'_> {
                 imgs[0].dimensions(),
                 label,
             ),
-            vec![crate::sprites::Transform::ZERO; 1024],
-            vec![crate::sprites::SheetRegion::ZERO; 1024],
+            1024,
             self.camera,
         );
         assert!(idx <= 255, "too many sprite groups!");

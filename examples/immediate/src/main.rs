@@ -30,28 +30,9 @@ fn init_data<S: assets_manager::source::Source>(
         Some("spr-king.png"),
     );
 
-    let mut rng = rand::thread_rng();
     frend.sprite_group_add(
         &sprite_tex,
-        (0..COUNT + 1_000)
-            .map(|_n| Transform {
-                x: rng.gen_range(0.0..(W - 16.0)),
-                y: rng.gen_range(0.0..(H - 16.0)),
-                w: 11,
-                h: 16,
-                rot: rng.gen_range(0.0..(std::f32::consts::TAU)),
-            })
-            .collect(),
-        (0..COUNT + 1_000)
-            .map(|_n| {
-                SheetRegion::new(rng.gen_range(0..2), 0, 16, 8, 11, 16).with_colormod([
-                    rng.gen(),
-                    rng.gen(),
-                    rng.gen(),
-                    *[0, 128, 255].choose(&mut rng).unwrap(),
-                ])
-            })
-            .collect(),
+        COUNT,
         frenderer::sprites::Camera2D {
             screen_pos: [0.0, 0.0],
             screen_size: [W, H],

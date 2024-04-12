@@ -12,7 +12,8 @@ readme = "../README.md"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-frenderer = "0.9.13"
+frenderer = "0.9.14"
+# frenderer = {path="../frenderer"}
 assets_manager = { version = "0.11", features = ["png", "hot-reloading", "embedded"] }
 winit = "0.29"
 

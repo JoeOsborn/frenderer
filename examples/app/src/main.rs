@@ -35,8 +35,7 @@ impl App for TestApp {
 
         renderer.sprite_group_add(
             &sprite_tex,
-            vec![Transform::ZERO; COUNT],
-            vec![SheetRegion::ZERO; COUNT],
+            COUNT,
             Camera2D {
                 screen_pos: [0.0, 0.0],
                 screen_size: [W, H],
