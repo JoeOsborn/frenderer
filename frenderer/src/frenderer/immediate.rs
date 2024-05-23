@@ -224,10 +224,10 @@ impl Immediate {
     }
 
     /// Draws a line of text with the given [`crate::bitfont::BitFont`].
-    pub fn draw_text<B: RangeBounds<char>>(
+    pub fn draw_text(
         &mut self,
         group: usize,
-        bitfont: &crate::bitfont::BitFont<B>,
+        bitfont: &crate::bitfont::BitFont,
         text: &str,
         screen_pos: [f32; 2],
         depth: u16,

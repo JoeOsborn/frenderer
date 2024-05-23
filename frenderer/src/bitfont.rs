@@ -4,16 +4,17 @@ use crate::sprites::{SheetRegion, Transform};
 
 /// A bitmapped font helper described as a rectangular area of a spritesheet.
 #[derive(Clone, Copy, Debug)]
-pub struct BitFont<B: RangeBounds<char> = std::ops::RangeInclusive<char>> {
+pub struct BitFont {
     region: SheetRegion,
     char_w: u16,
     char_h: u16,
     padding_x: u16,
     padding_y: u16,
-    chars: B,
+    start_char: u32,
+    end_char: u32,
 }
 
-impl<B: RangeBounds<char>> BitFont<B> {
+impl BitFont {
     /// Creates a bitfont data structure; the bounds used must not be
     /// open on either end.  Each character is assumed to be the same
     /// size, with width equal to the width of the region divided by
@@ -26,7 +27,7 @@ impl<B: RangeBounds<char>> BitFont<B> {
     /// region's width or height are not multiples of the character
     /// width and height.
     pub fn with_sheet_region(
-        chars: B,
+        chars: impl RangeBounds<char>,
         region: SheetRegion,
         char_w: u16,
         char_h: u16,
@@ -69,13 +70,20 @@ impl<B: RangeBounds<char>> BitFont<B> {
         assert!(region.w as u16 >= chars_per_row as u16 * net_char_w);
         assert!(region.h as u16 >= rows * net_char_h);
         Self {
-            chars,
+            region,
             char_w,
             char_h,
             padding_x,
             padding_y,
-            region,
+            start_char,
+            end_char,
         }
+    }
+    /// Returns a `BitFont` which is the same in every way except that a different colormod is used.
+    pub fn colormod(&self, cmod: [u8; 4]) -> Self {
+        let mut copy = *self;
+        copy.region.colormod = cmod;
+        copy
     }
     /// Draws the given `text` as a single line of characters of height `char_height`.
     /// The given position is the top-left corner of the rendered string.
@@ -90,11 +98,7 @@ impl<B: RangeBounds<char>> BitFont<B> {
         depth: u16,
         char_height: f32,
     ) -> ([f32; 2], usize) {
-        let start_char: u32 = match self.chars.start_bound() {
-            std::ops::Bound::Included(&c) => u32::from(c),
-            std::ops::Bound::Excluded(&c) => u32::from(c) + 1,
-            _ => unreachable!(),
-        };
+        let start_char: u32 = self.start_char;
         trfs[0..text.len()].fill(Transform::ZERO);
         uvs[0..text.len()].fill(SheetRegion::ZERO);
         let chars_per_row = self.region.w as u16 / (self.char_w + self.padding_x);
@@ -108,7 +112,7 @@ impl<B: RangeBounds<char>> BitFont<B> {
             if chara.is_whitespace() {
                 screen_pos[0] += char_width;
             }
-            if !self.chars.contains(&chara) {
+            if !(self.start_char..self.end_char).contains(&u32::from(chara)) {
                 panic!("Drawing outside of font character range");
             }
             *trf = Transform {
@@ -128,7 +132,8 @@ impl<B: RangeBounds<char>> BitFont<B> {
                 depth,
                 self.char_w as i16,
                 self.char_h as i16,
-            );
+            )
+            .with_colormod(self.region.colormod);
             used += 1;
             screen_pos[0] += char_width;
         }

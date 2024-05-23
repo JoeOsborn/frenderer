@@ -67,6 +67,7 @@ struct Player {
     attack: Option<Entity>,
 }
 struct Enemy(Dir);
+#[allow(dead_code)]
 struct PlayerAttack(Dir);
 struct Health(u8);
 struct Heart(u8);

@@ -323,7 +323,7 @@ pub mod components {
     }
     pub struct Text {
         pub spritesheet: Spritesheet,
-        pub font: BitFont<std::ops::Range<char>>,
+        pub font: BitFont,
         pub text: String,
         pub screen_pos: geom::Vec2,
         pub depth: u16,

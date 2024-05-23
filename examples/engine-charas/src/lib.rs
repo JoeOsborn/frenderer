@@ -263,7 +263,7 @@ impl<G: Game> Engine<G> {
         char_h: u16,
         padding_x: u16,
         padding_y: u16,
-    ) -> BitFont<B> {
+    ) -> BitFont {
         BitFont {
             font: frenderer::bitfont::BitFont::with_sheet_region(
                 range, uv, char_w, char_h, padding_x, padding_y,
@@ -397,8 +397,7 @@ impl<G: Game> Engine<G> {
         Spritesheet(idx)
     }
     pub fn draw_string(&mut self, font: &BitFont, text: String, pos: geom::Vec2, char_sz: f32) {
-        self.texts
-            .push(TextDraw(font.font.clone(), text, pos, char_sz));
+        self.texts.push(TextDraw(font.font, text, pos, char_sz));
     }
 }
 
